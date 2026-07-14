@@ -10,7 +10,7 @@ from django.utils.text import slugify
 from modules.crm.models import Company, Contact, Deal
 
 from .forms import WorkspaceForm
-from .models import EVENT_CHOICES, Automation, CustomField, Membership
+from .models import EVENT_CHOICES, Automation, CustomField, Domain, Membership
 from .rbac import require_role
 
 
@@ -84,7 +84,11 @@ def dashboard(request):
 def workspace_new(request):
     form = WorkspaceForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        workspace = form.save()
+        workspace = form.save()  # creates the tenant's Postgres schema
+        Domain.objects.get_or_create(
+            domain=f"{workspace.schema_name}.localhost", tenant=workspace,
+            defaults={"is_primary": True},
+        )
         Membership.objects.create(
             user=request.user, workspace=workspace, role=Membership.ROLE_OWNER
         )

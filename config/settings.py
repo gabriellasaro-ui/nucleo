@@ -31,7 +31,12 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-insecure-change-me")
 DEBUG = env("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
-INSTALLED_APPS = [
+# Multi-tenant (schema-per-workspace via django-tenants).
+# SHARED_APPS live in the `public` schema (auth, the tenant model, shared config).
+# TENANT_APPS get their tables created inside each workspace's own schema.
+SHARED_APPS = [
+    "django_tenants",
+    "core",  # holds the tenant model (Workspace) + Domain + shared config
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -39,10 +44,16 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.humanize",
-    # Núcleo kernel + modules
-    "core",
-    "modules.crm",
 ]
+TENANT_APPS = [
+    "django.contrib.contenttypes",
+    "modules.crm",  # per-workspace CRM data lives in each tenant schema
+]
+INSTALLED_APPS = list(SHARED_APPS) + [a for a in TENANT_APPS if a not in SHARED_APPS]
+
+TENANT_MODEL = "core.Workspace"
+TENANT_DOMAIN_MODEL = "core.Domain"
+DATABASE_ROUTERS = ("django_tenants.routers.TenantSyncRouter",)
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -82,7 +93,7 @@ ASGI_APPLICATION = "config.asgi.application"
 def _database_from_url(url):
     parsed = urlparse(url)
     return {
-        "ENGINE": "django.db.backends.postgresql",
+        "ENGINE": "django_tenants.postgresql_backend",
         "NAME": parsed.path.lstrip("/"),
         "USER": parsed.username or "",
         "PASSWORD": parsed.password or "",

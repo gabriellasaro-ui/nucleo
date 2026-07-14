@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.db import models
+from django.utils.text import slugify
+from django_tenants.models import DomainMixin, TenantMixin
 
 
 def workspace_logo_path(instance, filename):
@@ -7,17 +9,57 @@ def workspace_logo_path(instance, filename):
     return f"ws_{instance.pk or 'new'}/logo/{filename}"
 
 
-class Workspace(models.Model):
-    """A tenant. All CRM data belongs to exactly one workspace."""
+class Workspace(TenantMixin):
+    """A tenant. It OWNS a PostgreSQL schema; all CRM data lives inside it."""
     name = models.CharField("Nome", max_length=120)
     brand_color = models.CharField("Cor da marca", max_length=7, default="#2563eb")
     logo = models.FileField("Logo", upload_to=workspace_logo_path, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Create/drop the Postgres schema automatically with the workspace.
+    auto_create_schema = True
+    auto_drop_schema = True
+
     class Meta:
         ordering = ["name"]
         verbose_name = "Workspace"
         verbose_name_plural = "Workspaces"
+
+    def save(self, *args, **kwargs):
+        if not self.schema_name:
+            self.schema_name = self._unique_schema_name()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        # Tenant CRM tables live in this workspace's schema and FK back to it,
+        # which confuses Django's cascade collector. So drop the whole schema
+        # (removing all tenant data at once), then remove the public-side rows
+        # via SQL — no ORM cascade into the tenant schema.
+        from django.db import connection
+        from django_tenants.utils import get_public_schema_name
+
+        schema, pk = self.schema_name, self.pk
+        connection.set_schema_to_public()
+        with connection.cursor() as cur:
+            if schema and schema != get_public_schema_name():
+                cur.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+            for model, column in [
+                (Domain, "tenant_id"),
+                (Membership, "workspace_id"),
+                (CustomField, "workspace_id"),
+                (Automation, "workspace_id"),
+                (Event, "workspace_id"),
+            ]:
+                cur.execute(f'DELETE FROM "{model._meta.db_table}" WHERE {column} = %s', [pk])
+            cur.execute(f'DELETE FROM "{self._meta.db_table}" WHERE id = %s', [pk])
+
+    def _unique_schema_name(self):
+        base = "ws_" + (slugify(self.name).replace("-", "_")[:40] or "tenant")
+        candidate, i = base, 2
+        while Workspace.objects.filter(schema_name=candidate).exclude(pk=self.pk).exists():
+            candidate = f"{base}_{i}"
+            i += 1
+        return candidate
 
     def __str__(self):
         return self.name
@@ -30,6 +72,12 @@ class Workspace(models.Model):
         if len(parts) == 1:
             return parts[0][:2].upper()
         return (parts[0][0] + parts[-1][0]).upper()
+
+
+class Domain(DomainMixin):
+    """Required by django-tenants. We route by session (not domain), so this is
+    mostly a placeholder — one internal domain per tenant keeps the lib happy."""
+    pass
 
 
 class Membership(models.Model):
