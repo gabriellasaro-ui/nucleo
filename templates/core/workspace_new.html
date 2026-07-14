@@ -1,0 +1,30 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Novo workspace · Núcleo</title>
+  <link rel="stylesheet" href="{% static 'css/nucleo.css' %}">
+</head>
+<body>
+  <div class="auth">
+    <form class="auth__card" method="post">
+      {% csrf_token %}
+      <div class="auth__brand"><span class="brand-mark">N</span> Núcleo</div>
+      <p class="sub">
+        {% if has_any %}Crie um novo workspace.{% else %}Bem-vindo! Crie seu primeiro workspace para começar.{% endif %}
+      </p>
+      <div class="field">
+        <label for="{{ form.name.id_for_label }}">Nome do workspace</label>
+        {{ form.name }}
+        {% if form.name.errors %}<div class="errors">{{ form.name.errors|striptags }}</div>{% endif %}
+      </div>
+      <button class="btn btn--primary" type="submit">Criar workspace</button>
+      {% if has_any %}
+      <a href="{% url 'dashboard' %}" class="btn btn--ghost" style="width:100%;justify-content:center;margin-top:8px;">Cancelar</a>
+      {% endif %}
+    </form>
+  </div>
+</body>
+</html>

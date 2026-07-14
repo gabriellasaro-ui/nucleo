@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Aparência</h1>
+    <p>Personalize a marca de <b>{{ request.workspace.name }}</b>. As mudanças valem para todos do workspace.</p>
+  </div>
+</div>
+
+<div class="chart-grid">
+  <div class="card panel">
+    <div class="panel__head"><b>Cor da marca</b></div>
+    <form method="post" class="appearance-form" x-data="{ color: '{{ brand_color }}' }">
+      {% csrf_token %}
+      <div class="color-row">
+        <input type="color" name="brand_color" x-model="color" class="color-input">
+        <input type="text" x-model="color" class="color-hex" maxlength="7" spellcheck="false">
+        <div class="btn btn--primary" style="pointer-events:none" :style="'background:'+color+';border-color:'+color">Exemplo</div>
+      </div>
+      <div class="swatches">
+        {% for p in presets %}
+        <button type="button" class="swatch" style="background: {{ p }}" @click="color = '{{ p }}'" :class="{ 'is-active': color.toLowerCase() === '{{ p }}' }" title="{{ p }}"></button>
+        {% endfor %}
+      </div>
+      <div class="appearance-actions">
+        <button class="btn btn--primary" type="submit">Salvar cor</button>
+        <span class="appearance-hint">Botões, links, destaques e gráficos usam essa cor.</span>
+      </div>
+    </form>
+  </div>
+
+  <div class="card panel">
+    <div class="panel__head"><b>Logo</b></div>
+    <div class="appearance-form">
+      {% if request.workspace.logo %}
+      <div class="logo-preview"><img src="{{ request.workspace.logo.url }}" alt="Logo atual"></div>
+      <form method="post">
+        {% csrf_token %}
+        <button name="remove_logo" value="1" class="btn btn--danger btn--sm" type="submit">
+          {% include "core/_icon.html" with icon="trash" %} Remover logo
+        </button>
+      </form>
+      {% else %}
+      <div class="logo-empty">
+        <span class="brand-mark">N</span>
+        <div>Sem logo — usando o padrão “Núcleo”.</div>
+      </div>
+      {% endif %}
+      <form method="post" enctype="multipart/form-data" class="logo-upload">
+        {% csrf_token %}
+        <input type="file" name="logo" accept="image/*" required>
+        <button class="btn btn--primary btn--sm" type="submit">Enviar logo</button>
+      </form>
+      <div class="appearance-hint">PNG ou SVG com fundo transparente fica melhor. Aparece no topo do menu lateral.</div>
+    </div>
+  </div>
+</div>
+{% endblock %}

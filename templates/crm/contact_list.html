@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Contatos</h1>
+    <p>Pessoas com quem você faz negócio.</p>
+  </div>
+  {% if can_edit %}
+  <button class="btn btn--primary"
+          hx-get="{% url 'crm:contact_create' %}" hx-target="#modal-content" hx-swap="innerHTML"
+          @click="modal = true">
+    {% include "core/_icon.html" with icon="plus" %} Novo contato
+  </button>
+  {% endif %}
+</div>
+
+<div class="toolbar">
+  <label class="search">
+    {% include "core/_icon.html" with icon="search" %}
+    <input type="search" name="q" placeholder="Buscar por nome, e-mail ou empresa…"
+           hx-get="{% url 'crm:contact_rows' %}" hx-target="#contact-rows" hx-swap="innerHTML"
+           hx-trigger="input changed delay:300ms, search">
+  </label>
+</div>
+
+<div class="card table-wrap">
+  <table class="tbl">
+    <thead>
+      <tr><th>Contato</th><th>Empresa</th><th>Cargo</th><th>Estágio</th><th>Ações</th></tr>
+    </thead>
+    <tbody id="contact-rows"
+           hx-get="{% url 'crm:contact_rows' %}" hx-target="#contact-rows" hx-swap="innerHTML"
+           hx-trigger="nucleo:dataChanged from:body">
+      {% include "crm/partials/contact_rows.html" %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% if custom_fields %}
+<div class="card panel">
+  <div class="panel__head"><b>Campos personalizados</b></div>
+  <div class="detail-rows">
+    {% for cf in custom_fields %}
+    <div class="detail-row">
+      <span>{{ cf.field.label }}</span>
+      <b>
+        {% if cf.field.field_type == "checkbox" %}{% if cf.value %}Sim{% else %}Não{% endif %}
+        {% else %}{{ cf.value|default_if_none:"—"|default:"—" }}{% endif %}
+      </b>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}

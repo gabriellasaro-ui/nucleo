@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Negócios</h1>
+    <p>Seu pipeline de vendas. Arraste os cards entre as etapas.</p>
+  </div>
+  {% if can_edit %}
+  <button class="btn btn--primary"
+          hx-get="{% url 'crm:deal_create' %}" hx-target="#modal-content" hx-swap="innerHTML"
+          @click="modal = true">
+    {% include "core/_icon.html" with icon="plus" %} Novo negócio
+  </button>
+  {% endif %}
+</div>
+
+<div id="deal-stats"
+     hx-get="{% url 'crm:deal_stats' %}" hx-trigger="nucleo:dealsStats from:body" hx-swap="innerHTML">
+  {% include "crm/partials/deal_stats.html" %}
+</div>
+
+<div id="deal-board"
+     hx-get="{% url 'crm:deal_cards' %}" hx-trigger="nucleo:dealsBoard from:body" hx-swap="innerHTML">
+  {% include "crm/partials/deal_columns.html" %}
+</div>
+{% endblock %}

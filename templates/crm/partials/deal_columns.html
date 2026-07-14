@@ -1,0 +1,28 @@
+{% load humanize %}
+<div class="kanban-board">
+  {% for col in columns %}
+  <div class="kanban__col">
+    <div class="kanban__col-head">
+      <span class="kanban__dot kanban__dot--{{ col.key }}"></span>
+      <b>{{ col.label }}</b>
+      <span class="kanban__count">{{ col.count }}</span>
+      <span class="kanban__col-total">R$ {{ col.total|floatformat:0|intcomma }}</span>
+    </div>
+    <div class="kanban__cards" data-stage="{{ col.key }}">
+      {% for deal in col.deals %}
+      <div class="kanban-card" data-id="{{ deal.pk }}" data-href="{% url 'crm:deal_detail' deal.pk %}">
+        <div class="kanban-card__title">{{ deal.title }}</div>
+        {% if deal.company %}<div class="kanban-card__company">{{ deal.company.name }}</div>{% endif %}
+        <div class="kanban-card__meta">
+          <span class="kanban-card__value">R$ {{ deal.value|floatformat:0|intcomma }}</span>
+          {% if deal.expected_close %}
+          <span class="kanban-card__date">{% include "core/_icon.html" with icon="calendar" %}{{ deal.expected_close|date:"d/m" }}</span>
+          {% endif %}
+          {% if deal.contact %}<span class="avatar" title="{{ deal.contact.full_name }}">{{ deal.contact.initials }}</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>

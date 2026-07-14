@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block content %}
+<a href="{% url 'crm:contact_list' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Contatos</a>
+
+<div class="record__header card">
+  <span class="avatar avatar--lg">{{ contact.initials }}</span>
+  <div class="record__head-main">
+    <h1>{{ contact.full_name }}</h1>
+    <div class="record__chips">
+      <span class="badge badge--{{ contact.stage }}">{{ contact.get_stage_display }}</span>
+      {% if contact.job_title %}<span class="chip">{{ contact.job_title }}</span>{% endif %}
+      {% if contact.company %}<a href="{{ contact.company.get_absolute_url }}" class="chip chip--link">{% include "core/_icon.html" with icon="building" %} {{ contact.company.name }}</a>{% endif %}
+      {% if contact.email %}<span class="chip">{% include "core/_icon.html" with icon="mail" %} {{ contact.email }}</span>{% endif %}
+      {% if contact.phone %}<span class="chip">{% include "core/_icon.html" with icon="phone" %} {{ contact.phone }}</span>{% endif %}
+      {% if contact.owner %}<span class="chip">Resp.: {{ contact.owner.get_username }}</span>{% endif %}
+      {% if contact.score %}<span class="chip">Score {{ contact.score }}</span>{% endif %}
+      {% for t in contact.tags.all %}<span class="tag-chip" style="--tc: {{ t.color }}">{{ t.name }}</span>{% endfor %}
+    </div>
+  </div>
+  {% if can_edit %}
+  <button class="btn btn--ghost" hx-get="{% url 'crm:contact_edit' contact.pk %}"
+          hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+    {% include "core/_icon.html" with icon="edit" %} Editar
+  </button>
+  {% endif %}
+</div>
+
+<div class="record__grid">
+  <div class="record__main">
+    <div class="card panel">
+      <div class="panel__head">
+        <b>Negócios</b><span class="panel__count">{{ deals|length }}</span>
+        {% if can_edit %}
+        <button class="btn btn--ghost btn--sm" style="margin-left:auto"
+                hx-get="{% url 'crm:deal_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+          {% include "core/_icon.html" with icon="plus" %} Novo
+        </button>
+        {% endif %}
+      </div>
+      <div class="mini-list">
+        {% for d in deals %}
+        <a href="{{ d.get_absolute_url }}" class="mini-item">
+          <span class="mini-item__title">{{ d.title }}</span>
+          <span class="badge badge--{{ d.stage }}">{{ d.get_stage_display }}</span>
+          <span class="mini-item__value">R$ {{ d.value|floatformat:0|intcomma }}</span>
+        </a>
+        {% empty %}<div class="mini-empty">Nenhum negócio ainda.</div>{% endfor %}
+      </div>
+    </div>
+    {% include "crm/partials/custom_fields_display.html" %}
+  </div>
+
+  <div class="record__side">
+    <div class="card panel">
+      <div class="panel__head"><b>Atividades</b></div>
+      <div class="panel__pad">
+        {% include "crm/partials/timeline.html" %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

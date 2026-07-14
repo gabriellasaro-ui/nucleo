@@ -1,0 +1,35 @@
+<div class="modal">
+  <div class="modal__head">
+    <h2>{{ title }}</h2>
+    <button type="button" class="icon-btn" @click="modal = false">{% include "core/_icon.html" with icon="close" %}</button>
+  </div>
+  <form hx-post="{{ action }}" hx-target="#modal-content" hx-swap="innerHTML">
+    {% csrf_token %}
+    <div class="modal__body">
+      {% for field in form %}
+      <div class="field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}<div class="errors">{{ field.errors|striptags }}</div>{% endif %}
+      </div>
+      {% endfor %}
+      <div class="field">
+        <label for="id_tags_text">Etiquetas</label>
+        <input type="text" name="tags_text" id="id_tags_text" value="{{ tags_text }}" placeholder="Separadas por vírgula (ex.: VIP, Inbound)">
+      </div>
+      {% include "crm/partials/custom_fields_form.html" %}
+    </div>
+    <div class="modal__foot">
+      {% if delete_pk %}
+      <button type="button" class="btn btn--danger"
+              hx-post="{% url 'crm:company_delete' delete_pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+              hx-confirm="Excluir esta empresa? Esta ação não pode ser desfeita.">
+        {% include "core/_icon.html" with icon="trash" %} Excluir
+      </button>
+      {% endif %}
+      <div class="modal__spacer"></div>
+      <button type="button" class="btn btn--ghost" @click="modal = false">Cancelar</button>
+      <button type="submit" class="btn btn--primary">Salvar</button>
+    </div>
+  </form>
+</div>

@@ -1,0 +1,190 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ page_title|default:"Núcleo" }} · Núcleo{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="{% static 'css/nucleo.css' %}">
+  <style>{{ brand_css|safe }}</style>
+  <script>window.NUCLEO_CSRF = "{{ csrf_token }}";</script>
+  <script src="{% static 'js/htmx.min.js' %}" defer></script>
+  <script src="{% static 'js/alpine.min.js' %}" defer></script>
+  <script src="{% static 'js/sortable.min.js' %}" defer></script>
+  <script src="{% static 'js/nucleo.js' %}" defer></script>
+  <script src="{% static 'js/kanban.js' %}" defer></script>
+</head>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+      x-data="shell()"
+      @keydown.window="onKey($event)"
+      @nucleo-close-modal.window="modal = false">
+
+  {{ command_palette|json_script:"cmdk-data" }}
+
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="ws-switch ws-switch--top" x-data="{ open: false }" @keydown.escape="open = false">
+        <button class="ws-switch__btn" @click="open = !open">
+          {% if brand_logo %}
+            <img src="{{ brand_logo.url }}" alt="{{ request.workspace.name }}" class="ws-switch__logo">
+          {% else %}
+            <span class="ws-mark">{{ request.workspace.initials }}</span>
+          {% endif %}
+          <span class="ws-name">{{ request.workspace.name|default:"Sem workspace" }}</span>
+          <span class="ws-switch__chev">{% include "core/_icon.html" with icon="chevron" %}</span>
+        </button>
+        <div class="ws-menu" x-show="open" x-cloak x-transition @click.outside="open = false">
+          <div class="ws-menu__label">Trocar workspace</div>
+          {% for m in request.memberships %}
+          <form method="post" action="{% url 'workspace_switch' m.workspace_id %}">
+            {% csrf_token %}
+            <button type="submit" class="ws-menu__item {% if m.workspace_id == request.workspace.id %}is-active{% endif %}">
+              <span class="ws-mark ws-mark--sm">{{ m.workspace.initials }}</span>
+              <span class="ws-menu__name">{{ m.workspace.name }}</span>
+              <span class="ws-role">{{ m.get_role_display }}</span>
+            </button>
+          </form>
+          {% endfor %}
+          <a class="ws-menu__new" href="{% url 'workspace_new' %}">
+            {% include "core/_icon.html" with icon="plus" %} Novo workspace
+          </a>
+        </div>
+      </div>
+
+      <div class="sidebar__search">
+        <button class="kbtn" @click="openCmdk()">
+          {% include "core/_icon.html" with icon="search" %}
+          Buscar…
+          <kbd>Ctrl K</kbd>
+        </button>
+      </div>
+      <nav class="nav">
+        {% for section in nav_sections %}
+        <div class="nav__section">
+          <div class="nav__label">{{ section.section }}</div>
+          {% for item in section.items %}
+          <a href="{{ item.url }}" class="nav__item {% if request.path == item.url %}is-active{% endif %}">
+            {% include "core/_icon.html" with icon=item.icon %}
+            <span>{{ item.label }}</span>
+            {% if item.shortcut %}<kbd class="shortcut">{{ item.shortcut }}</kbd>{% endif %}
+          </a>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </nav>
+      <div class="sidebar__foot">
+        <span class="avatar">{{ user.username|slice:":2"|upper }}</span>
+        <div style="font-size:13px; line-height:1.2; min-width:0;">
+          <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ user.get_username }}</div>
+          <div style="color:var(--ink-3); font-size:12px;">Workspace demo</div>
+        </div>
+        <form action="{% url 'logout' %}" method="post" style="margin-left:auto;">
+          {% csrf_token %}
+          <button class="icon-btn" title="Sair">{% include "core/_icon.html" with icon="logout" %}</button>
+        </form>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+      <header class="topbar">
+        <div class="breadcrumb">
+          {% for crumb in breadcrumb %}
+            {% if not forloop.last %}<span>{{ crumb }}</span><span class="sep">/</span>{% else %}<b>{{ crumb }}</b>{% endif %}
+          {% endfor %}
+        </div>
+        <div class="topbar__spacer"></div>
+        <button class="btn btn--ghost btn--sm" @click="openCmdk()">
+          {% include "core/_icon.html" with icon="command" %} Comandos
+        </button>
+      </header>
+
+      <main class="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal host (HTMX loads the form partial into #modal-content) -->
+  <div class="modal-overlay" x-show="modal" x-cloak x-transition.opacity
+       @click.self="modal = false" @keydown.escape.window="modal = false">
+    <div id="modal-content"></div>
+  </div>
+
+  <!-- Command palette -->
+  <div class="cmdk-overlay" x-show="cmdk" x-cloak x-transition.opacity
+       @click.self="cmdk = false">
+    <div class="cmdk" @keydown.escape.window="cmdk = false">
+      <div class="cmdk__input">
+        {% include "core/_icon.html" with icon="search" %}
+        <input x-ref="cmdkInput" x-model="query" placeholder="Ir para, buscar ou executar…"
+               @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
+               @keydown.enter.prevent="run()">
+      </div>
+      <div class="cmdk__list">
+        <template x-if="filtered.length === 0">
+          <div class="cmdk__section">Nenhum resultado</div>
+        </template>
+        <template x-for="(cmd, i) in filtered" :key="cmd.url">
+          <div class="cmdk__item" :class="{ 'is-active': i === active }"
+               @mouseenter="active = i" @click="go(cmd.url)">
+            <span x-text="cmd.label"></span>
+            <span class="cmdk__item-section" style="color:var(--ink-3); font-size:12px;" x-text="cmd.section"></span>
+            <kbd class="shortcut" x-show="cmd.shortcut" x-text="cmd.shortcut"></kbd>
+          </div>
+        </template>
+      </div>
+      <div class="cmdk__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> navegar</span>
+        <span><kbd>↵</kbd> abrir</span>
+        <span><kbd>esc</kbd> fechar</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts">
+    {% for message in messages %}
+      <div class="toast {{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+  </div>
+
+  <script>
+    function shell() {
+      return {
+        cmdk: false,
+        modal: false,
+        query: "",
+        active: 0,
+        commands: JSON.parse(document.getElementById("cmdk-data").textContent || "[]"),
+        get filtered() {
+          var q = this.query.trim().toLowerCase();
+          if (!q) return this.commands;
+          return this.commands.filter(function (c) {
+            return (c.label + " " + c.section).toLowerCase().includes(q);
+          });
+        },
+        openCmdk() {
+          this.cmdk = true; this.query = ""; this.active = 0;
+          this.$nextTick(() => this.$refs.cmdkInput && this.$refs.cmdkInput.focus());
+        },
+        move(dir) {
+          var n = this.filtered.length; if (!n) return;
+          this.active = (this.active + dir + n) % n;
+        },
+        run() {
+          var cmd = this.filtered[this.active];
+          if (cmd) this.go(cmd.url);
+        },
+        go(url) { this.cmdk = false; window.location.href = url; },
+        onKey(e) {
+          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+            e.preventDefault(); this.openCmdk();
+          }
+        },
+      };
+    }
+  </script>
+</body>
+</html>

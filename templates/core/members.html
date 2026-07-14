@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Membros</h1>
+    <p>Quem tem acesso a <b>{{ request.workspace.name }}</b> e com qual papel.</p>
+  </div>
+</div>
+
+<div class="card">
+  <form class="member-add" method="post" action="{% url 'member_add' %}">
+    {% csrf_token %}
+    <input type="text" name="identifier" placeholder="Usuário ou e-mail para adicionar…" autocomplete="off">
+    <select name="role" class="role-select">
+      {% for value, label in roles %}
+      <option value="{{ value }}" {% if value == 'member' %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn--primary btn--sm" type="submit">
+      {% include "core/_icon.html" with icon="plus" %} Adicionar
+    </button>
+  </form>
+
+  <div class="table-wrap">
+    <table class="tbl">
+      <thead>
+        <tr><th>Membro</th><th>Papel</th><th>Ações</th></tr>
+      </thead>
+      <tbody>
+        {% for m in memberships %}
+        <tr>
+          <td>
+            <div class="cell-primary">
+              <span class="avatar">{{ m.user.username|slice:":2"|upper }}</span>
+              <div>
+                <b>{{ m.user.get_username }}</b>
+                {% if m.user.email %}<div class="cell-sub">{{ m.user.email }}</div>{% endif %}
+              </div>
+            </div>
+          </td>
+          <td>
+            <form class="inline-form" method="post" action="{% url 'member_update' m.pk %}">
+              {% csrf_token %}
+              <select class="role-select" name="role" onchange="this.form.submit()">
+                {% for value, label in roles %}
+                <option value="{{ value }}" {% if value == m.role %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </form>
+          </td>
+          <td class="cell-actions">
+            <form class="inline-form" method="post" action="{% url 'member_remove' m.pk %}"
+                  onsubmit="return confirm('Remover {{ m.user.get_username|escapejs }} deste workspace?');">
+              {% csrf_token %}
+              <button class="btn btn--danger btn--sm" type="submit">
+                {% include "core/_icon.html" with icon="trash" %} Remover
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

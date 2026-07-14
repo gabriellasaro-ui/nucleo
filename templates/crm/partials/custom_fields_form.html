@@ -1,0 +1,28 @@
+{% if custom_fields %}
+<div class="cf-section">
+  <div class="cf-section__label">Campos personalizados</div>
+  {% for cf in custom_fields %}
+  <div class="field">
+    <label for="cf_{{ cf.field.key }}">{{ cf.field.label }}{% if cf.field.required %} <span style="color:var(--red-600)">*</span>{% endif %}</label>
+    {% if cf.field.field_type == "textarea" %}
+      <textarea name="cf_{{ cf.field.key }}" id="cf_{{ cf.field.key }}" rows="2" {% if cf.field.required %}required{% endif %}>{{ cf.value|default_if_none:"" }}</textarea>
+    {% elif cf.field.field_type == "number" %}
+      <input type="number" step="any" name="cf_{{ cf.field.key }}" id="cf_{{ cf.field.key }}" value="{{ cf.value|default_if_none:"" }}" {% if cf.field.required %}required{% endif %}>
+    {% elif cf.field.field_type == "date" %}
+      <input type="date" name="cf_{{ cf.field.key }}" id="cf_{{ cf.field.key }}" value="{{ cf.value|default_if_none:"" }}" {% if cf.field.required %}required{% endif %}>
+    {% elif cf.field.field_type == "select" %}
+      <select name="cf_{{ cf.field.key }}" id="cf_{{ cf.field.key }}" {% if cf.field.required %}required{% endif %}>
+        <option value="">—</option>
+        {% for opt in cf.field.options %}
+        <option value="{{ opt }}" {% if opt == cf.value %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    {% elif cf.field.field_type == "checkbox" %}
+      <div><input type="checkbox" name="cf_{{ cf.field.key }}" id="cf_{{ cf.field.key }}" {% if cf.value %}checked{% endif %}></div>
+    {% else %}
+      <input type="text" name="cf_{{ cf.field.key }}" id="cf_{{ cf.field.key }}" value="{{ cf.value|default_if_none:"" }}" {% if cf.field.required %}required{% endif %}>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

@@ -1,0 +1,29 @@
+<div id="timeline" class="timeline">
+  {% if can_edit %}
+  <form class="composer" x-data="{ kind: 'note' }"
+        hx-post="{% url 'crm:activity_create' %}" hx-target="#timeline" hx-swap="outerHTML">
+    {% csrf_token %}
+    <input type="hidden" name="on" value="{{ owner }}">
+    <input type="hidden" name="id" value="{{ owner_id }}">
+    <input type="hidden" name="kind" :value="kind">
+    <textarea name="body" rows="2" placeholder="Escreva uma nota ou tarefa…" required></textarea>
+    <div class="composer__foot">
+      <div class="seg">
+        <button type="button" class="seg__btn" :class="{ 'is-active': kind === 'note' }" @click="kind = 'note'">Nota</button>
+        <button type="button" class="seg__btn" :class="{ 'is-active': kind === 'task' }" @click="kind = 'task'">Tarefa</button>
+      </div>
+      <input type="date" name="due_date" class="composer__date" x-show="kind === 'task'" x-cloak>
+      <div style="flex:1"></div>
+      <button type="submit" class="btn btn--primary btn--sm">Adicionar</button>
+    </div>
+  </form>
+  {% endif %}
+
+  <div class="timeline__list">
+    {% for a in activities %}
+      {% include "crm/partials/activity_item.html" with a=a %}
+    {% empty %}
+      <div class="timeline__empty">Nenhuma atividade ainda — registre uma nota ou tarefa acima.</div>
+    {% endfor %}
+  </div>
+</div>

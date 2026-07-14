@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block content %}
+<a href="{% url 'crm:deal_board' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Negócios</a>
+
+<div class="record__header card">
+  <div class="record__head-main">
+    <h1>{{ deal.title }}</h1>
+    <div class="record__chips">
+      <span class="badge badge--{{ deal.stage }}">{{ deal.get_stage_display }}</span>
+      {% if deal.company %}<a href="{{ deal.company.get_absolute_url }}" class="chip chip--link">{% include "core/_icon.html" with icon="building" %} {{ deal.company.name }}</a>{% endif %}
+      {% if deal.contact %}<a href="{{ deal.contact.get_absolute_url }}" class="chip chip--link">{% include "core/_icon.html" with icon="users" %} {{ deal.contact.full_name }}</a>{% endif %}
+      {% for t in deal.tags.all %}<span class="tag-chip" style="--tc: {{ t.color }}">{{ t.name }}</span>{% endfor %}
+    </div>
+  </div>
+  <div class="record__value">R$ {{ deal.value|floatformat:0|intcomma }}</div>
+  {% if can_edit %}
+  <button class="btn btn--ghost" hx-get="{% url 'crm:deal_edit' deal.pk %}"
+          hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+    {% include "core/_icon.html" with icon="edit" %} Editar
+  </button>
+  {% endif %}
+</div>
+
+<div class="record__grid">
+  <div class="record__main">
+    <div class="card panel">
+      <div class="panel__head"><b>Detalhes</b></div>
+      <div class="detail-rows">
+        <div class="detail-row"><span>Valor</span><b>R$ {{ deal.value|floatformat:0|intcomma }}</b></div>
+        <div class="detail-row"><span>Estágio</span><span class="badge badge--{{ deal.stage }}">{{ deal.get_stage_display }}</span></div>
+        <div class="detail-row"><span>Empresa</span><b>{% if deal.company %}<a href="{{ deal.company.get_absolute_url }}" class="link">{{ deal.company.name }}</a>{% else %}—{% endif %}</b></div>
+        <div class="detail-row"><span>Contato</span><b>{% if deal.contact %}<a href="{{ deal.contact.get_absolute_url }}" class="link">{{ deal.contact.full_name }}</a>{% else %}—{% endif %}</b></div>
+        <div class="detail-row"><span>Responsável</span><b>{% if deal.owner %}{{ deal.owner.get_username }}{% else %}—{% endif %}</b></div>
+        <div class="detail-row"><span>Previsão</span><b>{{ deal.expected_close|date:"d/m/Y"|default:"—" }}</b></div>
+      </div>
+    </div>
+    {% include "crm/partials/custom_fields_display.html" %}
+  </div>
+
+  <div class="record__side">
+    <div class="card panel">
+      <div class="panel__head"><b>Atividades</b></div>
+      <div class="panel__pad">
+        {% include "crm/partials/timeline.html" %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

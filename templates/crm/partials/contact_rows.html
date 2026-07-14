@@ -1,0 +1,33 @@
+{% for c in contacts %}
+<tr>
+  <td>
+    <div class="cell-primary">
+      <span class="avatar">{{ c.initials }}</span>
+      <div>
+        <a href="{% url 'crm:contact_detail' c.pk %}" class="row-link">{{ c.full_name }}</a>
+        {% if c.email %}<div class="cell-sub">{{ c.email }}</div>{% endif %}
+      </div>
+    </div>
+  </td>
+  <td>{{ c.company.name|default:"—" }}</td>
+  <td>{{ c.job_title|default:"—" }}</td>
+  <td><span class="badge badge--{{ c.stage }}">{{ c.get_stage_display }}</span></td>
+  <td class="cell-actions">
+    {% if can_edit %}
+    <button class="btn btn--ghost btn--sm row-actions"
+            hx-get="{% url 'crm:contact_edit' c.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+            @click="modal = true">
+      {% include "core/_icon.html" with icon="edit" %} Editar
+    </button>
+    {% endif %}
+  </td>
+</tr>
+{% empty %}
+<tr>
+  <td colspan="5" class="empty">
+    {% include "core/_icon.html" with icon="users" %}
+    <h3>Nenhum contato encontrado</h3>
+    <div>Clique em “Novo contato” para cadastrar o primeiro.</div>
+  </td>
+</tr>
+{% endfor %}

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Automações</h1>
+    <p>Quando algo acontece no seu CRM, o Núcleo age por você.</p>
+  </div>
+</div>
+
+<div class="auto-grid">
+  <div class="auto-main">
+    <div class="card panel">
+      <div class="panel__head"><b>Nova automação</b></div>
+      <form class="auto-form" method="post" action="{% url 'automation_add' %}"
+            x-data="{ trigger: 'deal_stage_changed', action: 'create_task' }">
+        {% csrf_token %}
+        <div class="field">
+          <label>Nome</label>
+          <input type="text" name="name" placeholder="Ex.: Onboarding ao ganhar negócio" autocomplete="off">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Quando (gatilho)</label>
+            <select name="trigger" x-model="trigger">
+              {% for value, label in triggers %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="field" x-show="trigger === 'deal_stage_changed'" x-cloak>
+            <label>Etapa</label>
+            <select name="condition_stage">
+              <option value="">Qualquer etapa</option>
+              {% for value, label in stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Ação</label>
+            <select name="action" x-model="action">
+              {% for value, label in actions %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="field" x-show="action === 'create_task'" x-cloak>
+            <label>Prazo (dias)</label>
+            <input type="number" name="action_due_days" value="2" min="0">
+          </div>
+        </div>
+        <div class="field">
+          <label>Texto da ação</label>
+          <input type="text" name="action_text" placeholder="Ex.: Enviar contrato e iniciar onboarding" autocomplete="off">
+        </div>
+        <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="bolt" %} Criar automação</button>
+      </form>
+    </div>
+
+    {% for a in automations %}
+    <div class="card auto-item">
+      <span class="auto-item__icon {% if not a.active %}is-off{% endif %}">{% include "core/_icon.html" with icon="bolt" %}</span>
+      <div class="auto-item__info">
+        <div class="auto-item__name">
+          {{ a.name }}
+          {% if not a.active %}<span class="role-badge auto-paused">pausada</span>{% endif %}
+        </div>
+        <div class="auto-item__desc">{{ a.describe }}</div>
+      </div>
+      <span class="auto-item__runs" title="Vezes que já rodou">{{ a.run_count }}×</span>
+      <form class="inline-form" method="post" action="{% url 'automation_toggle' a.pk %}">
+        {% csrf_token %}
+        <button class="btn btn--ghost btn--sm">{% if a.active %}Pausar{% else %}Ativar{% endif %}</button>
+      </form>
+      <form class="inline-form" method="post" action="{% url 'automation_delete' a.pk %}"
+            onsubmit="return confirm('Remover a automação “{{ a.name|escapejs }}”?');">
+        {% csrf_token %}
+        <button class="btn btn--danger btn--sm" title="Remover">{% include "core/_icon.html" with icon="trash" %}</button>
+      </form>
+    </div>
+    {% empty %}
+    <div class="card"><div class="cf-empty">
+      {% include "core/_icon.html" with icon="bolt" %}
+      <div>Nenhuma automação ainda. Crie a primeira no formulário acima.</div>
+    </div></div>
+    {% endfor %}
+  </div>
+
+  <div class="auto-side">
+    <div class="card panel">
+      <div class="panel__head"><b>Eventos recentes</b><span class="panel__count">outbox</span></div>
+      <div class="ev-list">
+        {% for e in recent_events %}
+        <div class="ev-item">
+          <span class="ev-dot {% if e.processed %}is-done{% endif %}" title="{% if e.processed %}processado{% else %}pendente{% endif %}"></span>
+          <div class="ev-info">
+            <div class="ev-type">{{ e.get_event_type_display }}</div>
+            <div class="ev-repr">{{ e.object_repr }}</div>
+          </div>
+          <span class="ev-time">{{ e.created_at|date:"d/m H:i" }}</span>
+        </div>
+        {% empty %}
+        <div class="mini-empty">Nenhum evento ainda. Crie ou mova registros para gerar eventos.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Empresas</h1>
+    <p>Contas e organizações do seu workspace.</p>
+  </div>
+  {% if can_edit %}
+  <button class="btn btn--primary"
+          hx-get="{% url 'crm:company_create' %}" hx-target="#modal-content" hx-swap="innerHTML"
+          @click="modal = true">
+    {% include "core/_icon.html" with icon="plus" %} Nova empresa
+  </button>
+  {% endif %}
+</div>
+
+<div class="toolbar">
+  <label class="search">
+    {% include "core/_icon.html" with icon="search" %}
+    <input type="search" name="q" placeholder="Buscar por nome, domínio ou segmento…"
+           hx-get="{% url 'crm:company_rows' %}" hx-target="#company-rows" hx-swap="innerHTML"
+           hx-trigger="input changed delay:300ms, search">
+  </label>
+</div>
+
+<div class="card table-wrap">
+  <table class="tbl">
+    <thead>
+      <tr><th>Empresa</th><th>Segmento</th><th>Funcionários</th><th>Cidade</th><th>Ações</th></tr>
+    </thead>
+    <tbody id="company-rows"
+           hx-get="{% url 'crm:company_rows' %}" hx-target="#company-rows" hx-swap="innerHTML"
+           hx-trigger="nucleo:dataChanged from:body">
+      {% include "crm/partials/company_rows.html" %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

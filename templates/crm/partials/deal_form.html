@@ -1,0 +1,65 @@
+<div class="modal">
+  <div class="modal__head">
+    <h2>{{ title }}</h2>
+    <button type="button" class="icon-btn" @click="modal = false">{% include "core/_icon.html" with icon="close" %}</button>
+  </div>
+  <form hx-post="{{ action }}" hx-target="#modal-content" hx-swap="innerHTML">
+    {% csrf_token %}
+    <div class="modal__body">
+      <div class="field">
+        <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
+        {{ form.title }}
+        {% if form.title.errors %}<div class="errors">{{ form.title.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="{{ form.value.id_for_label }}">{{ form.value.label }}</label>
+          {{ form.value }}
+          {% if form.value.errors %}<div class="errors">{{ form.value.errors|striptags }}</div>{% endif %}
+        </div>
+        <div class="field">
+          <label for="{{ form.stage.id_for_label }}">{{ form.stage.label }}</label>
+          {{ form.stage }}
+          {% if form.stage.errors %}<div class="errors">{{ form.stage.errors|striptags }}</div>{% endif %}
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="{{ form.company.id_for_label }}">{{ form.company.label }}</label>
+          {{ form.company }}
+        </div>
+        <div class="field">
+          <label for="{{ form.contact.id_for_label }}">{{ form.contact.label }}</label>
+          {{ form.contact }}
+        </div>
+      </div>
+      <div class="field">
+        <label for="{{ form.expected_close.id_for_label }}">{{ form.expected_close.label }}</label>
+        {{ form.expected_close }}
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label>
+          {{ form.owner }}
+        </div>
+        <div class="field">
+          <label for="id_tags_text">Etiquetas</label>
+          <input type="text" name="tags_text" id="id_tags_text" value="{{ tags_text }}" placeholder="Separadas por vírgula">
+        </div>
+      </div>
+      {% include "crm/partials/custom_fields_form.html" %}
+    </div>
+    <div class="modal__foot">
+      {% if delete_pk %}
+      <button type="button" class="btn btn--danger"
+              hx-post="{% url 'crm:deal_delete' delete_pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+              hx-confirm="Excluir este negócio? Esta ação não pode ser desfeita.">
+        {% include "core/_icon.html" with icon="trash" %} Excluir
+      </button>
+      {% endif %}
+      <div class="modal__spacer"></div>
+      <button type="button" class="btn btn--ghost" @click="modal = false">Cancelar</button>
+      <button type="submit" class="btn btn--primary">Salvar</button>
+    </div>
+  </form>
+</div>

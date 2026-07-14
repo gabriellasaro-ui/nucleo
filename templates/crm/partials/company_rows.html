@@ -1,0 +1,33 @@
+{% for c in companies %}
+<tr>
+  <td>
+    <div class="cell-primary">
+      <span class="avatar">{{ c.initials }}</span>
+      <div>
+        <a href="{% url 'crm:company_detail' c.pk %}" class="row-link">{{ c.name }}</a>
+        {% if c.domain %}<div class="cell-sub">{{ c.domain }}</div>{% endif %}
+      </div>
+    </div>
+  </td>
+  <td>{{ c.industry|default:"—" }}</td>
+  <td>{{ c.employees|default:"—" }}</td>
+  <td>{{ c.city|default:"—" }}</td>
+  <td class="cell-actions">
+    {% if can_edit %}
+    <button class="btn btn--ghost btn--sm row-actions"
+            hx-get="{% url 'crm:company_edit' c.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+            @click="modal = true">
+      {% include "core/_icon.html" with icon="edit" %} Editar
+    </button>
+    {% endif %}
+  </td>
+</tr>
+{% empty %}
+<tr>
+  <td colspan="5" class="empty">
+    {% include "core/_icon.html" with icon="building" %}
+    <h3>Nenhuma empresa encontrada</h3>
+    <div>Clique em “Nova empresa” para cadastrar a primeira.</div>
+  </td>
+</tr>
+{% endfor %}
