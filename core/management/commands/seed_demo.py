@@ -1,4 +1,5 @@
-"""Seed a demo workspace: an admin user, a workspace, and sample CRM data.
+"""Seed a demo workspace: an admin user, a workspace (its own schema), and
+sample CRM data created *inside* that schema.
 
     python manage.py seed_demo
 
@@ -8,9 +9,10 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
+from django_tenants.utils import tenant_context
 
 from core.events import emit
-from core.models import Automation, CustomField, Membership, Workspace
+from core.models import Automation, CustomField, Domain, Membership, Workspace
 from modules.crm.models import Activity, Company, Contact, Deal, Tag
 
 COMPANIES = [
@@ -44,7 +46,7 @@ DEALS = [
 
 
 class Command(BaseCommand):
-    help = "Seed a demo workspace (admin user + workspace + sample CRM data)."
+    help = "Seed a demo workspace (admin + workspace schema + sample CRM data)."
 
     def handle(self, *args, **options):
         User = get_user_model()
@@ -59,11 +61,29 @@ class Command(BaseCommand):
         else:
             self.stdout.write("Usuário admin já existe.")
 
+        # Public schema: the tenant, its domain, and the membership.
         workspace, _ = Workspace.objects.get_or_create(name="Núcleo Demo")
+        Domain.objects.get_or_create(
+            domain=f"{workspace.schema_name}.localhost", tenant=workspace,
+            defaults={"is_primary": True},
+        )
         Membership.objects.get_or_create(
             user=admin, workspace=workspace, defaults={"role": Membership.ROLE_OWNER}
         )
 
+        # Everything else lives INSIDE the workspace's schema.
+        with tenant_context(workspace):
+            counts = self._seed_tenant_data(workspace, admin)
+
+        self.stdout.write(self.style.SUCCESS(
+            f"Seed pronto no schema '{workspace.schema_name}': "
+            f"{counts['companies']} empresas, {counts['contacts']} contatos, "
+            f"{counts['deals']} negócios, {counts['activities']} atividades, "
+            f"{counts['custom_fields']} campos personalizados, {counts['automations']} automações, "
+            f"{counts['tags']} etiquetas."
+        ))
+
+    def _seed_tenant_data(self, workspace, admin):
         companies = {}
         for data in COMPANIES:
             obj, _ = Company.objects.get_or_create(
@@ -77,8 +97,7 @@ class Command(BaseCommand):
             d = dict(data)
             company = companies.get(d.pop("company"))
             obj, _ = Contact.objects.get_or_create(
-                workspace=workspace, email=d["email"],
-                defaults={**d, "company": company},
+                workspace=workspace, email=d["email"], defaults={**d, "company": company},
             )
             contacts[d["email"]] = obj
 
@@ -86,9 +105,7 @@ class Command(BaseCommand):
             Deal.objects.get_or_create(
                 workspace=workspace, title=data["title"],
                 defaults={
-                    "value": data["value"],
-                    "stage": data["stage"],
-                    "order": order,
+                    "value": data["value"], "stage": data["stage"], "order": order,
                     "expected_close": date.today() + timedelta(days=data["days"]),
                     "company": companies.get(data["company"]),
                     "contact": contacts.get(data["contact"]) if data["contact"] else None,
@@ -114,7 +131,6 @@ class Command(BaseCommand):
                                     body="Agendar call de fechamento",
                                     due_date=date.today() + timedelta(days=3))
 
-        # Metadata engine: sample custom fields + values
         def ensure_cf(object_type, key, label, field_type, options=None, order=0):
             obj, _ = CustomField.objects.get_or_create(
                 workspace=workspace, object_type=object_type, key=key,
@@ -137,12 +153,12 @@ class Command(BaseCommand):
         marina = contacts.get("marina@acme.com.br")
         if marina:
             marina.custom = {"linkedin": "linkedin.com/in/marina-alves"}
-            marina.save(update_fields=["custom"])
+            marina.score = 85
+            marina.save(update_fields=["custom", "score"])
         if impl:
             impl.custom = {"probabilidade": 60}
             impl.save(update_fields=["custom"])
 
-        # Automations (Phase 4)
         Automation.objects.get_or_create(
             workspace=workspace, name="Onboarding ao ganhar negócio",
             defaults={
@@ -159,13 +175,11 @@ class Command(BaseCommand):
             },
         )
 
-        # Fire the "won" automation once for the already-won deal, so the
-        # timeline shows a real automation-created task from the start.
         pixel = Deal.objects.filter(workspace=workspace, title="Pacote de mídia trimestral").first()
         if pixel and not pixel.activities.filter(source="automation").exists():
             emit(workspace, "deal_stage_changed", pixel, {"stage": "ganho", "old_stage": "negociacao"})
 
-        # F0 primitives: responsável + etiquetas + score de exemplo
+        # F0 primitives: responsável + etiquetas
         Company.all_objects.filter(workspace=workspace, owner__isnull=True).update(owner=admin)
         Contact.all_objects.filter(workspace=workspace, owner__isnull=True).update(owner=admin)
         Deal.all_objects.filter(workspace=workspace, owner__isnull=True).update(owner=admin)
@@ -175,13 +189,13 @@ class Command(BaseCommand):
             acme.tags.add(vip)
         if lumina:
             lumina.tags.add(inbound)
-        if marina:
-            marina.score = 85
-            marina.save(update_fields=["score"])
 
-        self.stdout.write(self.style.SUCCESS(
-            f"Seed pronto no workspace “{workspace.name}”: {workspace.companies.count()} empresas, "
-            f"{workspace.contacts.count()} contatos, {workspace.deals.count()} negócios, "
-            f"{workspace.activities.count()} atividades, {workspace.custom_fields.count()} campos personalizados, "
-            f"{workspace.automations.count()} automações, {workspace.tags.count()} etiquetas."
-        ))
+        return {
+            "companies": Company.objects.count(),
+            "contacts": Contact.objects.count(),
+            "deals": Deal.objects.count(),
+            "activities": Activity.objects.count(),
+            "custom_fields": CustomField.objects.filter(workspace=workspace).count(),
+            "automations": Automation.objects.filter(workspace=workspace).count(),
+            "tags": Tag.objects.count(),
+        }

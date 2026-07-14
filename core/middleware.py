@@ -8,6 +8,7 @@ Sets on the request:
 If the user is authenticated but has no workspace yet, they are redirected to
 the onboarding page to create one.
 """
+from django.db import connection
 from django.shortcuts import redirect
 from django.urls import reverse
 
@@ -42,10 +43,14 @@ class WorkspaceMiddleware:
                 return redirect("workspace_new")
 
         set_current_workspace(request.workspace)
+        if request.workspace is not None:
+            # Route every query in this request to the workspace's own schema.
+            connection.set_tenant(request.workspace)
         try:
             return self.get_response(request)
         finally:
             clear_current_workspace()
+            connection.set_schema_to_public()
 
     @staticmethod
     def _needs_workspace(request):
