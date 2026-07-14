@@ -553,6 +553,18 @@ kbd {
 .mini-item .badge + .mini-item__value { margin-left: 10px; }
 .mini-empty { padding: 18px 16px; color: var(--ink-3); font-size: 13px; }
 
+/* ---- Attachments --------------------------------------------------------- */
+.attach-upload { display: flex; gap: 8px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2); flex-wrap: wrap; }
+.attach-upload input[type="file"] { font-size: 13px; color: var(--ink-2); flex: 1; min-width: 150px; }
+.attach-list { display: flex; flex-direction: column; }
+.attach-item { display: flex; align-items: center; gap: 11px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.attach-item:last-child { border-bottom: 0; }
+.attach-ext { width: 34px; height: 34px; border-radius: 8px; background: var(--blue-50); color: var(--blue-700); display: grid; place-items: center; font-size: 10px; font-weight: 700; text-transform: uppercase; flex: none; overflow: hidden; }
+.attach-info { flex: 1; min-width: 0; }
+.attach-name { font-size: 13.5px; font-weight: 600; color: var(--ink); word-break: break-all; }
+.attach-name:hover { color: var(--blue-600); text-decoration: underline; }
+.attach-meta { font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+
 .detail-rows { padding: 6px 0; }
 .detail-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 16px; font-size: 13.5px; }
 .detail-row span:first-child { color: var(--ink-3); }

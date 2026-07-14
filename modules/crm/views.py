@@ -8,8 +8,10 @@ from core.customfields import get_fields, read_from_post, with_values
 from core.events import emit
 from core.rbac import can_edit
 
+from django.shortcuts import redirect
+
 from .forms import ActivityForm, CompanyForm, ContactForm, DealForm
-from .models import Activity, Company, Contact, Deal, Tag
+from .models import Activity, Attachment, Company, Contact, Deal, Tag
 
 # HTMX helper: 204 + client events so the modal closes and lists refresh.
 _REFRESH_HEADER = '{"nucleo:closeModal": true, "nucleo:dataChanged": true}'
@@ -54,6 +56,45 @@ def _tags_text(obj):
     return ", ".join(t.name for t in obj.tags.all()) if (obj and obj.pk) else ""
 
 
+def _scope_parent_field(form, request, instance):
+    """The 'Empresa matriz' select shows other companies in the workspace."""
+    if "parent" in form.fields:
+        qs = Company.objects.all()
+        if instance is not None:
+            qs = qs.exclude(pk=instance.pk)
+        form.fields["parent"].queryset = qs
+
+
+@login_required
+def attachment_upload(request):
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    obj, owner_key = _resolve_owner(request, request.POST.get("on"), request.POST.get("id"))
+    upload = request.FILES.get("file")
+    if obj is None:
+        return HttpResponse(status=400)
+    if upload:
+        attachment = Attachment(workspace=request.workspace, file=upload, uploaded_by=request.user)
+        setattr(attachment, owner_key, obj)
+        attachment.save()
+    return redirect(obj.get_absolute_url())
+
+
+@login_required
+def attachment_delete(request, pk):
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    attachment = get_object_or_404(Attachment, pk=pk, workspace=request.workspace)
+    target = attachment.company or attachment.contact or attachment.deal
+    attachment.file.delete(save=False)
+    attachment.delete()
+    return redirect(target.get_absolute_url() if target else "dashboard")
+
+
 # --------------------------------------------------------------------------- #
 # Companies
 # --------------------------------------------------------------------------- #
@@ -88,6 +129,7 @@ def company_form(request, pk=None):
             return _forbidden()
         form = CompanyForm(request.POST, instance=instance)
         _scope_owner_field(form, request)
+        _scope_parent_field(form, request, instance)
         if form.is_valid():
             company = form.save(commit=False)
             company.workspace = request.workspace
@@ -100,6 +142,7 @@ def company_form(request, pk=None):
     else:
         form = CompanyForm(instance=instance)
         _scope_owner_field(form, request)
+        _scope_parent_field(form, request, instance)
     context = {
         "form": form,
         "title": "Editar empresa" if instance else "Nova empresa",
@@ -344,6 +387,8 @@ def company_detail(request, pk):
         "company": company,
         "contacts": company.contacts.all(),
         "deals": company.deals.all(),
+        "subsidiaries": company.subsidiaries.all(),
+        "attachments": company.attachments.all(),
         "custom_fields": with_values(get_fields(request.workspace, "company"), company),
         **_timeline_context("company", company),
     }
@@ -358,6 +403,7 @@ def contact_detail(request, pk):
         "breadcrumb": ["CRM", "Contatos", contact.full_name],
         "contact": contact,
         "deals": contact.deals.all(),
+        "attachments": contact.attachments.all(),
         "custom_fields": with_values(get_fields(request.workspace, "contact"), contact),
         **_timeline_context("contact", contact),
     }
@@ -371,6 +417,7 @@ def deal_detail(request, pk):
         "page_title": deal.title,
         "breadcrumb": ["CRM", "Negócios", deal.title],
         "deal": deal,
+        "attachments": deal.attachments.all(),
         "custom_fields": with_values(get_fields(request.workspace, "deal"), deal),
         **_timeline_context("deal", deal),
     }

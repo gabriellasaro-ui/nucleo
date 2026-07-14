@@ -1,0 +1,32 @@
+<div class="card panel">
+  <div class="panel__head"><b>Arquivos</b><span class="panel__count">{{ attachments|length }}</span></div>
+  {% if can_edit %}
+  <form class="attach-upload" method="post" action="{% url 'crm:attachment_upload' %}" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="hidden" name="on" value="{{ owner }}">
+    <input type="hidden" name="id" value="{{ owner_id }}">
+    <input type="file" name="file" required>
+    <button class="btn btn--primary btn--sm" type="submit">{% include "core/_icon.html" with icon="plus" %} Enviar</button>
+  </form>
+  {% endif %}
+  <div class="attach-list">
+    {% for a in attachments %}
+    <div class="attach-item">
+      <span class="attach-ext">{{ a.extension|default:"file" }}</span>
+      <div class="attach-info">
+        <a href="{{ a.file.url }}" target="_blank" rel="noopener" class="attach-name">{{ a.name }}</a>
+        <div class="attach-meta">{{ a.size_kb }} KB · {{ a.created_at|date:"d/m/Y" }}{% if a.uploaded_by %} · {{ a.uploaded_by.get_username }}{% endif %}</div>
+      </div>
+      {% if can_edit %}
+      <form method="post" action="{% url 'crm:attachment_delete' a.pk %}" class="inline-form"
+            onsubmit="return confirm('Excluir “{{ a.name|escapejs }}”?');">
+        {% csrf_token %}
+        <button class="icon-btn" title="Excluir">{% include "core/_icon.html" with icon="trash" %}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% empty %}
+    <div class="mini-empty">Nenhum arquivo ainda.</div>
+    {% endfor %}
+  </div>
+</div>

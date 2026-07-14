@@ -6,7 +6,7 @@ from .models import Activity, Company, Contact, Deal
 class CompanyForm(forms.ModelForm):
     class Meta:
         model = Company
-        fields = ["name", "domain", "industry", "employees", "city", "owner", "score"]
+        fields = ["name", "domain", "industry", "employees", "city", "owner", "score", "parent"]
 
 
 class ContactForm(forms.ModelForm):

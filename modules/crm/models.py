@@ -48,6 +48,10 @@ class Company(TimestampedModel):
     )
     score = models.PositiveSmallIntegerField("Score", default=0, validators=[MaxValueValidator(100)])
     tags = models.ManyToManyField("Tag", blank=True, related_name="companies", verbose_name="Etiquetas")
+    parent = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="subsidiaries", verbose_name="Empresa matriz",
+    )
 
     objects = TenantManager()
     all_objects = models.Manager()
@@ -232,3 +236,51 @@ class Activity(TimestampedModel):
     def is_overdue(self):
         from django.utils import timezone
         return bool(self.is_task and not self.done and self.due_date and self.due_date < timezone.localdate())
+
+
+def attachment_path(instance, filename):
+    """Per-tenant media: keep each workspace's files under its own folder."""
+    return f"ws_{instance.workspace_id or 'x'}/attachments/{filename}"
+
+
+class Attachment(TimestampedModel):
+    """A file attached to a CRM record (company, contact or deal)."""
+    workspace = models.ForeignKey("core.Workspace", on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField("Arquivo", upload_to=attachment_path)
+    name = models.CharField(max_length=255, blank=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="crm_uploads",
+    )
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, null=True, blank=True, related_name="attachments")
+    contact = models.ForeignKey(Contact, on_delete=models.CASCADE, null=True, blank=True, related_name="attachments")
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, null=True, blank=True, related_name="attachments")
+
+    objects = TenantManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        ordering = ["-created_at"]
+        verbose_name = "Arquivo"
+        verbose_name_plural = "Arquivos"
+
+    def save(self, *args, **kwargs):
+        if not self.name and self.file:
+            self.name = self.file.name.rsplit("/", 1)[-1]
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name or self.file.name
+
+    @property
+    def extension(self):
+        base = self.name or self.file.name
+        return base.rsplit(".", 1)[-1].lower() if "." in base else ""
+
+    @property
+    def size_kb(self):
+        try:
+            return round(self.file.size / 1024)
+        except Exception:
+            return 0

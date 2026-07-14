@@ -32,4 +32,7 @@ urlpatterns = [
     path("activities/new/", views.activity_create, name="activity_create"),
     path("activities/<int:pk>/toggle/", views.activity_toggle, name="activity_toggle"),
     path("activities/<int:pk>/delete/", views.activity_delete, name="activity_delete"),
+    # Attachments
+    path("attachments/new/", views.attachment_upload, name="attachment_upload"),
+    path("attachments/<int:pk>/delete/", views.attachment_delete, name="attachment_delete"),
 ]

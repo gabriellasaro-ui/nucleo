@@ -15,6 +15,7 @@
       {% if company.employees %}<span class="chip">{{ company.employees }} funcionários</span>{% endif %}
       {% if company.owner %}<span class="chip">Resp.: {{ company.owner.get_username }}</span>{% endif %}
       {% if company.score %}<span class="chip">Score {{ company.score }}</span>{% endif %}
+      {% if company.parent %}<a href="{{ company.parent.get_absolute_url }}" class="chip chip--link">{% include "core/_icon.html" with icon="building" %} Matriz: {{ company.parent.name }}</a>{% endif %}
       {% for t in company.tags.all %}<span class="tag-chip" style="--tc: {{ t.color }}">{{ t.name }}</span>{% endfor %}
     </div>
   </div>
@@ -64,7 +65,22 @@
         {% empty %}<div class="mini-empty">Nenhum contato ainda.</div>{% endfor %}
       </div>
     </div>
+    {% if subsidiaries %}
+    <div class="card panel">
+      <div class="panel__head"><b>Filiais</b><span class="panel__count">{{ subsidiaries|length }}</span></div>
+      <div class="mini-list">
+        {% for f in subsidiaries %}
+        <a href="{{ f.get_absolute_url }}" class="mini-item">
+          <span class="avatar">{{ f.initials }}</span>
+          <span class="mini-item__title">{{ f.name }}</span>
+          <span class="mini-item__sub">{{ f.city|default:f.industry }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
     {% include "crm/partials/custom_fields_display.html" %}
+    {% include "crm/partials/attachments.html" %}
   </div>
 
   <div class="record__side">
