@@ -172,6 +172,7 @@ EVENT_CHOICES = [
     ("deal_stage_changed", "Negócio mudou de etapa"),
     ("company_created", "Empresa criada"),
     ("contact_created", "Contato criado"),
+    ("contact_stage_changed", "Contato mudou de estágio"),
 ]
 
 
@@ -196,19 +197,25 @@ class Event(models.Model):
 
 
 class Automation(models.Model):
-    """When <trigger> happens (optionally matching a condition), do <action>."""
+    """When a trigger happens, run one or more CRM actions in order."""
     ACTION_CHOICES = [
         ("create_task", "Criar tarefa"),
         ("create_note", "Adicionar nota"),
+        ("create_deal", "Criar negócio"),
+        ("move_deal", "Mover negócio"),
+        ("set_contact_stage", "Atualizar estágio do contato"),
     ]
 
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="automations")
     name = models.CharField("Nome", max_length=120)
     trigger = models.CharField("Gatilho", max_length=40, choices=EVENT_CHOICES)
-    condition_stage = models.CharField("Etapa (condição)", max_length=20, blank=True)
+    condition_stage = models.CharField("Etapa/coluna (condição)", max_length=20, blank=True)
     action = models.CharField("Ação", max_length=20, choices=ACTION_CHOICES, default="create_task")
-    action_text = models.CharField("Texto", max_length=300)
+    action_text = models.CharField("Texto", max_length=300, blank=True)
     action_due_days = models.PositiveIntegerField("Prazo (dias)", default=2)
+    conditions = models.JSONField(default=dict, blank=True)
+    actions = models.JSONField(default=list, blank=True)
+    canvas = models.JSONField(default=dict, blank=True)
     active = models.BooleanField("Ativa", default=True)
     run_count = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -223,13 +230,45 @@ class Automation(models.Model):
 
     def describe(self):
         trigger = dict(EVENT_CHOICES).get(self.trigger, self.trigger)
-        if self.trigger == "deal_stage_changed" and self.condition_stage:
-            stage = dict(_deal_stage_labels()).get(self.condition_stage, self.condition_stage)
-            trigger = f"Negócio movido para “{stage}”"
-        action = dict(self.ACTION_CHOICES).get(self.action, self.action)
-        return f"Quando {trigger.lower()} → {action.lower()}: “{self.action_text}”"
+        if self.condition_stage:
+            stage = (
+                dict(_deal_stage_labels()).get(self.condition_stage)
+                or dict(_contact_stage_labels()).get(self.condition_stage)
+                or self.condition_stage
+            )
+            trigger = f"{trigger} em {stage}"
+        actions = [self._action_label(a) for a in self.normalized_actions()]
+        return f"Quando {trigger.lower()} → " + " → ".join(actions)
+
+    def normalized_actions(self):
+        if self.actions:
+            return self.actions
+        return [{
+            "type": self.action,
+            "text": self.action_text,
+            "due_days": self.action_due_days,
+        }]
+
+    def _action_label(self, action):
+        action_type = action.get("type")
+        labels = dict(self.ACTION_CHOICES)
+        label = labels.get(action_type, action_type)
+        stage = action.get("deal_stage") or action.get("contact_stage") or action.get("stage")
+        if stage:
+            stage_label = (
+                dict(_deal_stage_labels()).get(stage)
+                or dict(_contact_stage_labels()).get(stage)
+                or stage
+            )
+            return f"{label.lower()} em {stage_label}"
+        return label.lower()
 
 
 def _deal_stage_labels():
     from modules.crm.models import Deal
     return Deal.STAGE_CHOICES
+
+
+def _contact_stage_labels():
+    from modules.crm.models import Contact
+    return Contact.STAGE_CHOICES

@@ -1,35 +1,98 @@
-<div class="modal">
+<div class="modal modal--wide">
   <div class="modal__head">
-    <h2>{{ title }}</h2>
+    <div>
+      <h2>{{ title }}</h2>
+      <p class="modal__subtitle">Organize conta, responsaveis e dados comerciais sem sair da lista.</p>
+    </div>
     <button type="button" class="icon-btn" @click="modal = false">{% include "core/_icon.html" with icon="close" %}</button>
   </div>
   <form hx-post="{{ action }}" hx-target="#modal-content" hx-swap="innerHTML">
     {% csrf_token %}
-    <div class="modal__body">
-      {% for field in form %}
-      <div class="field">
-        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-        {{ field }}
-        {% if field.errors %}<div class="errors">{{ field.errors|striptags }}</div>{% endif %}
+    <div class="modal__body modal__body--split">
+      <div class="form-section">
+        <div class="form-section__head">
+          <b>Empresa</b>
+          <span>Identificacao da conta</span>
+        </div>
+        <div class="field">
+          <label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
+          {{ form.name }}
+          {% if form.name.errors %}<div class="errors">{{ form.name.errors|striptags }}</div>{% endif %}
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.domain.id_for_label }}">{{ form.domain.label }}</label>
+            {{ form.domain }}
+            {% if form.domain.errors %}<div class="errors">{{ form.domain.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.industry.id_for_label }}">{{ form.industry.label }}</label>
+            {{ form.industry }}
+            {% if form.industry.errors %}<div class="errors">{{ form.industry.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.city.id_for_label }}">{{ form.city.label }}</label>
+            {{ form.city }}
+            {% if form.city.errors %}<div class="errors">{{ form.city.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.employees.id_for_label }}">{{ form.employees.label }}</label>
+            {{ form.employees }}
+            {% if form.employees.errors %}<div class="errors">{{ form.employees.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
       </div>
-      {% endfor %}
-      <div class="field">
-        <label for="id_tags_text">Etiquetas</label>
-        <input type="text" name="tags_text" id="id_tags_text" value="{{ tags_text }}" placeholder="Separadas por vírgula (ex.: VIP, Inbound)">
+
+      <div class="form-section">
+        <div class="form-section__head">
+          <b>Gestao</b>
+          <span>Dono, hierarquia e prioridade</span>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label>
+            {{ form.owner }}
+            {% if form.owner.errors %}<div class="errors">{{ form.owner.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.score.id_for_label }}">{{ form.score.label }}</label>
+            {{ form.score }}
+            {% if form.score.errors %}<div class="errors">{{ form.score.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="field">
+          <label for="{{ form.parent.id_for_label }}">{{ form.parent.label }}</label>
+          {{ form.parent }}
+          {% if form.parent.errors %}<div class="errors">{{ form.parent.errors|striptags }}</div>{% endif %}
+        </div>
       </div>
-      {% include "crm/partials/custom_fields_form.html" %}
+
+      <div class="form-section">
+        <div class="form-section__head">
+          <b>Organizacao</b>
+          <span>Etiquetas, responsaveis e campos extras</span>
+        </div>
+        <div class="field">
+          <label for="id_tags_text">Etiquetas</label>
+          <input type="text" name="tags_text" id="id_tags_text" value="{{ tags_text }}" placeholder="Separadas por virgula (ex.: VIP, Inbound)">
+        </div>
+        {% include "crm/partials/assignees_field.html" %}
+        {% include "crm/partials/custom_fields_form.html" %}
+      </div>
     </div>
     <div class="modal__foot">
       {% if delete_pk %}
       <button type="button" class="btn btn--danger"
               hx-post="{% url 'crm:company_delete' delete_pk %}" hx-target="#modal-content" hx-swap="innerHTML"
-              hx-confirm="Excluir esta empresa? Esta ação não pode ser desfeita.">
+              hx-confirm="Excluir esta empresa? Esta acao nao pode ser desfeita.">
         {% include "core/_icon.html" with icon="trash" %} Excluir
       </button>
       {% endif %}
       <div class="modal__spacer"></div>
       <button type="button" class="btn btn--ghost" @click="modal = false">Cancelar</button>
-      <button type="submit" class="btn btn--primary">Salvar</button>
+      <button type="submit" class="btn btn--primary">Salvar empresa</button>
     </div>
   </form>
 </div>

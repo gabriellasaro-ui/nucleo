@@ -52,6 +52,10 @@ class Company(TimestampedModel):
         "self", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="subsidiaries", verbose_name="Empresa matriz",
     )
+    assignees = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="assigned_companies",
+        verbose_name="Responsáveis",
+    )
 
     objects = TenantManager()
     all_objects = models.Manager()
@@ -108,6 +112,10 @@ class Contact(TimestampedModel):
     )
     score = models.PositiveSmallIntegerField("Score", default=0, validators=[MaxValueValidator(100)])
     tags = models.ManyToManyField("Tag", blank=True, related_name="contacts", verbose_name="Etiquetas")
+    assignees = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="assigned_contacts",
+        verbose_name="Responsáveis",
+    )
 
     objects = TenantManager()
     all_objects = models.Manager()
@@ -166,6 +174,10 @@ class Deal(TimestampedModel):
         related_name="owned_deals", verbose_name="Responsável",
     )
     tags = models.ManyToManyField("Tag", blank=True, related_name="deals", verbose_name="Etiquetas")
+    assignees = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="assigned_deals",
+        verbose_name="Responsáveis",
+    )
 
     objects = TenantManager()
     all_objects = models.Manager()
@@ -213,6 +225,9 @@ class Activity(TimestampedModel):
     deal = models.ForeignKey(
         Deal, on_delete=models.CASCADE, null=True, blank=True,
         related_name="activities", verbose_name="Negócio",
+    )
+    mentions = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="mentioned_in_activities",
     )
 
     objects = TenantManager()

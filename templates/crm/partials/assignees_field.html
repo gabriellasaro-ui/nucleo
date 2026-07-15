@@ -1,0 +1,11 @@
+{% if members %}
+<div class="field">
+  <label for="id_assignees">Responsáveis</label>
+  <select name="assignees" id="id_assignees" multiple class="assignees-select" size="{{ members|length|add:1 }}">
+    {% for m in members %}
+    <option value="{{ m.pk }}" {% if m.pk in assignee_ids %}selected{% endif %}>{{ m.get_username }}</option>
+    {% endfor %}
+  </select>
+  <div class="cf-hint" style="font-size:12px;color:var(--ink-3);margin-top:4px;">Segure Ctrl para selecionar vários.</div>
+</div>
+{% endif %}

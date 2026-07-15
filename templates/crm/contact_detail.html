@@ -17,6 +17,7 @@
       {% if contact.owner %}<span class="chip">Resp.: {{ contact.owner.get_username }}</span>{% endif %}
       {% if contact.score %}<span class="chip">Score {{ contact.score }}</span>{% endif %}
       {% for t in contact.tags.all %}<span class="tag-chip" style="--tc: {{ t.color }}">{{ t.name }}</span>{% endfor %}
+      {% for u in contact.assignees.all %}<span class="assignee-ava" title="Responsável: {{ u.get_username }}">{{ u.username|slice:":2"|upper }}</span>{% endfor %}
     </div>
   </div>
   {% if can_edit %}

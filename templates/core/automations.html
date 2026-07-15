@@ -1,106 +1,249 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="page-head">
+<div class="page-head automation-page-head">
   <div>
-    <h1>Automações</h1>
-    <p>Quando algo acontece no seu CRM, o Núcleo age por você.</p>
+    <h1>Automacoes</h1>
+    <p>Canvas de fluxo para conectar entrada, filtros, condicoes e acoes.</p>
   </div>
 </div>
 
-<div class="auto-grid">
-  <div class="auto-main">
-    <div class="card panel">
-      <div class="panel__head"><b>Nova automação</b></div>
-      <form class="auto-form" method="post" action="{% url 'automation_add' %}"
-            x-data="{ trigger: 'deal_stage_changed', action: 'create_task' }">
-        {% csrf_token %}
-        <div class="field">
-          <label>Nome</label>
-          <input type="text" name="name" placeholder="Ex.: Onboarding ao ganhar negócio" autocomplete="off">
+<div class="automation-layout automation-layout--canvas">
+  <div class="automation-main">
+    <form id="automation-form" class="automation-editor card" method="post" action="{% url 'automation_add' %}"
+          data-automation-canvas>
+      {% csrf_token %}
+      <input type="hidden" name="automation_id" value="{{ selected_automation.pk|default:'' }}">
+      <input type="hidden" name="canvas" data-canvas-input>
+      <div class="automation-editor__bar">
+        <div class="field automation-title-field">
+          <label for="automation_name">Nome do fluxo</label>
+          <input id="automation_name" type="text" name="name" value="{{ selected_automation.name|default:'' }}" placeholder="Ex.: Lead novo entra no comercial" autocomplete="off">
         </div>
-        <div class="field-row">
-          <div class="field">
-            <label>Quando (gatilho)</label>
-            <select name="trigger" x-model="trigger">
+        <div class="automation-editor__actions">
+          <div class="automation-zoom" aria-label="Zoom do canvas">
+            <button type="button" class="zoom-btn" data-zoom-out title="Diminuir zoom">-</button>
+            <button type="button" class="zoom-value" data-zoom-reset title="Resetar zoom"><span data-zoom-label>100%</span></button>
+            <button type="button" class="zoom-btn" data-zoom-in title="Aumentar zoom">+</button>
+          </div>
+          <button type="button" class="btn btn--ghost" data-focus-library>
+            {% include "core/_icon.html" with icon="plus" %} Biblioteca
+          </button>
+          <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="bolt" %} Salvar fluxo</button>
+        </div>
+      </div>
+
+      <div class="node-canvas" data-node-canvas>
+        <div class="node-stage" data-canvas-stage>
+          <div class="node-world" data-canvas-world>
+            <svg class="node-links" data-node-links aria-hidden="true"></svg>
+            <button type="button" class="edge-delete" data-edge-delete hidden>
+              {% include "core/_icon.html" with icon="trash" %}
+              Excluir ligacao
+            </button>
+            <button type="button" class="flow-start" data-start-flow>
+              <span>{% include "core/_icon.html" with icon="bolt" %}</span>
+              Iniciar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <template id="automation-entry-template">
+        <section class="node-card node-card--entry" data-flow-node data-entry-node data-node-id="entry" data-node-kind="trigger">
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-card__icon">{% include "core/_icon.html" with icon="bolt" %}</span>
+            <div>
+              <div class="node-card__kicker">Entrada</div>
+              <b>Quando acontecer</b>
+            </div>
+            <button type="button" class="icon-btn node-remove" data-remove-entry title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <label>Gatilho</label>
+            <select name="trigger" data-trigger-select>
               {% for value, label in triggers %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
             </select>
           </div>
-          <div class="field" x-show="trigger === 'deal_stage_changed'" x-cloak>
-            <label>Etapa</label>
-            <select name="condition_stage">
-              <option value="">Qualquer etapa</option>
-              {% for value, label in stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-            </select>
+          <span class="node-port node-port--out" data-port="out"></span>
+        </section>
+      </template>
+
+      <template id="automation-filter-template">
+        <section class="node-card node-card--filter" data-flow-node data-filter-node data-node-id="filter-__INDEX__" data-node-kind="filter" data-filter-index="__INDEX__">
+          <span class="node-port node-port--in" data-port="in"></span>
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-card__icon">{% include "core/_icon.html" with icon="sliders" %}</span>
+            <div>
+              <div class="node-card__kicker">Filtro</div>
+              <b data-filter-title>Filtrar</b>
+            </div>
+            <button type="button" class="icon-btn node-remove" data-remove-filter title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
           </div>
-        </div>
-        <div class="field-row">
-          <div class="field">
-            <label>Ação</label>
-            <select name="action" x-model="action">
+          <div class="node-card__body">
+            <div data-condition-for="contact">
+              <label>Contato esta em</label>
+              <select name="filter__INDEX___contact_stage" data-condition-stage="contact">
+                <option value="">Qualquer estagio</option>
+                {% for value, label in contact_stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div data-condition-for="deal" hidden>
+              <label>Negocio esta na coluna</label>
+              <select name="filter__INDEX___deal_stage" data-condition-stage="deal" disabled>
+                <option value="">Qualquer coluna</option>
+                {% for value, label in deal_stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <span class="node-port node-port--out" data-port="out"></span>
+          <button type="button" class="node-add" data-toggle-palette>+</button>
+        </section>
+      </template>
+
+      <template id="automation-condition-template">
+        <section class="node-card node-card--condition" data-flow-node data-condition-node data-node-id="condition-__INDEX__" data-node-kind="condition" data-condition-index="__INDEX__">
+          <span class="node-port node-port--in" data-port="in"></span>
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-card__icon">{% include "core/_icon.html" with icon="switch" %}</span>
+            <div>
+              <div class="node-card__kicker">If / condicao</div>
+              <b data-filter-title>Se acontecer</b>
+            </div>
+            <button type="button" class="icon-btn node-remove" data-remove-condition title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <div data-condition-for="contact">
+              <label>Continuar se contato esta em</label>
+              <select name="condition__INDEX___contact_stage" data-condition-stage="contact">
+                <option value="">Qualquer estagio</option>
+                {% for value, label in contact_stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div data-condition-for="deal" hidden>
+              <label>Continuar se negocio esta na coluna</label>
+              <select name="condition__INDEX___deal_stage" data-condition-stage="deal" disabled>
+                <option value="">Qualquer coluna</option>
+                {% for value, label in deal_stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <span class="node-port node-port--out" data-port="out"></span>
+          <button type="button" class="node-add" data-toggle-palette>+</button>
+        </section>
+      </template>
+
+      <template id="automation-action-template">
+        <section class="node-card node-card--action" data-flow-node data-action-node data-node-id="action-__INDEX__" data-node-kind="action" data-action-index="__INDEX__">
+          <span class="node-port node-port--in" data-port="in"></span>
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-step"><span data-action-icon></span><small data-action-order>__INDEX__</small></span>
+            <div>
+              <div class="node-card__kicker">Acao</div>
+              <b data-action-title>Executar</b>
+            </div>
+            <button type="button" class="icon-btn node-remove" data-remove-action title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <label>Tipo</label>
+            <select name="action__INDEX___type" data-action-type>
+              <option value="">Selecione</option>
               {% for value, label in actions %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
             </select>
+            <div class="node-fields">
+              <select name="action__INDEX___pipeline" data-action-field data-show-for="create_deal,move_deal">
+                <option value="">Pipeline principal</option>
+              </select>
+              <select name="action__INDEX___deal_stage" data-action-field data-show-for="create_deal,move_deal">
+                {% for value, label in deal_stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+              </select>
+              <select name="action__INDEX___contact_stage" data-action-field data-show-for="set_contact_stage" hidden disabled>
+                {% for value, label in contact_stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+              </select>
+              <input type="text" name="action__INDEX___text" data-action-field data-show-for="create_task,create_note,create_deal"
+                     placeholder="Titulo, nota ou descricao">
+              <input type="number" name="action__INDEX___due_days" value="0" min="0" data-action-field data-show-for="create_task"
+                     title="Prazo em dias" hidden disabled>
+            </div>
           </div>
-          <div class="field" x-show="action === 'create_task'" x-cloak>
-            <label>Prazo (dias)</label>
-            <input type="number" name="action_due_days" value="2" min="0">
-          </div>
-        </div>
-        <div class="field">
-          <label>Texto da ação</label>
-          <input type="text" name="action_text" placeholder="Ex.: Enviar contrato e iniciar onboarding" autocomplete="off">
-        </div>
-        <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="bolt" %} Criar automação</button>
-      </form>
-    </div>
+          <span class="node-port node-port--out" data-port="out"></span>
+          <button type="button" class="node-add" data-toggle-palette>+</button>
+        </section>
+      </template>
+    </form>
 
-    {% for a in automations %}
-    <div class="card auto-item">
-      <span class="auto-item__icon {% if not a.active %}is-off{% endif %}">{% include "core/_icon.html" with icon="bolt" %}</span>
-      <div class="auto-item__info">
-        <div class="auto-item__name">
-          {{ a.name }}
-          {% if not a.active %}<span class="role-badge auto-paused">pausada</span>{% endif %}
+    <div class="automation-saved">
+      {% for a in automations %}
+      <div class="card auto-item">
+        <span class="auto-item__icon {% if not a.active %}is-off{% endif %}">{% include "core/_icon.html" with icon="bolt" %}</span>
+        <div class="auto-item__info">
+          <div class="auto-item__name">
+            {{ a.name }}
+            {% if not a.active %}<span class="role-badge auto-paused">pausada</span>{% endif %}
+          </div>
+          <div class="auto-item__desc">{{ a.describe }}</div>
         </div>
-        <div class="auto-item__desc">{{ a.describe }}</div>
+        <span class="auto-item__runs" title="Vezes que ja rodou">{{ a.run_count }}x</span>
+        <form class="inline-form" method="post" action="{% url 'automation_toggle' a.pk %}">
+          {% csrf_token %}
+          <button class="btn btn--ghost btn--sm">{% if a.active %}Pausar{% else %}Ativar{% endif %}</button>
+        </form>
+        <form class="inline-form" method="post" action="{% url 'automation_delete' a.pk %}"
+              data-confirm="Remover a automacao &quot;{{ a.name|escapejs }}&quot;?">
+          {% csrf_token %}
+          <button class="btn btn--danger btn--sm" title="Remover">{% include "core/_icon.html" with icon="trash" %}</button>
+        </form>
       </div>
-      <span class="auto-item__runs" title="Vezes que já rodou">{{ a.run_count }}×</span>
-      <form class="inline-form" method="post" action="{% url 'automation_toggle' a.pk %}">
-        {% csrf_token %}
-        <button class="btn btn--ghost btn--sm">{% if a.active %}Pausar{% else %}Ativar{% endif %}</button>
-      </form>
-      <form class="inline-form" method="post" action="{% url 'automation_delete' a.pk %}"
-            onsubmit="return confirm('Remover a automação “{{ a.name|escapejs }}”?');">
-        {% csrf_token %}
-        <button class="btn btn--danger btn--sm" title="Remover">{% include "core/_icon.html" with icon="trash" %}</button>
-      </form>
+      {% endfor %}
     </div>
-    {% empty %}
-    <div class="card"><div class="cf-empty">
-      {% include "core/_icon.html" with icon="bolt" %}
-      <div>Nenhuma automação ainda. Crie a primeira no formulário acima.</div>
-    </div></div>
-    {% endfor %}
   </div>
 
-  <div class="auto-side">
-    <div class="card panel">
-      <div class="panel__head"><b>Eventos recentes</b><span class="panel__count">outbox</span></div>
-      <div class="ev-list">
-        {% for e in recent_events %}
-        <div class="ev-item">
-          <span class="ev-dot {% if e.processed %}is-done{% endif %}" title="{% if e.processed %}processado{% else %}pendente{% endif %}"></span>
-          <div class="ev-info">
-            <div class="ev-type">{{ e.get_event_type_display }}</div>
-            <div class="ev-repr">{{ e.object_repr }}</div>
-          </div>
-          <span class="ev-time">{{ e.created_at|date:"d/m H:i" }}</span>
-        </div>
-        {% empty %}
-        <div class="mini-empty">Nenhum evento ainda. Crie ou mova registros para gerar eventos.</div>
+  <aside class="automation-side" aria-label="Biblioteca de nodes">
+    <div class="automation-side__head">
+      <b>Biblioteca</b>
+      <span>Arraste ou clique</span>
+    </div>
+    <div class="node-palette node-palette--side" data-node-palette data-side-palette>
+      <div class="action-group">
+        <div class="action-group__label">Entrada</div>
+        {% for value, label in triggers %}
+        <button type="button" class="action-pill action-pill--entry" data-add-trigger="{{ value }}">
+          <span>{% include "core/_icon.html" with icon="bolt" %}</span>{{ label }}
+        </button>
         {% endfor %}
       </div>
+      <div class="action-group">
+        <div class="action-group__label">Filtro</div>
+        <button type="button" class="action-pill action-pill--filter" data-add-filter="contact"><span>{% include "core/_icon.html" with icon="users" %}</span>Filtro de contato</button>
+        <button type="button" class="action-pill action-pill--filter" data-add-filter="deal"><span>{% include "core/_icon.html" with icon="sliders" %}</span>Filtro de negocio</button>
+      </div>
+      <div class="action-group">
+        <div class="action-group__label">If / condicao</div>
+        <button type="button" class="action-pill action-pill--condition" data-add-condition="contact"><span>{% include "core/_icon.html" with icon="switch" %}</span>If contato</button>
+        <button type="button" class="action-pill action-pill--condition" data-add-condition="deal"><span>{% include "core/_icon.html" with icon="switch" %}</span>If negocio</button>
+      </div>
+      <div class="action-group">
+        <div class="action-group__label">Acoes CRM</div>
+        <button type="button" class="action-pill action-pill--deal" data-add-action="create_deal" data-node-tone="deal"><span>{% include "core/_icon.html" with icon="pipeline" %}</span>Criar negocio</button>
+        <button type="button" class="action-pill action-pill--move" data-add-action="move_deal" data-node-tone="move"><span>{% include "core/_icon.html" with icon="switch" %}</span>Mover negocio</button>
+        <button type="button" class="action-pill action-pill--contact" data-add-action="set_contact_stage" data-node-tone="contact"><span>{% include "core/_icon.html" with icon="users" %}</span>Atualizar contato</button>
+      </div>
+      <div class="action-group">
+        <div class="action-group__label">Atendimento</div>
+        <button type="button" class="action-pill action-pill--task" data-add-action="create_task" data-node-tone="task"><span>{% include "core/_icon.html" with icon="task" %}</span>Criar tarefa</button>
+        <button type="button" class="action-pill action-pill--note" data-add-action="create_note" data-node-tone="note"><span>{% include "core/_icon.html" with icon="note" %}</span>Adicionar nota</button>
+      </div>
     </div>
-  </div>
+  </aside>
 </div>
+
+{{ initial_canvas|json_script:"automation-initial-canvas" }}
 {% endblock %}

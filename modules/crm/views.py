@@ -1,3 +1,7 @@
+import json
+import re
+
+from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q, Sum
@@ -13,14 +17,22 @@ from django.shortcuts import redirect
 from .forms import ActivityForm, CompanyForm, ContactForm, DealForm
 from .models import Activity, Attachment, Company, Contact, Deal, Tag
 
-# HTMX helper: 204 + client events so the modal closes and lists refresh.
-_REFRESH_HEADER = '{"nucleo:closeModal": true, "nucleo:dataChanged": true}'
+def _trigger_header(events):
+    return json.dumps(events)
 
 
-def _refresh_response():
+def _refresh_response(message="Alterações salvas", kind="success"):
     resp = HttpResponse(status=204)
-    resp["HX-Trigger"] = _REFRESH_HEADER
+    events = {"nucleo:closeModal": True, "nucleo:dataChanged": True}
+    if message:
+        events["nucleo:toast"] = {"text": message, "kind": kind}
+    resp["HX-Trigger"] = _trigger_header(events)
     return resp
+
+
+def _with_toast(response, message, kind="success"):
+    response["HX-Trigger"] = _trigger_header({"nucleo:toast": {"text": message, "kind": kind}})
+    return response
 
 
 def _forbidden():
@@ -65,6 +77,31 @@ def _scope_parent_field(form, request, instance):
         form.fields["parent"].queryset = qs
 
 
+_MENTION_RE = re.compile(r"@([\w.\-]+)")
+
+
+def _workspace_members(request):
+    User = get_user_model()
+    return User.objects.filter(memberships__workspace=request.workspace).distinct()
+
+
+def _apply_assignees(request, obj):
+    """Set the co-responsáveis (M2M) from the posted user ids."""
+    ids = request.POST.getlist("assignees")
+    obj.assignees.set(_workspace_members(request).filter(pk__in=ids))
+
+
+def _assignee_ids(obj):
+    return list(obj.assignees.values_list("pk", flat=True)) if (obj and obj.pk) else []
+
+
+def _apply_mentions(request, activity):
+    """Link @username tokens in the body to workspace members."""
+    usernames = set(_MENTION_RE.findall(activity.body or ""))
+    if usernames:
+        activity.mentions.set(_workspace_members(request).filter(username__in=usernames))
+
+
 @login_required
 def attachment_upload(request):
     if request.method != "POST":
@@ -79,6 +116,7 @@ def attachment_upload(request):
         attachment = Attachment(workspace=request.workspace, file=upload, uploaded_by=request.user)
         setattr(attachment, owner_key, obj)
         attachment.save()
+        messages.success(request, "Arquivo enviado.")
     return redirect(obj.get_absolute_url())
 
 
@@ -92,6 +130,7 @@ def attachment_delete(request, pk):
     target = attachment.company or attachment.contact or attachment.deal
     attachment.file.delete(save=False)
     attachment.delete()
+    messages.success(request, "Arquivo removido.")
     return redirect(target.get_absolute_url() if target else "dashboard")
 
 
@@ -127,6 +166,7 @@ def company_form(request, pk=None):
     if request.method == "POST":
         if not can_edit(request):
             return _forbidden()
+        is_new = instance is None
         form = CompanyForm(request.POST, instance=instance)
         _scope_owner_field(form, request)
         _scope_parent_field(form, request, instance)
@@ -136,9 +176,10 @@ def company_form(request, pk=None):
             _apply_custom(request, company, "company")
             company.save()
             _apply_tags(request, company)
-            if instance is None:
+            _apply_assignees(request, company)
+            if is_new:
                 emit(request.workspace, "company_created", company)
-            return _refresh_response()
+            return _refresh_response("Empresa criada." if is_new else "Empresa atualizada.")
     else:
         form = CompanyForm(instance=instance)
         _scope_owner_field(form, request)
@@ -150,6 +191,8 @@ def company_form(request, pk=None):
         "delete_pk": instance.pk if instance else None,
         "custom_fields": with_values(get_fields(request.workspace, "company"), instance),
         "tags_text": _tags_text(instance),
+        "members": _workspace_members(request),
+        "assignee_ids": _assignee_ids(instance),
     }
     return render(request, "crm/partials/company_form.html", context)
 
@@ -159,8 +202,9 @@ def company_delete(request, pk):
     if request.method == "POST":
         if not can_edit(request):
             return _forbidden()
-        get_object_or_404(Company, pk=pk, workspace=request.workspace).delete()
-        return _refresh_response()
+        company = get_object_or_404(Company, pk=pk, workspace=request.workspace)
+        company.delete()
+        return _refresh_response("Empresa excluída.")
     return HttpResponse(status=405)
 
 
@@ -199,23 +243,42 @@ def _filter_contacts(request):
 @login_required
 def contact_form(request, pk=None):
     instance = get_object_or_404(Contact, pk=pk, workspace=request.workspace) if pk else None
+    old_stage = instance.stage if instance else None
     if request.method == "POST":
         if not can_edit(request):
             return _forbidden()
+        is_new = instance is None
         form = ContactForm(request.POST, instance=instance)
         _scope_company_field(form, request)
         _scope_owner_field(form, request)
         if form.is_valid():
             contact = form.save(commit=False)
             contact.workspace = request.workspace
+            company, company_created = _company_from_contact_post(request, contact.owner)
+            if company:
+                contact.company = company
             _apply_custom(request, contact, "contact")
             contact.save()
             _apply_tags(request, contact)
-            if instance is None:
-                emit(request.workspace, "contact_created", contact)
-            return _refresh_response()
+            _apply_assignees(request, contact)
+            if company_created:
+                emit(request.workspace, "company_created", company)
+            if is_new:
+                emit(request.workspace, "contact_created", contact, {"stage": contact.stage})
+            elif contact.stage != old_stage:
+                emit(
+                    request.workspace,
+                    "contact_stage_changed",
+                    contact,
+                    {"stage": contact.stage, "old_stage": old_stage},
+                )
+            return _refresh_response("Contato criado." if is_new else "Contato atualizado.")
     else:
-        form = ContactForm(instance=instance)
+        initial = {}
+        company_id = request.GET.get("company")
+        if not instance and company_id and Company.objects.filter(workspace=request.workspace, pk=company_id).exists():
+            initial["company"] = company_id
+        form = ContactForm(instance=instance, initial=initial)
         _scope_company_field(form, request)
         _scope_owner_field(form, request)
     context = {
@@ -225,6 +288,12 @@ def contact_form(request, pk=None):
         "delete_pk": instance.pk if instance else None,
         "custom_fields": with_values(get_fields(request.workspace, "contact"), instance),
         "tags_text": _tags_text(instance),
+        "members": _workspace_members(request),
+        "assignee_ids": _assignee_ids(instance),
+        "new_company_name": request.POST.get("new_company_name", "") if request.method == "POST" else "",
+        "new_company_domain": request.POST.get("new_company_domain", "") if request.method == "POST" else "",
+        "new_company_industry": request.POST.get("new_company_industry", "") if request.method == "POST" else "",
+        "new_company_city": request.POST.get("new_company_city", "") if request.method == "POST" else "",
     }
     return render(request, "crm/partials/contact_form.html", context)
 
@@ -234,8 +303,9 @@ def contact_delete(request, pk):
     if request.method == "POST":
         if not can_edit(request):
             return _forbidden()
-        get_object_or_404(Contact, pk=pk, workspace=request.workspace).delete()
-        return _refresh_response()
+        contact = get_object_or_404(Contact, pk=pk, workspace=request.workspace)
+        contact.delete()
+        return _refresh_response("Contato excluído.")
     return HttpResponse(status=405)
 
 
@@ -244,15 +314,54 @@ def _scope_company_field(form, request):
         form.fields["company"].queryset = Company.objects.filter(workspace=request.workspace)
 
 
+def _company_from_contact_post(request, owner=None):
+    if request.POST.get("create_company_inline") != "on":
+        return None, False
+    name = request.POST.get("new_company_name", "").strip()
+    if not name:
+        return None, False
+
+    domain = request.POST.get("new_company_domain", "").strip()
+    industry = request.POST.get("new_company_industry", "").strip()
+    city = request.POST.get("new_company_city", "").strip()
+    company = Company.objects.filter(workspace=request.workspace, name__iexact=name).first()
+    created = company is None
+    if created:
+        company = Company.objects.create(
+            workspace=request.workspace,
+            name=name,
+            domain=domain,
+            industry=industry,
+            city=city,
+            owner=owner,
+        )
+    else:
+        updates = []
+        for field_name, value in {"domain": domain, "industry": industry, "city": city}.items():
+            if value and not getattr(company, field_name):
+                setattr(company, field_name, value)
+                updates.append(field_name)
+        if owner and not company.owner_id:
+            company.owner = owner
+            updates.append("owner")
+        if updates:
+            company.save(update_fields=updates + ["updated_at"])
+    return company, created
+
+
 # --------------------------------------------------------------------------- #
 # Deals (Kanban pipeline)
 # --------------------------------------------------------------------------- #
-def _deals_refresh_response():
+def _deals_refresh_response(message="Negócio salvo.", kind="success"):
     resp = HttpResponse(status=204)
-    resp["HX-Trigger"] = (
-        '{"nucleo:closeModal": true, "nucleo:dataChanged": true, '
-        '"nucleo:dealsBoard": true, "nucleo:dealsStats": true}'
-    )
+    events = {
+        "nucleo:closeModal": True,
+        "nucleo:dataChanged": True,
+        "nucleo:dealsBoard": True,
+        "nucleo:dealsStats": True,
+        "nucleo:toast": {"text": message, "kind": kind},
+    }
+    resp["HX-Trigger"] = _trigger_header(events)
     return resp
 
 
@@ -307,6 +416,7 @@ def deal_form(request, pk=None):
     if request.method == "POST":
         if not can_edit(request):
             return _forbidden()
+        is_new = instance is None
         form = DealForm(request.POST, instance=instance)
         _scope_deal_fields(form, request)
         _scope_owner_field(form, request)
@@ -316,12 +426,13 @@ def deal_form(request, pk=None):
             _apply_custom(request, deal, "deal")
             deal.save()
             _apply_tags(request, deal)
-            if instance is None:
-                emit(request.workspace, "deal_created", deal)
+            _apply_assignees(request, deal)
+            if is_new:
+                emit(request.workspace, "deal_created", deal, {"stage": deal.stage})
             elif deal.stage != old_stage:
                 emit(request.workspace, "deal_stage_changed", deal,
                      {"stage": deal.stage, "old_stage": old_stage})
-            return _deals_refresh_response()
+            return _deals_refresh_response("Negócio criado." if is_new else "Negócio atualizado.")
     else:
         form = DealForm(instance=instance)
         _scope_deal_fields(form, request)
@@ -333,6 +444,8 @@ def deal_form(request, pk=None):
         "delete_pk": instance.pk if instance else None,
         "custom_fields": with_values(get_fields(request.workspace, "deal"), instance),
         "tags_text": _tags_text(instance),
+        "members": _workspace_members(request),
+        "assignee_ids": _assignee_ids(instance),
     }
     return render(request, "crm/partials/deal_form.html", context)
 
@@ -342,8 +455,9 @@ def deal_delete(request, pk):
     if request.method == "POST":
         if not can_edit(request):
             return _forbidden()
-        get_object_or_404(Deal, pk=pk, workspace=request.workspace).delete()
-        return _deals_refresh_response()
+        deal = get_object_or_404(Deal, pk=pk, workspace=request.workspace)
+        deal.delete()
+        return _deals_refresh_response("Negócio excluído.")
     return HttpResponse(status=405)
 
 
@@ -356,15 +470,23 @@ def deal_move(request, pk):
     deal = get_object_or_404(Deal, pk=pk, workspace=request.workspace)
     stage = request.POST.get("stage")
     old_stage = deal.stage
+    moved = False
     if stage in dict(Deal.STAGE_CHOICES) and stage != old_stage:
         deal.stage = stage
         deal.save(update_fields=["stage", "updated_at"])
         emit(request.workspace, "deal_stage_changed", deal, {"stage": stage, "old_stage": old_stage})
+        moved = True
     ids = [i for i in request.POST.get("order", "").split(",") if i]
     for pos, deal_id in enumerate(ids):
         Deal.objects.filter(pk=deal_id, workspace=request.workspace).update(order=pos)
     resp = HttpResponse(status=204)
-    resp["HX-Trigger"] = '{"nucleo:dealsStats": true}'
+    events = {"nucleo:dealsStats": True}
+    if moved:
+        events["nucleo:toast"] = {
+            "text": f"Negócio movido para {dict(Deal.STAGE_CHOICES)[stage]}.",
+            "kind": "success",
+        }
+    resp["HX-Trigger"] = _trigger_header(events)
     return resp
 
 
@@ -466,6 +588,8 @@ def activity_create(request):
         activity.workspace = request.workspace
         setattr(activity, owner_key, obj)
         activity.save()
+        _apply_mentions(request, activity)
+        return _with_toast(_render_timeline(request, owner_key, obj), "Atividade adicionada.")
     return _render_timeline(request, owner_key, obj)
 
 
@@ -479,7 +603,8 @@ def activity_toggle(request, pk):
     activity.done = not activity.done
     activity.save(update_fields=["done", "updated_at"])
     on, obj = _owner_of(activity)
-    return _render_timeline(request, on, obj)
+    message = "Tarefa concluída." if activity.done else "Tarefa reaberta."
+    return _with_toast(_render_timeline(request, on, obj), message)
 
 
 @login_required
@@ -491,7 +616,7 @@ def activity_delete(request, pk):
     activity = get_object_or_404(Activity, pk=pk, workspace=request.workspace)
     on, obj = _owner_of(activity)
     activity.delete()
-    return _render_timeline(request, on, obj)
+    return _with_toast(_render_timeline(request, on, obj), "Atividade excluída.")
 
 
 def _owner_of(activity):

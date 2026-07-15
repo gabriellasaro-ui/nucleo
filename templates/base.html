@@ -150,6 +150,20 @@
     {% endfor %}
   </div>
 
+  <div class="confirm-overlay" id="confirm-dialog" hidden>
+    <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="confirm-dialog__body">
+        <div class="confirm-dialog__eyebrow">Confirmação</div>
+        <h2 id="confirm-title">Confirmar ação</h2>
+        <p id="confirm-message"></p>
+      </div>
+      <div class="confirm-dialog__foot">
+        <button type="button" class="btn btn--ghost" data-confirm-cancel>Cancelar</button>
+        <button type="button" class="btn btn--danger" data-confirm-ok>Confirmar</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function shell() {
       return {

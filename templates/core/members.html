@@ -11,7 +11,8 @@
 <div class="card">
   <form class="member-add" method="post" action="{% url 'member_add' %}">
     {% csrf_token %}
-    <input type="text" name="identifier" placeholder="Usuário ou e-mail para adicionar…" autocomplete="off">
+    <input type="text" name="name" placeholder="Nome" autocomplete="name">
+    <input type="email" name="email" placeholder="E-mail" autocomplete="email" required>
     <select name="role" class="role-select">
       {% for value, label in roles %}
       <option value="{{ value }}" {% if value == 'member' %}selected{% endif %}>{{ label }}</option>
@@ -32,9 +33,9 @@
         <tr>
           <td>
             <div class="cell-primary">
-              <span class="avatar">{{ m.user.username|slice:":2"|upper }}</span>
+              <span class="avatar">{{ m.user.get_full_name|default:m.user.username|slice:":2"|upper }}</span>
               <div>
-                <b>{{ m.user.get_username }}</b>
+                <b>{% firstof m.user.get_full_name m.user.get_username %}</b>
                 {% if m.user.email %}<div class="cell-sub">{{ m.user.email }}</div>{% endif %}
               </div>
             </div>
@@ -51,7 +52,7 @@
           </td>
           <td class="cell-actions">
             <form class="inline-form" method="post" action="{% url 'member_remove' m.pk %}"
-                  onsubmit="return confirm('Remover {{ m.user.get_username|escapejs }} deste workspace?');">
+                  data-confirm="Remover {{ m.user.get_username|escapejs }} deste workspace?">
               {% csrf_token %}
               <button class="btn btn--danger btn--sm" type="submit">
                 {% include "core/_icon.html" with icon="trash" %} Remover

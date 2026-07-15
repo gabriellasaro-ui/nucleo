@@ -1,3 +1,4 @@
+{% load crm_extras %}
 <div class="activity {% if a.is_task %}activity--task{% endif %} {% if a.done %}is-done{% endif %}">
   <div class="activity__gutter">
     {% if a.is_task %}
@@ -17,7 +18,10 @@
     {% endif %}
   </div>
   <div class="activity__body">
-    <div class="activity__text">{{ a.body|linebreaksbr }}</div>
+    <div class="activity__text">{{ a.body|highlight_mentions }}</div>
+    {% if a.mentions.exists %}
+    <div class="activity__mentions">{% for u in a.mentions.all %}<span class="mention-chip">@{{ u.get_username }}</span>{% endfor %}</div>
+    {% endif %}
     <div class="activity__meta">
       {% if a.is_task %}<span class="activity__kind">Tarefa</span>{% endif %}
       {% if a.source == "automation" %}<span class="activity__auto">⚡ Automação</span>{% endif %}

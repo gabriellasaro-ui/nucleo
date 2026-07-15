@@ -17,6 +17,7 @@
       {% if company.score %}<span class="chip">Score {{ company.score }}</span>{% endif %}
       {% if company.parent %}<a href="{{ company.parent.get_absolute_url }}" class="chip chip--link">{% include "core/_icon.html" with icon="building" %} Matriz: {{ company.parent.name }}</a>{% endif %}
       {% for t in company.tags.all %}<span class="tag-chip" style="--tc: {{ t.color }}">{{ t.name }}</span>{% endfor %}
+      {% for u in company.assignees.all %}<span class="assignee-ava" title="Responsável: {{ u.get_username }}">{{ u.username|slice:":2"|upper }}</span>{% endfor %}
     </div>
   </div>
   {% if can_edit %}
@@ -53,6 +54,12 @@
     <div class="card panel">
       <div class="panel__head">
         <b>Contatos</b><span class="panel__count">{{ contacts|length }}</span>
+        {% if can_edit %}
+        <button class="btn btn--ghost btn--sm" style="margin-left:auto"
+                hx-get="{% url 'crm:contact_create' %}?company={{ company.pk }}" hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+          {% include "core/_icon.html" with icon="plus" %} Novo contato
+        </button>
+        {% endif %}
       </div>
       <div class="mini-list">
         {% for c in contacts %}

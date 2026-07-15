@@ -52,7 +52,7 @@
           </div>
           <button class="btn btn--ghost btn--sm" @click="edit = !edit">{% include "core/_icon.html" with icon="edit" %} Editar</button>
           <form class="inline-form" method="post" action="{% url 'custom_field_delete' f.pk %}"
-                onsubmit="return confirm('Remover o campo “{{ f.label|escapejs }}”? Os valores salvos deixam de aparecer.');">
+                data-confirm="Remover o campo “{{ f.label|escapejs }}”? Os valores salvos deixam de aparecer.">
             {% csrf_token %}
             <button class="btn btn--danger btn--sm" title="Remover">{% include "core/_icon.html" with icon="trash" %}</button>
           </form>

@@ -19,7 +19,7 @@
       </div>
       {% if can_edit %}
       <form method="post" action="{% url 'crm:attachment_delete' a.pk %}" class="inline-form"
-            onsubmit="return confirm('Excluir “{{ a.name|escapejs }}”?');">
+            data-confirm="Excluir “{{ a.name|escapejs }}”?">
         {% csrf_token %}
         <button class="icon-btn" title="Excluir">{% include "core/_icon.html" with icon="trash" %}</button>
       </form>

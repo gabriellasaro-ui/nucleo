@@ -71,9 +71,20 @@ class Command(BaseCommand):
             user=admin, workspace=workspace, defaults={"role": Membership.ROLE_OWNER}
         )
 
+        # A second member, so multi-assignee and @mentions have someone to point at.
+        carla, ccreated = User.objects.get_or_create(
+            username="carla", defaults={"email": "carla@nucleo.local"}
+        )
+        if ccreated:
+            carla.set_password("carla")
+            carla.save()
+        Membership.objects.get_or_create(
+            user=carla, workspace=workspace, defaults={"role": Membership.ROLE_MEMBER}
+        )
+
         # Everything else lives INSIDE the workspace's schema.
         with tenant_context(workspace):
-            counts = self._seed_tenant_data(workspace, admin)
+            counts = self._seed_tenant_data(workspace, admin, carla)
 
         self.stdout.write(self.style.SUCCESS(
             f"Seed pronto no schema '{workspace.schema_name}': "
@@ -83,7 +94,7 @@ class Command(BaseCommand):
             f"{counts['tags']} etiquetas."
         ))
 
-    def _seed_tenant_data(self, workspace, admin):
+    def _seed_tenant_data(self, workspace, admin, carla):
         companies = {}
         for data in COMPANIES:
             obj, _ = Company.objects.get_or_create(
@@ -187,8 +198,16 @@ class Command(BaseCommand):
         inbound, _ = Tag.all_objects.get_or_create(workspace=workspace, name="Inbound", defaults={"color": "#059669"})
         if acme:
             acme.tags.add(vip)
+            acme.assignees.set([admin, carla])
+            if not acme.activities.filter(mentions=carla).exists():
+                note = Activity.objects.create(
+                    workspace=workspace, kind="note", author=admin, company=acme,
+                    body="Passando a conta pra @carla acompanhar de perto. 👀",
+                )
+                note.mentions.set([carla])
         if lumina:
             lumina.tags.add(inbound)
+            lumina.assignees.set([carla])
 
         return {
             "companies": Company.objects.count(),

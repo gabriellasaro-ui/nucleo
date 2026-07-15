@@ -20,6 +20,12 @@
     }).then(function (r) {
       if (r.ok) {
         document.body.dispatchEvent(new CustomEvent("nucleo:dealsStats", { bubbles: true }));
+        try {
+          var triggers = JSON.parse(r.headers.get("HX-Trigger") || "{}");
+          if (triggers["nucleo:toast"]) {
+            window.nucleoToast(triggers["nucleo:toast"].text, triggers["nucleo:toast"].kind || "success");
+          }
+        } catch (e) {}
       } else {
         window.nucleoToast("Não foi possível mover o negócio", "error");
       }

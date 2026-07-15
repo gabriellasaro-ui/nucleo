@@ -1,49 +1,137 @@
-<div class="modal">
+<div class="modal modal--wide">
   <div class="modal__head">
-    <h2>{{ title }}</h2>
+    <div>
+      <h2>{{ title }}</h2>
+      <p class="modal__subtitle">Cadastre a pessoa e vincule ou crie a empresa no mesmo fluxo.</p>
+    </div>
     <button type="button" class="icon-btn" @click="modal = false">{% include "core/_icon.html" with icon="close" %}</button>
   </div>
-  <form hx-post="{{ action }}" hx-target="#modal-content" hx-swap="innerHTML">
+  <form hx-post="{{ action }}" hx-target="#modal-content" hx-swap="innerHTML"
+        x-data="{ quickCompany: {% if new_company_name %}true{% else %}false{% endif %} }">
     {% csrf_token %}
-    <div class="modal__body">
-      <div class="field-row">
-        <div class="field">
-          <label for="{{ form.first_name.id_for_label }}">{{ form.first_name.label }}</label>
-          {{ form.first_name }}
-          {% if form.first_name.errors %}<div class="errors">{{ form.first_name.errors|striptags }}</div>{% endif %}
+    <div class="modal__body modal__body--split">
+      <div class="form-section">
+        <div class="form-section__head">
+          <b>Contato</b>
+          <span>Dados principais</span>
         </div>
-        <div class="field">
-          <label for="{{ form.last_name.id_for_label }}">{{ form.last_name.label }}</label>
-          {{ form.last_name }}
-          {% if form.last_name.errors %}<div class="errors">{{ form.last_name.errors|striptags }}</div>{% endif %}
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.first_name.id_for_label }}">{{ form.first_name.label }}</label>
+            {{ form.first_name }}
+            {% if form.first_name.errors %}<div class="errors">{{ form.first_name.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.last_name.id_for_label }}">{{ form.last_name.label }}</label>
+            {{ form.last_name }}
+            {% if form.last_name.errors %}<div class="errors">{{ form.last_name.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+            {{ form.email }}
+            {% if form.email.errors %}<div class="errors">{{ form.email.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>
+            {{ form.phone }}
+            {% if form.phone.errors %}<div class="errors">{{ form.phone.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.job_title.id_for_label }}">{{ form.job_title.label }}</label>
+            {{ form.job_title }}
+            {% if form.job_title.errors %}<div class="errors">{{ form.job_title.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.stage.id_for_label }}">{{ form.stage.label }}</label>
+            {{ form.stage }}
+            {% if form.stage.errors %}<div class="errors">{{ form.stage.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label>
+            {{ form.owner }}
+            {% if form.owner.errors %}<div class="errors">{{ form.owner.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.score.id_for_label }}">{{ form.score.label }}</label>
+            {{ form.score }}
+            {% if form.score.errors %}<div class="errors">{{ form.score.errors|striptags }}</div>{% endif %}
+          </div>
         </div>
       </div>
-      {% for field in form %}
-        {% if field.name != "first_name" and field.name != "last_name" %}
-        <div class="field">
-          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-          {{ field }}
-          {% if field.errors %}<div class="errors">{{ field.errors|striptags }}</div>{% endif %}
+
+      <div class="form-section">
+        <div class="form-section__head">
+          <b>Empresa</b>
+          <span>Vincule uma existente ou crie agora</span>
         </div>
-        {% endif %}
-      {% endfor %}
-      <div class="field">
-        <label for="id_tags_text">Etiquetas</label>
-        <input type="text" name="tags_text" id="id_tags_text" value="{{ tags_text }}" placeholder="Separadas por vírgula (ex.: VIP, Quente)">
+        <div class="field">
+          <label for="{{ form.company.id_for_label }}">{{ form.company.label }}</label>
+          {{ form.company }}
+          {% if form.company.errors %}<div class="errors">{{ form.company.errors|striptags }}</div>{% endif %}
+        </div>
+        <label class="choice-card">
+          <input type="checkbox" name="create_company_inline" x-model="quickCompany">
+          <span>
+            <b>Criar nova empresa junto com o contato</b>
+            <small>Ao salvar, a empresa ja fica vinculada a este contato.</small>
+          </span>
+        </label>
+        <div class="quick-company" x-show="quickCompany" x-cloak>
+          <div class="field">
+            <label for="id_new_company_name">Nome da empresa</label>
+            <input type="text" name="new_company_name" id="id_new_company_name"
+                   value="{{ new_company_name }}" placeholder="Ex.: Acme Tecnologia">
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="id_new_company_domain">Dominio</label>
+              <input type="text" name="new_company_domain" id="id_new_company_domain"
+                     value="{{ new_company_domain }}" placeholder="acme.com.br">
+            </div>
+            <div class="field">
+              <label for="id_new_company_industry">Segmento</label>
+              <input type="text" name="new_company_industry" id="id_new_company_industry"
+                     value="{{ new_company_industry }}" placeholder="SaaS, Agencia...">
+            </div>
+          </div>
+          <div class="field">
+            <label for="id_new_company_city">Cidade</label>
+            <input type="text" name="new_company_city" id="id_new_company_city"
+                   value="{{ new_company_city }}" placeholder="Sao Paulo">
+          </div>
+        </div>
       </div>
-      {% include "crm/partials/custom_fields_form.html" %}
+
+      <div class="form-section">
+        <div class="form-section__head">
+          <b>Organizacao</b>
+          <span>Etiquetas, responsaveis e campos extras</span>
+        </div>
+        <div class="field">
+          <label for="id_tags_text">Etiquetas</label>
+          <input type="text" name="tags_text" id="id_tags_text" value="{{ tags_text }}" placeholder="Separadas por virgula (ex.: VIP, Quente)">
+        </div>
+        {% include "crm/partials/assignees_field.html" %}
+        {% include "crm/partials/custom_fields_form.html" %}
+      </div>
     </div>
     <div class="modal__foot">
       {% if delete_pk %}
       <button type="button" class="btn btn--danger"
               hx-post="{% url 'crm:contact_delete' delete_pk %}" hx-target="#modal-content" hx-swap="innerHTML"
-              hx-confirm="Excluir este contato? Esta ação não pode ser desfeita.">
+              hx-confirm="Excluir este contato? Esta acao nao pode ser desfeita.">
         {% include "core/_icon.html" with icon="trash" %} Excluir
       </button>
       {% endif %}
       <div class="modal__spacer"></div>
       <button type="button" class="btn btn--ghost" @click="modal = false">Cancelar</button>
-      <button type="submit" class="btn btn--primary">Salvar</button>
+      <button type="submit" class="btn btn--primary">Salvar contato</button>
     </div>
   </form>
 </div>

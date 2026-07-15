@@ -12,6 +12,7 @@
       {% if deal.company %}<a href="{{ deal.company.get_absolute_url }}" class="chip chip--link">{% include "core/_icon.html" with icon="building" %} {{ deal.company.name }}</a>{% endif %}
       {% if deal.contact %}<a href="{{ deal.contact.get_absolute_url }}" class="chip chip--link">{% include "core/_icon.html" with icon="users" %} {{ deal.contact.full_name }}</a>{% endif %}
       {% for t in deal.tags.all %}<span class="tag-chip" style="--tc: {{ t.color }}">{{ t.name }}</span>{% endfor %}
+      {% for u in deal.assignees.all %}<span class="assignee-ava" title="Responsável: {{ u.get_username }}">{{ u.username|slice:":2"|upper }}</span>{% endfor %}
     </div>
   </div>
   <div class="record__value">R$ {{ deal.value|floatformat:0|intcomma }}</div>
