@@ -3,10 +3,17 @@
   {% for col in columns %}
   <div class="kanban__col">
     <div class="kanban__col-head">
-      <span class="kanban__dot kanban__dot--{{ col.key }}"></span>
+      <span class="kanban__dot" style="background: {{ col.color }}"></span>
       <b>{{ col.label }}</b>
       <span class="kanban__count">{{ col.count }}</span>
       <span class="kanban__col-total">R$ {{ col.total|floatformat:0|intcomma }}</span>
+      {% if can_edit %}
+      <button class="kanban__col-del" title="Excluir etapa"
+              hx-post="{% url 'crm:stage_delete' col.stage_id %}" hx-swap="none"
+              hx-confirm="Excluir a etapa “{{ col.label|escapejs }}”?">
+        {% include "core/_icon.html" with icon="close" %}
+      </button>
+      {% endif %}
     </div>
     <div class="kanban__cards" data-stage="{{ col.key }}">
       {% for deal in col.deals %}
@@ -25,4 +32,27 @@
     </div>
   </div>
   {% endfor %}
+
+  {% if can_edit %}
+  <div class="kanban__col kanban__col--add" x-data="{ open: false }">
+    <button type="button" class="kanban__add-btn" @click="open = !open">
+      {% include "core/_icon.html" with icon="plus" %} Nova etapa
+    </button>
+    <form class="kanban__add-form" x-show="open" x-cloak
+          hx-post="{% url 'crm:stage_add' %}" hx-swap="none" @submit="open = false">
+      {% csrf_token %}
+      <input type="hidden" name="pipeline" value="{{ pipeline.pk }}">
+      <input type="text" name="name" placeholder="Nome da coluna" required>
+      <div class="kanban__add-row">
+        <input type="color" name="color" value="#64748b" title="Cor">
+        <select name="kind" title="Tipo">
+          <option value="open">Aberta</option>
+          <option value="won">Ganho</option>
+          <option value="lost">Perdido</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn--primary btn--sm">Criar coluna</button>
+    </form>
+  </div>
+  {% endif %}
 </div>

@@ -4,9 +4,11 @@ import re
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
+from django.utils.text import slugify
 
 from core.customfields import get_fields, read_from_post, with_values
 from core.events import emit
@@ -15,7 +17,7 @@ from core.rbac import can_edit
 from django.shortcuts import redirect
 
 from .forms import ActivityForm, CompanyForm, ContactForm, DealForm
-from .models import Activity, Attachment, Company, Contact, Deal, Pipeline, Tag
+from .models import Activity, Attachment, Company, Contact, Deal, Pipeline, Stage, Tag
 
 
 def _default_pipeline(request):
@@ -373,11 +375,30 @@ def _deals_refresh_response(message="Negócio salvo.", kind="success"):
     return resp
 
 
-def _deal_stats(request):
-    agg = Deal.objects.filter(workspace=request.workspace).aggregate(
-        open_value=Sum("value", filter=Q(stage__in=Deal.OPEN_STAGES)),
-        open_count=Count("id", filter=Q(stage__in=Deal.OPEN_STAGES)),
-        won_value=Sum("value", filter=Q(stage="ganho")),
+def _current_pipeline(request):
+    pid = request.GET.get("pipeline")
+    if pid:
+        pipe = Pipeline.objects.filter(pk=pid, workspace=request.workspace).first()
+        if pipe:
+            return pipe
+    return _default_pipeline(request)
+
+
+def _unique_stage_key(pipeline, name):
+    base = slugify(name).replace("-", "_")[:40] or "etapa"
+    existing = set(pipeline.stages.values_list("key", flat=True))
+    key, i = base, 2
+    while key in existing:
+        key = f"{base}_{i}"
+        i += 1
+    return key
+
+
+def _deal_stats(request, pipeline):
+    agg = Deal.objects.filter(workspace=request.workspace, pipeline=pipeline).aggregate(
+        open_value=Sum("value", filter=Q(stage_kind="open")),
+        open_count=Count("id", filter=Q(stage_kind="open")),
+        won_value=Sum("value", filter=Q(stage_kind="won")),
     )
     return {
         "open_value": agg["open_value"] or 0,
@@ -387,18 +408,26 @@ def _deal_stats(request):
 
 
 def _board_context(request):
-    deals = list(Deal.objects.filter(workspace=request.workspace).select_related("company", "contact"))
+    pipeline = _current_pipeline(request)
+    stages = list(pipeline.stages.all())
+    deals = list(
+        Deal.objects.filter(workspace=request.workspace, pipeline=pipeline).select_related("company", "contact")
+    )
     columns = []
-    for key, label in Deal.STAGE_CHOICES:
-        col_deals = [d for d in deals if d.stage == key]
+    for st in stages:
+        col_deals = [d for d in deals if d.stage == st.key]
         columns.append({
-            "key": key,
-            "label": label,
+            "key": st.key, "label": st.name, "color": st.color, "kind": st.kind, "stage_id": st.pk,
             "deals": col_deals,
             "total": sum((d.value for d in col_deals), 0),
             "count": len(col_deals),
         })
-    return {"columns": columns, "stats": _deal_stats(request)}
+    return {
+        "columns": columns,
+        "stats": _deal_stats(request, pipeline),
+        "pipeline": pipeline,
+        "pipelines": list(Pipeline.objects.all()),
+    }
 
 
 @login_required
@@ -414,7 +443,7 @@ def deal_board_cards(request):
 
 @login_required
 def deal_stats(request):
-    return render(request, "crm/partials/deal_stats.html", {"stats": _deal_stats(request)})
+    return render(request, "crm/partials/deal_stats.html", {"stats": _deal_stats(request, _current_pipeline(request))})
 
 
 @login_required
@@ -482,7 +511,11 @@ def deal_move(request, pk):
     stage = request.POST.get("stage")
     old_stage = deal.stage
     moved = False
-    if stage in dict(Deal.STAGE_CHOICES) and stage != old_stage:
+    valid_keys = (
+        set(deal.pipeline.stages.values_list("key", flat=True))
+        if deal.pipeline_id else set(dict(Deal.STAGE_CHOICES))
+    )
+    if stage in valid_keys and stage != old_stage:
         deal.stage = stage
         deal.sync_stage_kind()
         deal.save(update_fields=["stage", "stage_kind", "updated_at"])
@@ -494,11 +527,73 @@ def deal_move(request, pk):
     resp = HttpResponse(status=204)
     events = {"nucleo:dealsStats": True}
     if moved:
-        events["nucleo:toast"] = {
-            "text": f"Negócio movido para {dict(Deal.STAGE_CHOICES)[stage]}.",
-            "kind": "success",
-        }
+        events["nucleo:toast"] = {"text": f"Negócio movido para {deal.stage_display}.", "kind": "success"}
     resp["HX-Trigger"] = _trigger_header(events)
+    return resp
+
+
+# --------------------------------------------------------------------------- #
+# Pipelines & stages (columns)
+# --------------------------------------------------------------------------- #
+@login_required
+def pipeline_create(request):
+    if request.method == "POST" and can_edit(request):
+        name = request.POST.get("name", "").strip()
+        if name:
+            order = (Pipeline.objects.aggregate(m=Max("order"))["m"] or 0) + 1
+            pipe = Pipeline.objects.create(workspace=request.workspace, name=name, order=order)
+            pipe.ensure_stages()
+            return redirect(f"{reverse('crm:deal_board')}?pipeline={pipe.pk}")
+    return redirect("crm:deal_board")
+
+
+@login_required
+def stage_add(request):
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    pipeline = get_object_or_404(Pipeline, pk=request.POST.get("pipeline"), workspace=request.workspace)
+    name = request.POST.get("name", "").strip()
+    color = request.POST.get("color", "").strip() or "#64748b"
+    kind = request.POST.get("kind", "open")
+    message = "Informe o nome da etapa."
+    if name:
+        order = (pipeline.stages.aggregate(m=Max("order"))["m"] or 0) + 1
+        pipeline.stages.create(
+            key=_unique_stage_key(pipeline, name), name=name, color=color,
+            kind=kind if kind in dict(Stage.KIND_CHOICES) else "open", order=order,
+        )
+        message = f"Etapa “{name}” criada."
+    resp = HttpResponse(status=204)
+    resp["HX-Trigger"] = _trigger_header({
+        "nucleo:dealsBoard": True, "nucleo:closeModal": True,
+        "nucleo:toast": {"text": message, "kind": "success" if name else "error"},
+    })
+    return resp
+
+
+@login_required
+def stage_delete(request, pk):
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    stage = get_object_or_404(Stage, pk=pk, pipeline__workspace=request.workspace)
+    has_deals = Deal.objects.filter(
+        workspace=request.workspace, pipeline=stage.pipeline, stage=stage.key
+    ).exists()
+    if has_deals:
+        message, kind = "Mova os negócios desta etapa antes de excluí-la.", "error"
+    elif stage.pipeline.stages.count() <= 1:
+        message, kind = "A pipeline precisa de ao menos uma etapa.", "error"
+    else:
+        stage.delete()
+        message, kind = "Etapa excluída.", "success"
+    resp = HttpResponse(status=204)
+    resp["HX-Trigger"] = _trigger_header({
+        "nucleo:dealsBoard": True, "nucleo:toast": {"text": message, "kind": kind},
+    })
     return resp
 
 

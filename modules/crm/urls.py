@@ -28,6 +28,10 @@ urlpatterns = [
     path("deals/<int:pk>/edit/", views.deal_form, name="deal_edit"),
     path("deals/<int:pk>/delete/", views.deal_delete, name="deal_delete"),
     path("deals/<int:pk>/move/", views.deal_move, name="deal_move"),
+    # Pipelines & stages (columns)
+    path("pipelines/new/", views.pipeline_create, name="pipeline_create"),
+    path("pipelines/stages/add/", views.stage_add, name="stage_add"),
+    path("pipelines/stages/<int:pk>/delete/", views.stage_delete, name="stage_delete"),
     # Activities (timeline)
     path("activities/new/", views.activity_create, name="activity_create"),
     path("activities/<int:pk>/toggle/", views.activity_toggle, name="activity_toggle"),

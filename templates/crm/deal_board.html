@@ -4,24 +4,46 @@
 <div class="page-head">
   <div>
     <h1>Negócios</h1>
-    <p>Seu pipeline de vendas. Arraste os cards entre as etapas.</p>
+    <p>Arraste os cards entre as etapas. Crie colunas e pipelines à vontade.</p>
   </div>
-  {% if can_edit %}
-  <button class="btn btn--primary"
-          hx-get="{% url 'crm:deal_create' %}" hx-target="#modal-content" hx-swap="innerHTML"
-          @click="modal = true">
-    {% include "core/_icon.html" with icon="plus" %} Novo negócio
-  </button>
-  {% endif %}
+  <div class="board-actions">
+    <div class="pipe-switch" x-data="{ open: false }" @keydown.escape="open = false">
+      <button class="btn btn--ghost" @click="open = !open">
+        {% include "core/_icon.html" with icon="pipeline" %} {{ pipeline.name }}
+        <span class="pipe-switch__chev">{% include "core/_icon.html" with icon="chevron" %}</span>
+      </button>
+      <div class="pipe-menu" x-show="open" x-cloak x-transition @click.outside="open = false">
+        <div class="pipe-menu__label">Pipelines</div>
+        {% for p in pipelines %}
+        <a href="?pipeline={{ p.pk }}" class="pipe-menu__item {% if p.pk == pipeline.pk %}is-active{% endif %}">
+          {% include "core/_icon.html" with icon="pipeline" %} {{ p.name }}
+        </a>
+        {% endfor %}
+        {% if can_edit %}
+        <form method="post" action="{% url 'crm:pipeline_create' %}" class="pipe-menu__new">
+          {% csrf_token %}
+          <input type="text" name="name" placeholder="Nova pipeline…" required>
+          <button class="btn btn--primary btn--sm" type="submit">Criar</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% if can_edit %}
+    <button class="btn btn--primary"
+            hx-get="{% url 'crm:deal_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+      {% include "core/_icon.html" with icon="plus" %} Novo negócio
+    </button>
+    {% endif %}
+  </div>
 </div>
 
 <div id="deal-stats"
-     hx-get="{% url 'crm:deal_stats' %}" hx-trigger="nucleo:dealsStats from:body" hx-swap="innerHTML">
+     hx-get="{% url 'crm:deal_stats' %}?pipeline={{ pipeline.pk }}" hx-trigger="nucleo:dealsStats from:body" hx-swap="innerHTML">
   {% include "crm/partials/deal_stats.html" %}
 </div>
 
 <div id="deal-board"
-     hx-get="{% url 'crm:deal_cards' %}" hx-trigger="nucleo:dealsBoard from:body" hx-swap="innerHTML">
+     hx-get="{% url 'crm:deal_cards' %}?pipeline={{ pipeline.pk }}" hx-trigger="nucleo:dealsBoard from:body" hx-swap="innerHTML">
   {% include "crm/partials/deal_columns.html" %}
 </div>
 {% endblock %}
