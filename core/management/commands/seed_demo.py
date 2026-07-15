@@ -13,7 +13,7 @@ from django_tenants.utils import tenant_context
 
 from core.events import emit
 from core.models import Automation, CustomField, Domain, Membership, Workspace
-from modules.crm.models import Activity, Company, Contact, Deal, Tag
+from modules.crm.models import DEFAULT_STAGES, Activity, Company, Contact, Deal, Pipeline, Tag
 
 COMPANIES = [
     {"name": "Acme Tecnologia", "domain": "acme.com.br", "industry": "SaaS", "employees": 120, "city": "São Paulo"},
@@ -208,6 +208,17 @@ class Command(BaseCommand):
         if lumina:
             lumina.tags.add(inbound)
             lumina.assignees.set([carla])
+
+        # Default pipeline + backfill deals (F1)
+        pipe = Pipeline.objects.filter(is_default=True).first() or Pipeline.objects.create(
+            workspace=workspace, name="Vendas", is_default=True)
+        pipe.ensure_stages()
+        kinds = {k: kind for k, _, _, kind in DEFAULT_STAGES}
+        for d in Deal.all_objects.all():
+            if not d.pipeline_id or d.stage_kind != kinds.get(d.stage, "open"):
+                d.pipeline = pipe
+                d.stage_kind = kinds.get(d.stage, "open")
+                d.save(update_fields=["pipeline", "stage_kind"])
 
         return {
             "companies": Company.objects.count(),

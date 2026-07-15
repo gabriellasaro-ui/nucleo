@@ -143,6 +143,60 @@ class Contact(TimestampedModel):
         return (first + last).upper() or "?"
 
 
+DEFAULT_STAGES = [
+    # key, name, color, kind
+    ("novo", "Novo", "#94a3b8", "open"),
+    ("qualificado", "Qualificado", "#3b82f6", "open"),
+    ("proposta", "Proposta", "#8b5cf6", "open"),
+    ("negociacao", "Negociação", "#d97706", "open"),
+    ("ganho", "Ganho", "#059669", "won"),
+    ("perdido", "Perdido", "#dc2626", "lost"),
+]
+
+
+class Pipeline(TimestampedModel):
+    """A configurable sales pipeline. A workspace can have several."""
+    workspace = models.ForeignKey("core.Workspace", on_delete=models.CASCADE, related_name="pipelines")
+    name = models.CharField("Nome", max_length=120)
+    order = models.PositiveIntegerField(default=0)
+    is_default = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "Pipeline"
+        verbose_name_plural = "Pipelines"
+
+    def __str__(self):
+        return self.name
+
+    def ensure_stages(self):
+        """Create the default stage set if this pipeline has none yet."""
+        if not self.stages.exists():
+            for i, (key, name, color, kind) in enumerate(DEFAULT_STAGES):
+                self.stages.create(key=key, name=name, color=color, kind=kind, order=i)
+        return self
+
+
+class Stage(TimestampedModel):
+    KIND_CHOICES = [("open", "Aberta"), ("won", "Ganho"), ("lost", "Perdido")]
+
+    pipeline = models.ForeignKey(Pipeline, on_delete=models.CASCADE, related_name="stages")
+    key = models.SlugField(max_length=40)
+    name = models.CharField("Nome", max_length=60)
+    color = models.CharField("Cor", max_length=7, default="#2563eb")
+    kind = models.CharField("Tipo", max_length=10, choices=KIND_CHOICES, default="open")
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+        unique_together = [("pipeline", "key")]
+        verbose_name = "Etapa"
+        verbose_name_plural = "Etapas"
+
+    def __str__(self):
+        return f"{self.pipeline.name} · {self.name}"
+
+
 class Deal(TimestampedModel):
     STAGE_CHOICES = [
         ("novo", "Novo"),
@@ -155,6 +209,11 @@ class Deal(TimestampedModel):
     OPEN_STAGES = ["novo", "qualificado", "proposta", "negociacao"]
 
     workspace = models.ForeignKey("core.Workspace", on_delete=models.CASCADE, related_name="deals")
+    pipeline = models.ForeignKey(
+        Pipeline, on_delete=models.SET_NULL, null=True, blank=True, related_name="deals",
+        verbose_name="Pipeline",
+    )
+    stage_kind = models.CharField(max_length=10, default="open")  # denormalized open/won/lost
     custom = models.JSONField(default=dict, blank=True)
     title = models.CharField("Título", max_length=200)
     value = models.DecimalField("Valor", max_digits=12, decimal_places=2, default=0)
@@ -196,7 +255,36 @@ class Deal(TimestampedModel):
 
     @property
     def is_open(self):
-        return self.stage in self.OPEN_STAGES
+        return self.stage_kind == "open"
+
+    @property
+    def stage_obj(self):
+        if self.pipeline_id:
+            for s in self.pipeline.stages.all():
+                if s.key == self.stage:
+                    return s
+        return None
+
+    @property
+    def stage_display(self):
+        obj = self.stage_obj
+        if obj:
+            return obj.name
+        return dict((k, n) for k, n, _, _ in DEFAULT_STAGES).get(self.stage, self.stage)
+
+    @property
+    def stage_color(self):
+        obj = self.stage_obj
+        if obj:
+            return obj.color
+        return dict((k, c) for k, _, c, _ in DEFAULT_STAGES).get(self.stage, "#94a3b8")
+
+    def sync_stage_kind(self):
+        """Keep the denormalized stage_kind (open/won/lost) in sync with stage."""
+        obj = self.stage_obj
+        self.stage_kind = obj.kind if obj else dict(
+            (k, kind) for k, _, _, kind in DEFAULT_STAGES
+        ).get(self.stage, "open")
 
 
 class Activity(TimestampedModel):

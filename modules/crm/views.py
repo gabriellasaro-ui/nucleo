@@ -15,7 +15,15 @@ from core.rbac import can_edit
 from django.shortcuts import redirect
 
 from .forms import ActivityForm, CompanyForm, ContactForm, DealForm
-from .models import Activity, Attachment, Company, Contact, Deal, Tag
+from .models import Activity, Attachment, Company, Contact, Deal, Pipeline, Tag
+
+
+def _default_pipeline(request):
+    pipe = Pipeline.objects.filter(is_default=True).first() or Pipeline.objects.first()
+    if pipe is None:
+        pipe = Pipeline.objects.create(workspace=request.workspace, name="Vendas", is_default=True)
+        pipe.ensure_stages()
+    return pipe
 
 def _trigger_header(events):
     return json.dumps(events)
@@ -423,6 +431,9 @@ def deal_form(request, pk=None):
         if form.is_valid():
             deal = form.save(commit=False)
             deal.workspace = request.workspace
+            if not deal.pipeline_id:
+                deal.pipeline = _default_pipeline(request)
+            deal.sync_stage_kind()
             _apply_custom(request, deal, "deal")
             deal.save()
             _apply_tags(request, deal)
@@ -473,7 +484,8 @@ def deal_move(request, pk):
     moved = False
     if stage in dict(Deal.STAGE_CHOICES) and stage != old_stage:
         deal.stage = stage
-        deal.save(update_fields=["stage", "updated_at"])
+        deal.sync_stage_kind()
+        deal.save(update_fields=["stage", "stage_kind", "updated_at"])
         emit(request.workspace, "deal_stage_changed", deal, {"stage": stage, "old_stage": old_stage})
         moved = True
     ids = [i for i in request.POST.get("order", "").split(",") if i]
