@@ -3,12 +3,36 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Campos personalizados</h1>
-    <p>Crie campos extras por objeto — eles aparecem automaticamente nos formulários e nos detalhes.</p>
+    <h1>Campos do CRM</h1>
+    <p>Crie informações próprias do seu processo e use nos formulários, detalhes, automações e cards da pipeline.</p>
   </div>
 </div>
 
-<div class="card" x-data="{ tab: '{{ groups.0.type }}' }">
+<div class="cf-guide">
+  <div class="cf-guide__item">
+    <span>{% include "core/_icon.html" with icon="text" %}</span>
+    <div>
+      <b>Formulários e detalhes</b>
+      <p>O campo aparece ao criar ou editar empresa, contato ou negócio.</p>
+    </div>
+  </div>
+  <div class="cf-guide__item">
+    <span>{% include "core/_icon.html" with icon="pipeline" %}</span>
+    <div>
+      <b>Cards da pipeline</b>
+      <p>Campos de Negócio podem aparecer no card de fases como Negociação.</p>
+    </div>
+  </div>
+  <div class="cf-guide__item">
+    <span>{% include "core/_icon.html" with icon="bolt" %}</span>
+    <div>
+      <b>Automações</b>
+      <p>Fluxos podem ler ou atualizar esses campos como dado estruturado.</p>
+    </div>
+  </div>
+</div>
+
+<div class="card cf-builder" x-data="{ tab: '{{ groups.0.type }}' }">
   <div class="cf-tabs">
     {% for g in groups %}
     <button class="cf-tab" :class="{ 'is-active': tab === '{{ g.type }}' }" @click="tab = '{{ g.type }}'">
@@ -19,10 +43,24 @@
 
   {% for g in groups %}
   <div class="cf-panel" x-show="tab === '{{ g.type }}'" x-cloak>
+    <div class="cf-panel__head">
+      <div>
+        <b>{{ g.label }}</b>
+        <span>
+          {% if g.type == "deal" %}
+          Campos de negócio também podem ser escolhidos no modal Personalizar pipeline.
+          {% elif g.type == "company" %}
+          Campos para dados extras da conta/empresa.
+          {% else %}
+          Campos para qualificar pessoas e leads.
+          {% endif %}
+        </span>
+      </div>
+    </div>
     <form class="cf-add" method="post" action="{% url 'custom_field_add' %}" x-data="{ t: 'text' }">
       {% csrf_token %}
       <input type="hidden" name="object_type" value="{{ g.type }}">
-      <input class="cf-add__label" type="text" name="label" placeholder="Nome do campo (ex.: Origem, Website, Prioridade)…" autocomplete="off">
+      <input class="cf-add__label" type="text" name="label" placeholder="Nome do campo. Ex.: Origem, Produto, Prioridade" autocomplete="off">
       <select name="field_type" class="cf-add__control" x-model="t">
         {% for value, label in type_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
       </select>
@@ -60,7 +98,7 @@
         <form class="cf-edit" x-show="edit" x-cloak method="post" action="{% url 'custom_field_update' f.pk %}">
           {% csrf_token %}
           <input type="text" name="label" value="{{ f.label }}" placeholder="Rótulo">
-          {% if f.is_select %}<input type="text" name="options" value="{{ f.options|join:', ' }}" placeholder="Opções (vírgula)">{% endif %}
+          {% if f.has_options %}<input type="text" name="options" value="{{ f.options|join:', ' }}" placeholder="Opções (vírgula)">{% endif %}
           <label class="cf-req"><input type="checkbox" name="required" {% if f.required %}checked{% endif %}> Obrigatório</label>
           <button class="btn btn--primary btn--sm" type="submit">Salvar</button>
           <button type="button" class="btn btn--ghost btn--sm" @click="edit = false">Cancelar</button>

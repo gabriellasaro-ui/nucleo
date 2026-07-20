@@ -6,14 +6,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ page_title|default:"Núcleo" }} · Núcleo{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="{% static 'css/nucleo.css' %}">
+  <link rel="stylesheet" href="{% static 'css/nucleo.css' %}?v={% now 'U' %}">
   <style>{{ brand_css|safe }}</style>
   <script>window.NUCLEO_CSRF = "{{ csrf_token }}";</script>
   <script src="{% static 'js/htmx.min.js' %}" defer></script>
   <script src="{% static 'js/alpine.min.js' %}" defer></script>
   <script src="{% static 'js/sortable.min.js' %}" defer></script>
-  <script src="{% static 'js/nucleo.js' %}" defer></script>
-  <script src="{% static 'js/kanban.js' %}" defer></script>
+  <script src="{% static 'js/nucleo.js' %}?v={% now 'U' %}" defer></script>
+  <script src="{% static 'js/kanban.js' %}?v={% now 'U' %}" defer></script>
 </head>
 <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
       x-data="shell()"

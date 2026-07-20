@@ -4,12 +4,12 @@
 <div class="page-head">
   <div>
     <h1>Negócios</h1>
-    <p>Arraste os cards entre as etapas. Crie colunas e pipelines à vontade.</p>
+    <p>Arraste os cards entre as fases. Use “Personalizar pipeline” para editar fases e ordem.</p>
   </div>
   <div class="board-actions">
     <div class="pipe-switch" x-data="{ open: false }" @keydown.escape="open = false">
       <button class="btn btn--ghost" @click="open = !open">
-        {% include "core/_icon.html" with icon="pipeline" %} {{ pipeline.name }}
+        {% include "core/_icon.html" with icon="pipeline" %} <span data-current-pipeline-name>{{ pipeline.name }}</span>
         <span class="pipe-switch__chev">{% include "core/_icon.html" with icon="chevron" %}</span>
       </button>
       <div class="pipe-menu" x-show="open" x-cloak x-transition @click.outside="open = false">
@@ -29,8 +29,13 @@
       </div>
     </div>
     {% if can_edit %}
+    <button class="btn btn--ghost"
+            hx-get="{% url 'crm:pipeline_customize' pipeline.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+            @click="modal = true">
+      {% include "core/_icon.html" with icon="sliders" %} Personalizar pipeline
+    </button>
     <button class="btn btn--primary"
-            hx-get="{% url 'crm:deal_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+            hx-get="{% url 'crm:deal_create' %}?pipeline={{ pipeline.pk }}" hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
       {% include "core/_icon.html" with icon="plus" %} Novo negócio
     </button>
     {% endif %}

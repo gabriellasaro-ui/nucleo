@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<a href="{% url 'integrations' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Integrações</a>
+
+<div class="page-head">
+  <div>
+    <h1>Escolha a página do Facebook</h1>
+    <p>Os leads (Lead Ads) da página escolhida vão criar <b>contato</b>, <b>empresa</b> e <b>negócio</b> automaticamente nas suas automações.</p>
+  </div>
+</div>
+
+<div class="fb-pages">
+  {% for p in pages %}
+  <form method="post" action="{% url 'facebook_select_page' %}" class="fb-page card">
+    {% csrf_token %}
+    <input type="hidden" name="page_id" value="{{ p.id }}">
+    {% include "core/partials/_brand_logo.html" with provider="facebook" %}
+    <div class="fb-page__info">
+      <b>{{ p.name }}</b>
+      <span>ID {{ p.id }}</span>
+    </div>
+    <button class="btn btn--primary btn--sm" type="submit">Conectar esta página</button>
+  </form>
+  {% empty %}
+  <div class="cf-empty" style="padding:34px 16px;">{% include "core/_icon.html" with icon="users" %}<div>Nenhuma página encontrada.</div></div>
+  {% endfor %}
+</div>
+{% endblock %}

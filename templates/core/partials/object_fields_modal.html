@@ -1,0 +1,71 @@
+<div class="modal modal--wide object-fields-modal">
+  <div class="modal__head">
+    <div>
+      <h2>Campos de {{ object_label|lower }}</h2>
+      <p class="modal__subtitle">Crie campos extras que aparecem no formulário, detalhe, automações e, no caso de negócios, nos cards da pipeline.</p>
+    </div>
+    <button type="button" class="icon-btn" @click="modal = false">{% include "core/_icon.html" with icon="close" %}</button>
+  </div>
+
+  <div class="modal__body object-fields-body">
+    <form class="cf-add object-fields-add" hx-post="{% url 'custom_field_add' %}" hx-target="#modal-content" hx-swap="innerHTML" x-data="{ t: 'text' }">
+      {% csrf_token %}
+      <input type="hidden" name="return_modal" value="1">
+      <input type="hidden" name="object_type" value="{{ object_type }}">
+      <input class="cf-add__label" type="text" name="label" placeholder="Nome do campo. Ex.: Origem, Produto, Prioridade" autocomplete="off">
+      <select name="field_type" class="cf-add__control" x-model="t">
+        {% for value,label in type_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+      <input class="cf-add__control" type="text" name="options" placeholder="Opções separadas por vírgula" x-show="t === 'select'" x-cloak>
+      <label class="cf-req"><input type="checkbox" name="required"> Obrigatório</label>
+      <button class="btn btn--primary btn--sm" type="submit">{% include "core/_icon.html" with icon="plus" %} Adicionar</button>
+    </form>
+
+    {% if fields %}
+    <div class="object-fields-list">
+      {% for f in fields %}
+      <div class="cf-item" x-data="{ edit: false }">
+        <div class="cf-item__row">
+          <span class="cf-item__icon">
+            {% if f.field_type == "number" %}{% include "core/_icon.html" with icon="hash" %}
+            {% elif f.field_type == "date" %}{% include "core/_icon.html" with icon="calendar" %}
+            {% elif f.field_type == "select" %}{% include "core/_icon.html" with icon="sliders" %}
+            {% elif f.field_type == "checkbox" %}{% include "core/_icon.html" with icon="task" %}
+            {% else %}{% include "core/_icon.html" with icon="text" %}{% endif %}
+          </span>
+          <div class="cf-item__info">
+            <div class="cf-item__label">{{ f.label }}{% if f.required %} <span class="role-badge">obrigatório</span>{% endif %}</div>
+            <div class="cf-item__meta">{{ f.get_field_type_display }}{% if f.options %} · {{ f.options|join:", " }}{% endif %}</div>
+          </div>
+          <button class="btn btn--ghost btn--sm" @click="edit = !edit" type="button">{% include "core/_icon.html" with icon="edit" %} Editar</button>
+          <button class="btn btn--danger btn--sm"
+                  hx-post="{% url 'custom_field_delete' f.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+                  hx-confirm="Remover o campo “{{ f.label|escapejs }}”? Os valores salvos deixam de aparecer.">
+            {% include "core/_icon.html" with icon="trash" %}
+          </button>
+        </div>
+        <form class="cf-edit" x-show="edit" x-cloak hx-post="{% url 'custom_field_update' f.pk %}" hx-target="#modal-content" hx-swap="innerHTML">
+          {% csrf_token %}
+          <input type="hidden" name="return_modal" value="1">
+          <input type="text" name="label" value="{{ f.label }}" placeholder="Rótulo">
+          {% if f.has_options %}<input type="text" name="options" value="{{ f.options|join:', ' }}" placeholder="Opções separadas por vírgula">{% endif %}
+          <label class="cf-req"><input type="checkbox" name="required" {% if f.required %}checked{% endif %}> Obrigatório</label>
+          <button class="btn btn--primary btn--sm" type="submit">Salvar</button>
+          <button type="button" class="btn btn--ghost btn--sm" @click="edit = false">Cancelar</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="cf-empty">
+      {% include "core/_icon.html" with icon="sliders" %}
+      <div>Nenhum campo extra para <b>{{ object_label|lower }}</b> ainda.</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="modal__foot">
+    <div class="modal__spacer"></div>
+    <button type="button" class="btn btn--ghost" @click="modal = false">Fechar</button>
+  </div>
+</div>

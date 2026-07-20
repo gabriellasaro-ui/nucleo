@@ -8,7 +8,7 @@
   <div class="record__head-main">
     <h1>{{ deal.title }}</h1>
     <div class="record__chips">
-      <span class="badge badge--{{ deal.stage }}">{{ deal.get_stage_display }}</span>
+      <span class="badge badge--dyn" style="--stage-color: {{ deal.stage_color }}">{{ deal.stage_display }}</span>
       {% if deal.company %}<a href="{{ deal.company.get_absolute_url }}" class="chip chip--link">{% include "core/_icon.html" with icon="building" %} {{ deal.company.name }}</a>{% endif %}
       {% if deal.contact %}<a href="{{ deal.contact.get_absolute_url }}" class="chip chip--link">{% include "core/_icon.html" with icon="users" %} {{ deal.contact.full_name }}</a>{% endif %}
       {% for t in deal.tags.all %}<span class="tag-chip" style="--tc: {{ t.color }}">{{ t.name }}</span>{% endfor %}
@@ -30,7 +30,7 @@
       <div class="panel__head"><b>Detalhes</b></div>
       <div class="detail-rows">
         <div class="detail-row"><span>Valor</span><b>R$ {{ deal.value|floatformat:0|intcomma }}</b></div>
-        <div class="detail-row"><span>Estágio</span><span class="badge badge--{{ deal.stage }}">{{ deal.get_stage_display }}</span></div>
+        <div class="detail-row"><span>Estágio</span><span class="badge badge--dyn" style="--stage-color: {{ deal.stage_color }}">{{ deal.stage_display }}</span></div>
         <div class="detail-row"><span>Empresa</span><b>{% if deal.company %}<a href="{{ deal.company.get_absolute_url }}" class="link">{{ deal.company.name }}</a>{% else %}—{% endif %}</b></div>
         <div class="detail-row"><span>Contato</span><b>{% if deal.contact %}<a href="{{ deal.contact.get_absolute_url }}" class="link">{{ deal.contact.full_name }}</a>{% else %}—{% endif %}</b></div>
         <div class="detail-row"><span>Responsável</span><b>{% if deal.owner %}{{ deal.owner.get_username }}{% else %}—{% endif %}</b></div>

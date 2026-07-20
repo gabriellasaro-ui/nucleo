@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>WhatsApp</h1>
+    <p>Canal de atendimento do workspace.</p>
+  </div>
+  <div class="page-actions">
+    {% if whatsapp_connected %}
+    <span class="role-badge integration-status integration-status--on">Conectado</span>
+    {% else %}
+    <span class="role-badge integration-status">Não configurado</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="whatsapp-layout">
+  <section class="card whatsapp-panel">
+    <div class="whatsapp-panel__head">
+      <span class="whatsapp-panel__icon">{% include "core/_icon.html" with icon="phone" %}</span>
+      <div>
+        <h2>Canal</h2>
+        <p>{% if whatsapp_connected %}{{ whatsapp_config.display_name|default:"WhatsApp" }}{% else %}Configure o número principal de atendimento.{% endif %}</p>
+      </div>
+    </div>
+
+    <form class="whatsapp-form" method="post">
+      {% csrf_token %}
+      <div class="field">
+        <label for="id_whatsapp_display">Nome exibido</label>
+        <input id="id_whatsapp_display" type="text" name="display_name" value="{{ whatsapp_config.display_name|default:'' }}" placeholder="Ex.: Atendimento comercial">
+      </div>
+      <div class="field">
+        <label for="id_whatsapp_phone">Número</label>
+        <input id="id_whatsapp_phone" type="text" name="phone_number" value="{{ whatsapp_config.phone_number|default:'' }}" placeholder="+55 11 99999-9999">
+      </div>
+      <div class="field">
+        <label for="id_whatsapp_owner">Responsável padrão</label>
+        <input id="id_whatsapp_owner" type="text" name="default_owner" value="{{ whatsapp_config.default_owner|default:'' }}" placeholder="Ex.: admin, comercial, suporte">
+      </div>
+      {% if can_admin %}
+      <button type="submit" class="btn btn--primary">
+        {% include "core/_icon.html" with icon="check" %} Salvar canal
+      </button>
+      {% else %}
+      <button type="button" class="btn btn--ghost" disabled>Somente admin configura</button>
+      {% endif %}
+    </form>
+  </section>
+
+  <section class="card whatsapp-panel">
+    <div class="whatsapp-panel__head">
+      <span class="whatsapp-panel__icon whatsapp-panel__icon--soft">{% include "core/_icon.html" with icon="pipeline" %}</span>
+      <div>
+        <h2>Roteamento</h2>
+        <p>Conversas recebidas poderão virar contato, negócio e automação.</p>
+      </div>
+    </div>
+    <div class="whatsapp-steps">
+      <div><b>1</b><span>Contato criado ou atualizado</span></div>
+      <div><b>2</b><span>Negócio enviado para a pipeline</span></div>
+      <div><b>3</b><span>Fluxos de automação executam ações</span></div>
+    </div>
+  </section>
+</div>
+
+<section class="card whatsapp-inbox">
+  <div class="panel__head">
+    <b>Conversas</b>
+    <span class="panel__count">0</span>
+  </div>
+  <div class="whatsapp-empty">
+    {% include "core/_icon.html" with icon="phone" %}
+    <b>Nenhuma conversa recebida ainda.</b>
+    <span>Quando o conector estiver ativo, as conversas entram aqui.</span>
+  </div>
+</section>
+{% endblock %}

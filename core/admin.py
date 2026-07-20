@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Automation, CustomField, Event, Membership, Workspace
+from .models import Automation, AutomationRun, CustomField, Event, IntegrationConnection, Membership, Workspace
 
 
 @admin.register(CustomField)
@@ -13,6 +13,20 @@ class CustomFieldAdmin(admin.ModelAdmin):
 class AutomationAdmin(admin.ModelAdmin):
     list_display = ["name", "trigger", "action", "active", "run_count", "workspace"]
     list_filter = ["trigger", "action", "active"]
+
+
+@admin.register(AutomationRun)
+class AutomationRunAdmin(admin.ModelAdmin):
+    list_display = ["automation", "status", "object_repr", "scheduled_for", "created_at", "workspace"]
+    list_filter = ["status", "created_at", "workspace"]
+    search_fields = ["automation__name", "object_repr", "summary"]
+
+
+@admin.register(IntegrationConnection)
+class IntegrationConnectionAdmin(admin.ModelAdmin):
+    list_display = ["name", "provider", "status", "workspace", "updated_at"]
+    list_filter = ["provider", "status", "workspace"]
+    search_fields = ["name", "workspace__name"]
 
 
 @admin.register(Event)

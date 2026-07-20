@@ -1,10 +1,11 @@
-<div class="modal">
+<div class="modal modal--drawer">
   <div class="modal__head">
     <h2>{{ title }}</h2>
     <button type="button" class="icon-btn" @click="modal = false">{% include "core/_icon.html" with icon="close" %}</button>
   </div>
-  <form hx-post="{{ action }}" hx-target="#modal-content" hx-swap="innerHTML">
+  <form hx-post="{{ action }}" hx-target="#modal-content" hx-swap="innerHTML" data-deal-form>
     {% csrf_token %}
+    <input type="hidden" name="pipeline" value="{{ pipeline.pk }}">
     <div class="modal__body">
       <div class="field">
         <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
@@ -48,7 +49,29 @@
         </div>
       </div>
       {% include "crm/partials/assignees_field.html" %}
-      {% include "crm/partials/custom_fields_form.html" %}
+
+      <div class="stage-fields-shell">
+        <div class="stage-fields-shell__head">
+          {% include "core/_icon.html" with icon="pipeline" %}
+          <div>
+            <b>Campos da fase</b>
+            <span>Essas informações mudam conforme a fase selecionada acima.</span>
+          </div>
+        </div>
+        {% for group in stage_custom_field_groups %}
+          <div class="stage-fields-group"
+               data-deal-stage-fields="{{ group.stage.key }}"
+               {% if group.stage.key != selected_stage_key %}hidden{% endif %}>
+            {% if group.fields %}
+              {% include "crm/partials/custom_fields_form.html" with custom_fields=group.fields %}
+            {% else %}
+              <div class="stage-fields-empty">
+                Nenhum campo extra configurado para <b>{{ group.stage.name }}</b>.
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
     </div>
     <div class="modal__foot">
       {% if delete_pk %}

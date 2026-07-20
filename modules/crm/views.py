@@ -12,6 +12,7 @@ from django.utils.text import slugify
 
 from core.customfields import get_fields, read_from_post, with_values
 from core.events import emit
+from core.models import CustomField
 from core.rbac import can_edit
 
 from django.shortcuts import redirect
@@ -20,11 +21,23 @@ from .forms import ActivityForm, CompanyForm, ContactForm, DealForm
 from .models import Activity, Attachment, Company, Contact, Deal, Pipeline, Stage, Tag
 
 
+CARD_FIELD_CHOICES = [
+    ("company", "Empresa"),
+    ("value", "Valor"),
+    ("expected_close", "Previsão"),
+    ("contact", "Contato"),
+    ("owner", "Responsável"),
+]
+
+
 def _default_pipeline(request):
-    pipe = Pipeline.objects.filter(is_default=True).first() or Pipeline.objects.first()
+    pipe = (
+        Pipeline.objects.filter(workspace=request.workspace, is_default=True).first()
+        or Pipeline.objects.filter(workspace=request.workspace).first()
+    )
     if pipe is None:
         pipe = Pipeline.objects.create(workspace=request.workspace, name="Vendas", is_default=True)
-        pipe.ensure_stages()
+    pipe.ensure_stages()
     return pipe
 
 def _trigger_header(events):
@@ -324,6 +337,28 @@ def _scope_company_field(form, request):
         form.fields["company"].queryset = Company.objects.filter(workspace=request.workspace)
 
 
+def _scope_deal_stage_field(form, pipeline):
+    if "stage" not in form.fields or pipeline is None:
+        return
+    choices = [(stage.key, stage.name) for stage in pipeline.stages.all()]
+    form.fields["stage"].choices = choices
+    form.fields["stage"].widget.attrs["data-deal-stage-select"] = "1"
+    if choices and not form.initial.get("stage"):
+        form.initial["stage"] = choices[0][0]
+
+
+def _selected_deal_stage_key(request, form, pipeline, instance=None):
+    if request.method == "POST" and request.POST.get("stage"):
+        return request.POST.get("stage")
+    if instance and instance.stage:
+        return instance.stage
+    value = form.initial.get("stage") if form else ""
+    if value:
+        return value
+    first = pipeline.stages.first() if pipeline else None
+    return first.key if first else ""
+
+
 def _company_from_contact_post(request, owner=None):
     if request.POST.get("create_company_inline") != "on":
         return None, False
@@ -385,7 +420,7 @@ def _current_pipeline(request):
 
 
 def _unique_stage_key(pipeline, name):
-    base = slugify(name).replace("-", "_")[:40] or "etapa"
+    base = slugify(name).replace("-", "_")[:20] or "etapa"
     existing = set(pipeline.stages.values_list("key", flat=True))
     key, i = base, 2
     while key in existing:
@@ -407,17 +442,147 @@ def _deal_stats(request, pipeline):
     }
 
 
+def _card_field_options(workspace):
+    options = [{"key": key, "label": label, "kind": "native"} for key, label in CARD_FIELD_CHOICES]
+    options.extend(
+        {"key": f"custom:{field.key}", "label": field.label, "kind": "custom", "field": field}
+        for field in CustomField.objects.filter(workspace=workspace, object_type="deal")
+    )
+    return options
+
+
+def _safe_card_fields(workspace, values):
+    allowed = {option["key"] for option in _card_field_options(workspace)}
+    return [value for value in values if value in allowed]
+
+
+def _stage_custom_field_keys(stage):
+    return [
+        value.split(":", 1)[1]
+        for value in (stage.card_fields or [])
+        if isinstance(value, str) and value.startswith("custom:")
+    ]
+
+
+def _stage_custom_fields(workspace, pipeline, stage_key):
+    stage = pipeline.stages.filter(key=stage_key).first() if pipeline else None
+    if stage is None:
+        return []
+    keys = _stage_custom_field_keys(stage)
+    if not keys:
+        return []
+    fields = list(CustomField.objects.filter(workspace=workspace, object_type="deal", key__in=keys))
+    by_key = {field.key: field for field in fields}
+    return [by_key[key] for key in keys if key in by_key]
+
+
+def _stage_custom_field_groups(workspace, pipeline, instance=None):
+    groups = []
+    for stage in pipeline.stages.all():
+        fields = _stage_custom_fields(workspace, pipeline, stage.key)
+        groups.append({
+            "stage": stage,
+            "fields": with_values(fields, instance),
+        })
+    return groups
+
+
+def _merge_card_fields(primary, secondary):
+    merged = []
+    for value in list(primary) + list(secondary):
+        if value and value not in merged:
+            merged.append(value)
+    return merged
+
+
+def _unique_deal_field_key(workspace, label):
+    base = slugify(label).replace("-", "_")[:60] or "campo"
+    existing = set(
+        CustomField.objects.filter(workspace=workspace, object_type="deal").values_list("key", flat=True)
+    )
+    key, i = base, 2
+    while key in existing:
+        suffix = f"_{i}"
+        key = f"{base[:60 - len(suffix)]}{suffix}"
+        i += 1
+    return key
+
+
+def _custom_field_options(raw_options):
+    return [option.strip() for option in raw_options.split(",") if option.strip()]
+
+
+def _remove_card_field_from_pipeline(pipeline, card_field_key):
+    for stage in pipeline.stages.all():
+        card_fields = [value for value in (stage.card_fields or []) if value != card_field_key]
+        if card_fields != (stage.card_fields or []):
+            stage.card_fields = card_fields
+            stage.save(update_fields=["card_fields", "updated_at"])
+
+
+def _propagate_stage_card_fields(stage, selected_fields):
+    found = False
+    for item in stage.pipeline.stages.all():
+        if item.pk == stage.pk:
+            item.card_fields = selected_fields
+            found = True
+        elif found:
+            item.card_fields = _merge_card_fields(selected_fields, item.card_fields or [])
+        else:
+            continue
+        item.save(update_fields=["card_fields", "updated_at"])
+
+
+def _format_custom_card_value(field, value):
+    if value in (None, ""):
+        return ""
+    if field.field_type == "checkbox":
+        return "Sim" if value else "Não"
+    return str(value)
+
+
+def _deal_card_rows(deal, card_fields, custom_fields):
+    rows = []
+    custom_by_key = {field.key: field for field in custom_fields}
+    custom_values = deal.custom or {}
+    for key in card_fields:
+        if key == "company" and deal.company_id:
+            rows.append({"label": "Empresa", "value": deal.company.name})
+        elif key == "value":
+            value = f"R$ {deal.value:,.0f}".replace(",", ".")
+            rows.append({"label": "Valor", "value": value, "emphasis": True})
+        elif key == "expected_close" and deal.expected_close:
+            rows.append({"label": "Previsão", "value": deal.expected_close.strftime("%d/%m/%Y")})
+        elif key == "contact" and deal.contact_id:
+            rows.append({"label": "Contato", "value": deal.contact.full_name})
+        elif key == "owner" and deal.owner_id:
+            rows.append({"label": "Responsável", "value": deal.owner.get_username()})
+        elif key.startswith("custom:"):
+            field_key = key.split(":", 1)[1]
+            field = custom_by_key.get(field_key)
+            if field:
+                value = _format_custom_card_value(field, custom_values.get(field.key))
+                if value:
+                    rows.append({"label": field.label, "value": value})
+    return rows
+
+
 def _board_context(request):
     pipeline = _current_pipeline(request)
     stages = list(pipeline.stages.all())
+    custom_fields = list(CustomField.objects.filter(workspace=request.workspace, object_type="deal"))
     deals = list(
-        Deal.objects.filter(workspace=request.workspace, pipeline=pipeline).select_related("company", "contact")
+        Deal.objects.filter(workspace=request.workspace, pipeline=pipeline).select_related("company", "contact", "owner")
     )
     columns = []
     for st in stages:
         col_deals = [d for d in deals if d.stage == st.key]
+        card_fields = st.card_fields or []
+        for deal in col_deals:
+            deal.card_rows = _deal_card_rows(deal, card_fields, custom_fields)
         columns.append({
             "key": st.key, "label": st.name, "color": st.color, "kind": st.kind, "stage_id": st.pk,
+            "card_fields": card_fields,
             "deals": col_deals,
             "total": sum((d.value for d in col_deals), 0),
             "count": len(col_deals),
@@ -426,7 +591,7 @@ def _board_context(request):
         "columns": columns,
         "stats": _deal_stats(request, pipeline),
         "pipeline": pipeline,
-        "pipelines": list(Pipeline.objects.all()),
+        "pipelines": list(Pipeline.objects.filter(workspace=request.workspace)),
     }
 
 
@@ -450,6 +615,10 @@ def deal_stats(request):
 def deal_form(request, pk=None):
     instance = get_object_or_404(Deal, pk=pk, workspace=request.workspace) if pk else None
     old_stage = instance.stage if instance else None
+    pipeline = instance.pipeline if instance and instance.pipeline_id else _current_pipeline(request)
+    posted_pipeline = request.POST.get("pipeline") if request.method == "POST" else None
+    if posted_pipeline:
+        pipeline = get_object_or_404(Pipeline, pk=posted_pipeline, workspace=request.workspace)
     if request.method == "POST":
         if not can_edit(request):
             return _forbidden()
@@ -457,11 +626,11 @@ def deal_form(request, pk=None):
         form = DealForm(request.POST, instance=instance)
         _scope_deal_fields(form, request)
         _scope_owner_field(form, request)
+        _scope_deal_stage_field(form, pipeline)
         if form.is_valid():
             deal = form.save(commit=False)
             deal.workspace = request.workspace
-            if not deal.pipeline_id:
-                deal.pipeline = _default_pipeline(request)
+            deal.pipeline = pipeline
             deal.sync_stage_kind()
             _apply_custom(request, deal, "deal")
             deal.save()
@@ -477,12 +646,15 @@ def deal_form(request, pk=None):
         form = DealForm(instance=instance)
         _scope_deal_fields(form, request)
         _scope_owner_field(form, request)
+        _scope_deal_stage_field(form, pipeline)
     context = {
         "form": form,
         "title": "Editar negócio" if instance else "Novo negócio",
         "action": request.path,
+        "pipeline": pipeline,
         "delete_pk": instance.pk if instance else None,
-        "custom_fields": with_values(get_fields(request.workspace, "deal"), instance),
+        "selected_stage_key": _selected_deal_stage_key(request, form, pipeline, instance),
+        "stage_custom_field_groups": _stage_custom_field_groups(request.workspace, pipeline, instance),
         "tags_text": _tags_text(instance),
         "members": _workspace_members(request),
         "assignee_ids": _assignee_ids(instance),
@@ -540,11 +712,187 @@ def pipeline_create(request):
     if request.method == "POST" and can_edit(request):
         name = request.POST.get("name", "").strip()
         if name:
-            order = (Pipeline.objects.aggregate(m=Max("order"))["m"] or 0) + 1
-            pipe = Pipeline.objects.create(workspace=request.workspace, name=name, order=order)
+            pipelines = Pipeline.objects.filter(workspace=request.workspace)
+            order = (pipelines.aggregate(m=Max("order"))["m"] or 0) + 1
+            pipe = Pipeline.objects.create(
+                workspace=request.workspace,
+                name=name,
+                order=order,
+                is_default=not pipelines.exists(),
+            )
             pipe.ensure_stages()
             return redirect(f"{reverse('crm:deal_board')}?pipeline={pipe.pk}")
     return redirect("crm:deal_board")
+
+
+def _pipeline_modal_context(request, pipeline):
+    deal_counts = {
+        row["stage"]: row["count"]
+        for row in Deal.objects.filter(workspace=request.workspace, pipeline=pipeline)
+        .values("stage")
+        .annotate(count=Count("id"))
+    }
+    stages = list(pipeline.stages.all())
+    for stage in stages:
+        stage.deal_count = deal_counts.get(stage.key, 0)
+        stage.selected_card_fields = stage.card_fields or []
+        stage.stage_fields = _stage_custom_fields(request.workspace, pipeline, stage.key)
+    return {
+        "pipeline": pipeline,
+        "stages": stages,
+        "kind_choices": Stage.KIND_CHOICES,
+        # Only the native "show on card" toggles live here now; custom fields are
+        # created and listed inside each stage (modular, Pipefy-style).
+        "card_field_options": [{"key": key, "label": label} for key, label in CARD_FIELD_CHOICES],
+        "custom_field_type_choices": CustomField.TYPE_CHOICES,
+    }
+
+
+def _pipeline_modal_response(request, pipeline, message=None, kind="success", extra_events=None):
+    resp = render(request, "crm/partials/pipeline_customize.html", _pipeline_modal_context(request, pipeline))
+    events = {
+        "nucleo:dealsBoard": True,
+        "nucleo:dealsStats": True,
+    }
+    if message:
+        events["nucleo:toast"] = {"text": message, "kind": kind}
+    if extra_events:
+        events.update(extra_events)
+    resp["HX-Trigger"] = _trigger_header(events)
+    return resp
+
+
+@login_required
+def pipeline_customize(request, pk):
+    if not can_edit(request):
+        return _forbidden()
+    pipeline = get_object_or_404(Pipeline, pk=pk, workspace=request.workspace)
+    return render(request, "crm/partials/pipeline_customize.html", _pipeline_modal_context(request, pipeline))
+
+
+@login_required
+def pipeline_field_add(request, pk):
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    pipeline = get_object_or_404(Pipeline, pk=pk, workspace=request.workspace)
+    label = request.POST.get("label", "").strip()
+    field_type = request.POST.get("field_type", "text")
+    required = request.POST.get("required") == "on"
+    options = _custom_field_options(request.POST.get("options", ""))
+    if not label:
+        return _pipeline_modal_response(request, pipeline, "Informe o nome do campo.", "error")
+    if field_type not in dict(CustomField.TYPE_CHOICES):
+        return _pipeline_modal_response(request, pipeline, "Tipo de campo inválido.", "error")
+    if field_type in ("select", "multiselect") and not options:
+        return _pipeline_modal_response(request, pipeline, "Informe as opções do campo.", "error")
+    CustomField.objects.create(
+        workspace=request.workspace,
+        object_type="deal",
+        key=_unique_deal_field_key(request.workspace, label),
+        label=label,
+        field_type=field_type,
+        options=options if field_type in ("select", "multiselect") else [],
+        required=required,
+        order=CustomField.objects.filter(workspace=request.workspace, object_type="deal").count(),
+    )
+    return _pipeline_modal_response(request, pipeline, f"Campo \"{label}\" criado.")
+
+
+@login_required
+def pipeline_field_update(request, pk, field_pk):
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    pipeline = get_object_or_404(Pipeline, pk=pk, workspace=request.workspace)
+    field = get_object_or_404(CustomField, pk=field_pk, workspace=request.workspace, object_type="deal")
+    label = request.POST.get("label", "").strip()
+    field_type = request.POST.get("field_type", field.field_type)
+    options = _custom_field_options(request.POST.get("options", ""))
+    if not label:
+        return _pipeline_modal_response(request, pipeline, "Informe o nome do campo.", "error")
+    if field_type not in dict(CustomField.TYPE_CHOICES):
+        return _pipeline_modal_response(request, pipeline, "Tipo de campo inválido.", "error")
+    if field_type in ("select", "multiselect") and not options:
+        return _pipeline_modal_response(request, pipeline, "Informe as opções do campo.", "error")
+    field.label = label
+    field.field_type = field_type
+    field.options = options if field_type in ("select", "multiselect") else []
+    field.required = request.POST.get("required") == "on"
+    field.save(update_fields=["label", "field_type", "options", "required"])
+    return _pipeline_modal_response(request, pipeline, f"Campo \"{field.label}\" atualizado.")
+
+
+@login_required
+def pipeline_field_delete(request, pk, field_pk):
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    pipeline = get_object_or_404(Pipeline, pk=pk, workspace=request.workspace)
+    field = get_object_or_404(CustomField, pk=field_pk, workspace=request.workspace, object_type="deal")
+    card_field_key = f"custom:{field.key}"
+    field.delete()
+    _remove_card_field_from_pipeline(pipeline, card_field_key)
+    return _pipeline_modal_response(request, pipeline, "Campo removido.")
+
+
+@login_required
+def stage_field_add(request, pk):
+    """Create a custom field that belongs to a single stage (Pipefy-style):
+    the field is attached only to this stage and does not carry to others."""
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    stage = get_object_or_404(Stage, pk=pk, pipeline__workspace=request.workspace)
+    pipeline = stage.pipeline
+    label = request.POST.get("label", "").strip()
+    field_type = request.POST.get("field_type", "text")
+    required = request.POST.get("required") == "on"
+    options = _custom_field_options(request.POST.get("options", ""))
+    if not label:
+        return _pipeline_modal_response(request, pipeline, "Informe o nome do campo.", "error")
+    if field_type not in dict(CustomField.TYPE_CHOICES):
+        return _pipeline_modal_response(request, pipeline, "Tipo de campo inválido.", "error")
+    if field_type in ("select", "multiselect") and not options:
+        return _pipeline_modal_response(request, pipeline, "Informe as opções do campo.", "error")
+    field = CustomField.objects.create(
+        workspace=request.workspace,
+        object_type="deal",
+        key=_unique_deal_field_key(request.workspace, label),
+        label=label,
+        field_type=field_type,
+        options=options if field_type in ("select", "multiselect") else [],
+        required=required,
+        order=CustomField.objects.filter(workspace=request.workspace, object_type="deal").count(),
+    )
+    stage.card_fields = _merge_card_fields(stage.card_fields or [], [f"custom:{field.key}"])
+    stage.save(update_fields=["card_fields", "updated_at"])
+    return _pipeline_modal_response(request, pipeline, f"Campo “{label}” adicionado à fase “{stage.name}”.")
+
+
+@login_required
+def pipeline_update(request, pk):
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    pipeline = get_object_or_404(Pipeline, pk=pk, workspace=request.workspace)
+    name = request.POST.get("name", "").strip()
+    if not name:
+        return _pipeline_modal_response(request, pipeline, "Informe o nome da pipeline.", "error")
+    pipeline.name = name
+    pipeline.save(update_fields=["name", "updated_at"])
+    return _pipeline_modal_response(
+        request,
+        pipeline,
+        "Pipeline atualizada.",
+        "success",
+        {"nucleo:pipelineRenamed": {"id": pipeline.pk, "name": pipeline.name}},
+    )
 
 
 @login_required
@@ -557,14 +905,16 @@ def stage_add(request):
     name = request.POST.get("name", "").strip()
     color = request.POST.get("color", "").strip() or "#64748b"
     kind = request.POST.get("kind", "open")
-    message = "Informe o nome da etapa."
+    message = "Informe o nome da fase."
     if name:
         order = (pipeline.stages.aggregate(m=Max("order"))["m"] or 0) + 1
         pipeline.stages.create(
             key=_unique_stage_key(pipeline, name), name=name, color=color,
             kind=kind if kind in dict(Stage.KIND_CHOICES) else "open", order=order,
         )
-        message = f"Etapa “{name}” criada."
+        message = f"Fase “{name}” criada."
+    if request.POST.get("return_modal") == "1":
+        return _pipeline_modal_response(request, pipeline, message, "success" if name else "error")
     resp = HttpResponse(status=204)
     resp["HX-Trigger"] = _trigger_header({
         "nucleo:dealsBoard": True, "nucleo:closeModal": True,
@@ -580,19 +930,94 @@ def stage_delete(request, pk):
     if not can_edit(request):
         return _forbidden()
     stage = get_object_or_404(Stage, pk=pk, pipeline__workspace=request.workspace)
+    pipeline = stage.pipeline
     has_deals = Deal.objects.filter(
-        workspace=request.workspace, pipeline=stage.pipeline, stage=stage.key
+        workspace=request.workspace, pipeline=pipeline, stage=stage.key
     ).exists()
     if has_deals:
-        message, kind = "Mova os negócios desta etapa antes de excluí-la.", "error"
-    elif stage.pipeline.stages.count() <= 1:
-        message, kind = "A pipeline precisa de ao menos uma etapa.", "error"
+        message, kind = "Mova os negócios desta fase antes de excluí-la.", "error"
+    elif pipeline.stages.count() <= 1:
+        message, kind = "A pipeline precisa de ao menos uma fase.", "error"
     else:
         stage.delete()
-        message, kind = "Etapa excluída.", "success"
+        message, kind = "Fase excluída.", "success"
+    if request.POST.get("return_modal") == "1":
+        return _pipeline_modal_response(request, pipeline, message, kind)
     resp = HttpResponse(status=204)
     resp["HX-Trigger"] = _trigger_header({
         "nucleo:dealsBoard": True, "nucleo:toast": {"text": message, "kind": kind},
+    })
+    return resp
+
+
+@login_required
+def stage_reorder(request):
+    """Persist a new column order after dragging stages on the board."""
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    ids = [i for i in request.POST.get("order", "").split(",") if i]
+    pipeline = None
+    pipeline_id = request.POST.get("pipeline")
+    if pipeline_id:
+        pipeline = get_object_or_404(Pipeline, pk=pipeline_id, workspace=request.workspace)
+    for pos, sid in enumerate(ids):
+        qs = Stage.objects.filter(pk=sid, pipeline__workspace=request.workspace)
+        if pipeline is not None:
+            qs = qs.filter(pipeline=pipeline)
+        qs.update(order=pos)
+    if request.POST.get("return_modal") == "1" and pipeline is not None:
+        return _pipeline_modal_response(request, pipeline, "Ordem das fases salva.")
+    resp = HttpResponse(status=204)
+    resp["HX-Trigger"] = _trigger_header({
+        "nucleo:dealsBoard": True,
+        "nucleo:toast": {"text": "Ordem das fases salva.", "kind": "success"},
+    })
+    return resp
+
+
+@login_required
+def stage_update(request, pk):
+    """Rename / recolor / retype a column (stage)."""
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    if not can_edit(request):
+        return _forbidden()
+    stage = get_object_or_404(Stage, pk=pk, pipeline__workspace=request.workspace)
+    name = request.POST.get("name", "").strip()
+    if request.POST.get("return_modal") == "1" and not name:
+        return _pipeline_modal_response(request, stage.pipeline, "Informe o nome da fase.", "error")
+    if name:
+        stage.name = name
+    color = request.POST.get("color", "").strip()
+    if color:
+        stage.color = color
+    kind = request.POST.get("kind")
+    kind_changed = kind in dict(Stage.KIND_CHOICES) and kind != stage.kind
+    if kind in dict(Stage.KIND_CHOICES):
+        stage.kind = kind
+    update_card_fields = request.POST.get("card_fields_present") == "1"
+    if update_card_fields:
+        # The stage panel only submits the native "show on card" toggles. Keep
+        # this stage's own custom fields (managed separately) and never
+        # propagate to other stages — each stage owns its fields.
+        native = [v for v in _safe_card_fields(request.workspace, request.POST.getlist("card_fields"))
+                  if not str(v).startswith("custom:")]
+        existing_custom = [v for v in (stage.card_fields or []) if isinstance(v, str) and v.startswith("custom:")]
+        stage.card_fields = native + existing_custom
+    stage.save()
+    if kind_changed:
+        # keep deals' denormalized stage_kind in sync with the stage's new kind
+        Deal.objects.filter(
+            workspace=request.workspace, pipeline=stage.pipeline, stage=stage.key
+        ).update(stage_kind=stage.kind)
+    if request.POST.get("return_modal") == "1":
+        return _pipeline_modal_response(request, stage.pipeline, f"Fase “{stage.name}” atualizada.")
+    resp = HttpResponse(status=204)
+    resp["HX-Trigger"] = _trigger_header({
+        "nucleo:dealsBoard": True, "nucleo:dealsStats": True, "nucleo:closeModal": True,
+        "nucleo:toast": {"text": f"Fase “{stage.name}” atualizada.", "kind": "success"},
     })
     return resp
 
@@ -642,12 +1067,13 @@ def contact_detail(request, pk):
 @login_required
 def deal_detail(request, pk):
     deal = get_object_or_404(Deal.objects.select_related("company", "contact"), pk=pk, workspace=request.workspace)
+    stage_fields = _stage_custom_fields(request.workspace, deal.pipeline, deal.stage) if deal.pipeline_id else get_fields(request.workspace, "deal")
     context = {
         "page_title": deal.title,
         "breadcrumb": ["CRM", "Negócios", deal.title],
         "deal": deal,
         "attachments": deal.attachments.all(),
-        "custom_fields": with_values(get_fields(request.workspace, "deal"), deal),
+        "custom_fields": with_values(stage_fields, deal),
         **_timeline_context("deal", deal),
     }
     return render(request, "crm/deal_detail.html", context)

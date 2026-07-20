@@ -7,11 +7,20 @@
     <p>Contas e organizações do seu workspace.</p>
   </div>
   {% if can_edit %}
+  <div class="page-actions">
+  {% if can_admin %}
+  <button class="btn btn--ghost"
+          hx-get="{% url 'custom_fields_object' 'company' %}" hx-target="#modal-content" hx-swap="innerHTML"
+          @click="modal = true">
+    {% include "core/_icon.html" with icon="sliders" %} Campos da empresa
+  </button>
+  {% endif %}
   <button class="btn btn--primary"
           hx-get="{% url 'crm:company_create' %}" hx-target="#modal-content" hx-swap="innerHTML"
           @click="modal = true">
     {% include "core/_icon.html" with icon="plus" %} Nova empresa
   </button>
+  </div>
   {% endif %}
 </div>
 

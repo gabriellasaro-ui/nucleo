@@ -113,6 +113,13 @@ else:
         }
     }
 
+# Tests run against a throwaway `test_nucleodb` database that Django creates and
+# drops around the suite — NEVER the real nucleodb, and NEVER MunduDB. The
+# django-tenants runner sets up the public schema and a disposable test tenant so
+# schema-per-workspace behaviour can be exercised.
+if _database_url:
+    DATABASES["default"].setdefault("TEST", {})["NAME"] = "test_nucleodb"
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -145,3 +152,9 @@ MESSAGE_TAGS = {
     30: "warning",
     40: "error",
 }
+
+# Facebook Lead Ads — OAuth "connect page" flow. Fill these from your Meta app
+# (developers.facebook.com). Without them, the Connect button explains what's missing.
+FACEBOOK_APP_ID = env("FACEBOOK_APP_ID", "")
+FACEBOOK_APP_SECRET = env("FACEBOOK_APP_SECRET", "")
+FACEBOOK_GRAPH_VERSION = env("FACEBOOK_GRAPH_VERSION", "v19.0")

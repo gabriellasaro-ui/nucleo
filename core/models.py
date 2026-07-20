@@ -47,7 +47,9 @@ class Workspace(TenantMixin):
                 (Domain, "tenant_id"),
                 (Membership, "workspace_id"),
                 (CustomField, "workspace_id"),
+                (IntegrationConnection, "workspace_id"),
                 (Automation, "workspace_id"),
+                (AutomationRun, "workspace_id"),
                 (Event, "workspace_id"),
             ]:
                 cur.execute(f'DELETE FROM "{model._meta.db_table}" WHERE {column} = %s', [pk])
@@ -134,7 +136,8 @@ class CustomField(models.Model):
         ("textarea", "Texto longo"),
         ("number", "Número"),
         ("date", "Data"),
-        ("select", "Seleção"),
+        ("select", "Lista (uma opção)"),
+        ("multiselect", "Múltipla escolha"),
         ("checkbox", "Sim/Não"),
     ]
 
@@ -162,6 +165,15 @@ class CustomField(models.Model):
         return self.field_type == "select"
 
     @property
+    def is_multiselect(self):
+        return self.field_type == "multiselect"
+
+    @property
+    def has_options(self):
+        """Types backed by a user-defined option list."""
+        return self.field_type in ("select", "multiselect")
+
+    @property
     def is_checkbox(self):
         return self.field_type == "checkbox"
 
@@ -173,6 +185,8 @@ EVENT_CHOICES = [
     ("company_created", "Empresa criada"),
     ("contact_created", "Contato criado"),
     ("contact_stage_changed", "Contato mudou de estágio"),
+    ("schedule_interval", "Schedule trigger"),
+    ("webhook_received", "Webhook recebido"),
 ]
 
 
@@ -198,16 +212,34 @@ class Event(models.Model):
 
 class Automation(models.Model):
     """When a trigger happens, run one or more CRM actions in order."""
+    ICON_CHOICES = [
+        ("bolt", "Raio"),
+        ("clock", "Tempo"),
+        ("pipeline", "Pipeline"),
+        ("users", "Contatos"),
+        ("command", "Integracao"),
+        ("sliders", "Filtro"),
+        ("check", "Regra"),
+        ("hash", "Campo"),
+    ]
+
     ACTION_CHOICES = [
         ("create_task", "Criar tarefa"),
         ("create_note", "Adicionar nota"),
+        ("create_contact", "Criar contato"),
+        ("create_company", "Criar empresa"),
         ("create_deal", "Criar negócio"),
         ("move_deal", "Mover negócio"),
         ("set_contact_stage", "Atualizar estágio do contato"),
+        ("set_custom_field", "Atualizar campo"),
+        ("delay", "Aguardar"),
+        ("send_webhook", "Enviar webhook"),
+        ("http_request", "HTTP request"),
     ]
 
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="automations")
     name = models.CharField("Nome", max_length=120)
+    icon = models.CharField("Ícone", max_length=24, choices=ICON_CHOICES, default="bolt")
     trigger = models.CharField("Gatilho", max_length=40, choices=EVENT_CHOICES)
     condition_stage = models.CharField("Etapa/coluna (condição)", max_length=20, blank=True)
     action = models.CharField("Ação", max_length=20, choices=ACTION_CHOICES, default="create_task")
@@ -253,6 +285,21 @@ class Automation(models.Model):
         action_type = action.get("type")
         labels = dict(self.ACTION_CHOICES)
         label = labels.get(action_type, action_type)
+        if action_type == "delay":
+            if action.get("delay_until"):
+                return f"aguardar ate {action.get('delay_until')}"
+            amount = action.get("delay_amount") or action.get("delay_minutes") or 0
+            unit = {
+                "minutes": "min",
+                "hours": "h",
+                "days": "dia(s)",
+            }.get(action.get("delay_unit"), "min")
+            return f"aguardar {amount} {unit}"
+        if action_type == "send_webhook":
+            return "enviar webhook"
+        if action_type == "http_request":
+            method = action.get("http_method") or "POST"
+            return f"HTTP {method}"
         stage = action.get("deal_stage") or action.get("contact_stage") or action.get("stage")
         if stage:
             stage_label = (
@@ -262,6 +309,71 @@ class Automation(models.Model):
             )
             return f"{label.lower()} em {stage_label}"
         return label.lower()
+
+
+class AutomationRun(models.Model):
+    STATUS_CHOICES = [
+        ("success", "Sucesso"),
+        ("skipped", "Ignorada"),
+        ("scheduled", "Agendada"),
+        ("error", "Erro"),
+        ("test", "Teste"),
+    ]
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="automation_runs")
+    automation = models.ForeignKey(Automation, on_delete=models.CASCADE, related_name="runs", null=True, blank=True)
+    event = models.ForeignKey(Event, on_delete=models.SET_NULL, related_name="automation_runs", null=True, blank=True)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="success")
+    object_model = models.CharField(max_length=40, blank=True)
+    object_id = models.PositiveIntegerField(null=True, blank=True)
+    object_repr = models.CharField(max_length=200, blank=True)
+    summary = models.CharField(max_length=300, blank=True)
+    path = models.JSONField(default=list, blank=True)
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    resume_node_id = models.CharField(max_length=80, blank=True)
+    resumed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Execução de automação"
+        verbose_name_plural = "Execuções de automação"
+
+    def __str__(self):
+        name = self.automation.name if self.automation_id else "Teste"
+        return f"{name} · {self.status}"
+
+
+class IntegrationConnection(models.Model):
+    PROVIDER_CHOICES = [
+        ("facebook", "Facebook Lead Ads"),
+        ("instagram", "Instagram"),
+        ("forms", "Forms nativos"),
+        ("whatsapp", "WhatsApp"),
+        ("webhook", "Webhooks"),
+        ("api", "API / HTTP"),
+    ]
+    STATUS_CHOICES = [
+        ("disconnected", "Desconectada"),
+        ("connected", "Conectada"),
+    ]
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="integrations")
+    provider = models.CharField(max_length=24, choices=PROVIDER_CHOICES)
+    name = models.CharField(max_length=80)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="disconnected")
+    config = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("workspace", "provider")]
+        ordering = ["provider"]
+        verbose_name = "Integração"
+        verbose_name_plural = "Integrações"
+
+    def __str__(self):
+        return f"{self.workspace} · {self.name}"
 
 
 def _deal_stage_labels():

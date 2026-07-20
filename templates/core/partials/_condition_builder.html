@@ -1,0 +1,25 @@
+{% comment %}Rich condition builder: rule rows (field + operator + value) combined
+with AND/OR. Serialized by nucleo.js into data.condition = {match, rules}. Uses only
+data-* hooks (no name=), so it works across cloned/indexed nodes untouched.{% endcomment %}
+<div class="cond-builder" data-cond-builder>
+  <div class="cond-builder__match">
+    <span>Passa quando</span>
+    <select data-rule-match>
+      <option value="all">TODAS baterem</option>
+      <option value="any">QUALQUER bater</option>
+    </select>
+  </div>
+  <div class="cond-rules" data-rules>
+    <div class="cond-rule" data-rule>
+      <select data-rule-field>
+        {% for f in condition_fields %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}
+      </select>
+      <select data-rule-op>
+        {% for op, label in condition_operators %}<option value="{{ op }}">{{ label }}</option>{% endfor %}
+      </select>
+      <input type="text" data-rule-value placeholder="valor">
+      <button type="button" class="cond-rule__rm" data-remove-rule title="Remover regra">{% include "core/_icon.html" with icon="close" %}</button>
+    </div>
+  </div>
+  <button type="button" class="cond-add" data-add-rule>{% include "core/_icon.html" with icon="plus" %} regra</button>
+</div>

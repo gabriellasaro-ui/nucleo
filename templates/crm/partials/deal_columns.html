@@ -1,58 +1,35 @@
 {% load humanize %}
-<div class="kanban-board">
+<div class="kanban-board" data-can-edit="{{ can_edit|yesno:'1,0' }}">
   {% for col in columns %}
-  <div class="kanban__col">
+  <div class="kanban__col" data-stage-id="{{ col.stage_id }}" style="--stage-color: {{ col.color }};">
     <div class="kanban__col-head">
+      {% if can_edit %}
+      <span class="kanban__col-grip" title="Arrastar fase">
+        {% include "core/_icon.html" with icon="sliders" %}
+      </span>
+      {% endif %}
       <span class="kanban__dot" style="background: {{ col.color }}"></span>
       <b>{{ col.label }}</b>
       <span class="kanban__count">{{ col.count }}</span>
       <span class="kanban__col-total">R$ {{ col.total|floatformat:0|intcomma }}</span>
-      {% if can_edit %}
-      <button class="kanban__col-del" title="Excluir etapa"
-              hx-post="{% url 'crm:stage_delete' col.stage_id %}" hx-swap="none"
-              hx-confirm="Excluir a etapa “{{ col.label|escapejs }}”?">
-        {% include "core/_icon.html" with icon="close" %}
-      </button>
-      {% endif %}
     </div>
     <div class="kanban__cards" data-stage="{{ col.key }}">
       {% for deal in col.deals %}
-      <div class="kanban-card" data-id="{{ deal.pk }}" data-href="{% url 'crm:deal_detail' deal.pk %}">
+      <div class="kanban-card" data-id="{{ deal.pk }}" data-href="{% url 'crm:deal_detail' deal.pk %}" style="--stage-color: {{ col.color }};">
         <div class="kanban-card__title">{{ deal.title }}</div>
-        {% if deal.company %}<div class="kanban-card__company">{{ deal.company.name }}</div>{% endif %}
-        <div class="kanban-card__meta">
-          <span class="kanban-card__value">R$ {{ deal.value|floatformat:0|intcomma }}</span>
-          {% if deal.expected_close %}
-          <span class="kanban-card__date">{% include "core/_icon.html" with icon="calendar" %}{{ deal.expected_close|date:"d/m" }}</span>
-          {% endif %}
-          {% if deal.contact %}<span class="avatar" title="{{ deal.contact.full_name }}">{{ deal.contact.initials }}</span>{% endif %}
+        {% if deal.card_rows %}
+        <div class="kanban-card__fields">
+          {% for row in deal.card_rows %}
+          <div class="kanban-card__field {% if row.emphasis %}is-emphasis{% endif %}">
+            <span>{{ row.label }}</span>
+            <b>{{ row.value }}</b>
+          </div>
+          {% endfor %}
         </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
   </div>
   {% endfor %}
-
-  {% if can_edit %}
-  <div class="kanban__col kanban__col--add" x-data="{ open: false }">
-    <button type="button" class="kanban__add-btn" @click="open = !open">
-      {% include "core/_icon.html" with icon="plus" %} Nova etapa
-    </button>
-    <form class="kanban__add-form" x-show="open" x-cloak
-          hx-post="{% url 'crm:stage_add' %}" hx-swap="none" @submit="open = false">
-      {% csrf_token %}
-      <input type="hidden" name="pipeline" value="{{ pipeline.pk }}">
-      <input type="text" name="name" placeholder="Nome da coluna" required>
-      <div class="kanban__add-row">
-        <input type="color" name="color" value="#64748b" title="Cor">
-        <select name="kind" title="Tipo">
-          <option value="open">Aberta</option>
-          <option value="won">Ganho</option>
-          <option value="lost">Perdido</option>
-        </select>
-      </div>
-      <button type="submit" class="btn btn--primary btn--sm">Criar coluna</button>
-    </form>
-  </div>
-  {% endif %}
 </div>

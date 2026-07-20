@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Integrações</h1>
+    <p>Conecte canais e fontes externas para usar nos fluxos de automação.</p>
+  </div>
+</div>
+
+<section class="integrations-grid">
+  {% for item in integration_cards %}
+  <article class="integration-card card">
+    <div class="integration-card__top">
+      {% include "core/partials/_brand_logo.html" with provider=item.provider icon=item.icon %}
+      <div>
+        <h2>{{ item.name }}</h2>
+        <p>{{ item.summary }}</p>
+        {% if item.provider == "facebook" and item.connection.config.page_name %}<span class="integration-card__page">{% include "core/_icon.html" with icon="check" %} {{ item.connection.config.page_name }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="integration-card__foot">
+      {% if item.connected %}
+      <span class="role-badge integration-status integration-status--on">Conectada</span>
+      <form method="post" action="{% url 'integration_disconnect' %}">
+        {% csrf_token %}
+        <input type="hidden" name="provider" value="{{ item.provider }}">
+        <button class="btn btn--ghost btn--sm" type="submit">Desconectar</button>
+      </form>
+      {% elif item.provider == "facebook" %}
+      <span class="role-badge integration-status">Disponível</span>
+      <a href="{% url 'facebook_connect' %}" class="btn btn--primary btn--sm">Conectar página</a>
+      {% elif item.available %}
+      <span class="role-badge integration-status">Disponível</span>
+      <form method="post" action="{% url 'integration_connect' %}">
+        {% csrf_token %}
+        <input type="hidden" name="provider" value="{{ item.provider }}">
+        <button class="btn btn--primary btn--sm" type="submit">Conectar</button>
+      </form>
+      {% else %}
+      <span class="role-badge integration-status">Em breve</span>
+      <button class="btn btn--ghost btn--sm" type="button" disabled>Em breve</button>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}

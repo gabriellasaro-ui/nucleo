@@ -44,7 +44,7 @@
         {% for d in deals %}
         <a href="{{ d.get_absolute_url }}" class="mini-item">
           <span class="mini-item__title">{{ d.title }}</span>
-          <span class="badge badge--{{ d.stage }}">{{ d.get_stage_display }}</span>
+          <span class="badge badge--dyn" style="--stage-color: {{ d.stage_color }}">{{ d.stage_display }}</span>
           <span class="mini-item__value">R$ {{ d.value|floatformat:0|intcomma }}</span>
         </a>
         {% empty %}<div class="mini-empty">Nenhum negócio ainda.</div>{% endfor %}

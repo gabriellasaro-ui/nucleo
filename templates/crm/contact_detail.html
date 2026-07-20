@@ -31,6 +31,31 @@
 <div class="record__grid">
   <div class="record__main">
     <div class="card panel">
+      <div class="panel__head"><b>Dados do contato</b></div>
+      <div class="detail-rows">
+        <div class="detail-row"><span>E-mail</span><b>{{ contact.email|default:"—" }}</b></div>
+        <div class="detail-row"><span>Telefone</span><b>{{ contact.phone|default:"—" }}</b></div>
+        <div class="detail-row"><span>Cargo</span><b>{{ contact.job_title|default:"—" }}</b></div>
+        <div class="detail-row"><span>Empresa</span><b>{% if contact.company %}{{ contact.company.name }}{% else %}—{% endif %}</b></div>
+        <div class="detail-row"><span>Endereço</span><b>{{ contact.address_street|default:"—" }}</b></div>
+        <div class="detail-row"><span>Número</span><b>{{ contact.address_number|default:"—" }}</b></div>
+        <div class="detail-row"><span>Complemento</span><b>{{ contact.address_complement|default:"—" }}</b></div>
+        <div class="detail-row"><span>Bairro</span><b>{{ contact.district|default:"—" }}</b></div>
+        <div class="detail-row"><span>Cidade/UF</span><b>{% if contact.city or contact.state %}{{ contact.city|default:"" }}{% if contact.city and contact.state %} / {% endif %}{{ contact.state|default:"" }}{% else %}—{% endif %}</b></div>
+        <div class="detail-row"><span>CEP</span><b>{{ contact.zipcode|default:"—" }}</b></div>
+        {% for cf in custom_fields %}
+        <div class="detail-row">
+          <span>{{ cf.field.label }}</span>
+          <b>
+            {% if cf.field.field_type == "checkbox" %}{% if cf.value %}Sim{% else %}Não{% endif %}
+            {% else %}{{ cf.value|default_if_none:"—"|default:"—" }}{% endif %}
+          </b>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card panel">
       <div class="panel__head">
         <b>Negócios</b><span class="panel__count">{{ deals|length }}</span>
         {% if can_edit %}
@@ -44,13 +69,12 @@
         {% for d in deals %}
         <a href="{{ d.get_absolute_url }}" class="mini-item">
           <span class="mini-item__title">{{ d.title }}</span>
-          <span class="badge badge--{{ d.stage }}">{{ d.get_stage_display }}</span>
+          <span class="badge badge--dyn" style="--stage-color: {{ d.stage_color }}">{{ d.stage_display }}</span>
           <span class="mini-item__value">R$ {{ d.value|floatformat:0|intcomma }}</span>
         </a>
         {% empty %}<div class="mini-empty">Nenhum negócio ainda.</div>{% endfor %}
       </div>
     </div>
-    {% include "crm/partials/custom_fields_display.html" %}
     {% include "crm/partials/attachments.html" %}
   </div>
 

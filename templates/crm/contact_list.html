@@ -7,11 +7,20 @@
     <p>Pessoas com quem você faz negócio.</p>
   </div>
   {% if can_edit %}
+  <div class="page-actions">
+  {% if can_admin %}
+  <button class="btn btn--ghost"
+          hx-get="{% url 'custom_fields_object' 'contact' %}" hx-target="#modal-content" hx-swap="innerHTML"
+          @click="modal = true">
+    {% include "core/_icon.html" with icon="sliders" %} Campos do contato
+  </button>
+  {% endif %}
   <button class="btn btn--primary"
           hx-get="{% url 'crm:contact_create' %}" hx-target="#modal-content" hx-swap="innerHTML"
           @click="modal = true">
     {% include "core/_icon.html" with icon="plus" %} Novo contato
   </button>
+  </div>
   {% endif %}
 </div>
 

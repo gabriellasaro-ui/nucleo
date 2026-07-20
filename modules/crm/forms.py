@@ -12,7 +12,11 @@ class CompanyForm(forms.ModelForm):
 class ContactForm(forms.ModelForm):
     class Meta:
         model = Contact
-        fields = ["first_name", "last_name", "email", "phone", "job_title", "stage", "company", "owner", "score"]
+        fields = [
+            "first_name", "last_name", "email", "phone", "job_title",
+            "address_street", "address_number", "address_complement", "district", "city", "state", "zipcode",
+            "stage", "company", "owner", "score",
+        ]
 
 
 class DealForm(forms.ModelForm):

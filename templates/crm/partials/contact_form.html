@@ -1,4 +1,4 @@
-<div class="modal modal--wide">
+<div class="modal modal--drawer">
   <div class="modal__head">
     <div>
       <h2>{{ title }}</h2>
@@ -61,6 +61,54 @@
             <label for="{{ form.score.id_for_label }}">{{ form.score.label }}</label>
             {{ form.score }}
             {% if form.score.errors %}<div class="errors">{{ form.score.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section__head">
+          <b>Endereço</b>
+          <span>Localização do contato</span>
+        </div>
+        <div class="field">
+          <label for="{{ form.address_street.id_for_label }}">{{ form.address_street.label }}</label>
+          {{ form.address_street }}
+          {% if form.address_street.errors %}<div class="errors">{{ form.address_street.errors|striptags }}</div>{% endif %}
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.address_number.id_for_label }}">{{ form.address_number.label }}</label>
+            {{ form.address_number }}
+            {% if form.address_number.errors %}<div class="errors">{{ form.address_number.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.address_complement.id_for_label }}">{{ form.address_complement.label }}</label>
+            {{ form.address_complement }}
+            {% if form.address_complement.errors %}<div class="errors">{{ form.address_complement.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.district.id_for_label }}">{{ form.district.label }}</label>
+            {{ form.district }}
+            {% if form.district.errors %}<div class="errors">{{ form.district.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.zipcode.id_for_label }}">{{ form.zipcode.label }}</label>
+            {{ form.zipcode }}
+            {% if form.zipcode.errors %}<div class="errors">{{ form.zipcode.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.city.id_for_label }}">{{ form.city.label }}</label>
+            {{ form.city }}
+            {% if form.city.errors %}<div class="errors">{{ form.city.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.state.id_for_label }}">{{ form.state.label }}</label>
+            {{ form.state }}
+            {% if form.state.errors %}<div class="errors">{{ form.state.errors|striptags }}</div>{% endif %}
           </div>
         </div>
       </div>

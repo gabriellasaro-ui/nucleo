@@ -24,7 +24,7 @@
     {% endif %}
     <div class="activity__meta">
       {% if a.is_task %}<span class="activity__kind">Tarefa</span>{% endif %}
-      {% if a.source == "automation" %}<span class="activity__auto">⚡ Automação</span>{% endif %}
+      {% if a.source == "automation" %}<span class="activity__auto">{% include "core/_icon.html" with icon="bolt" %} Automação</span>{% endif %}
       <span>{{ a.author.get_username|default:"automação" }}</span>
       <span class="dot">·</span>
       <span>{{ a.created_at|date:"d/m/Y H:i" }}</span>

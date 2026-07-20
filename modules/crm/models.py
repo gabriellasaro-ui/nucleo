@@ -97,6 +97,13 @@ class Contact(TimestampedModel):
     email = models.EmailField("E-mail", blank=True)
     phone = models.CharField("Telefone", max_length=40, blank=True)
     job_title = models.CharField("Cargo", max_length=120, blank=True)
+    address_street = models.CharField("Endereço", max_length=180, blank=True)
+    address_number = models.CharField("Número", max_length=30, blank=True)
+    address_complement = models.CharField("Complemento", max_length=80, blank=True)
+    district = models.CharField("Bairro", max_length=100, blank=True)
+    city = models.CharField("Cidade", max_length=120, blank=True)
+    state = models.CharField("UF", max_length=2, blank=True)
+    zipcode = models.CharField("CEP", max_length=20, blank=True)
     stage = models.CharField("Estágio", max_length=20, choices=STAGE_CHOICES, default="lead")
     company = models.ForeignKey(
         Company,
@@ -153,6 +160,12 @@ DEFAULT_STAGES = [
     ("perdido", "Perdido", "#dc2626", "lost"),
 ]
 
+DEFAULT_STAGE_CARD_FIELDS = ["company", "value", "expected_close", "contact"]
+
+
+def default_stage_card_fields():
+    return DEFAULT_STAGE_CARD_FIELDS.copy()
+
 
 class Pipeline(TimestampedModel):
     """A configurable sales pipeline. A workspace can have several."""
@@ -178,13 +191,19 @@ class Pipeline(TimestampedModel):
 
 
 class Stage(TimestampedModel):
-    KIND_CHOICES = [("open", "Aberta"), ("won", "Ganho"), ("lost", "Perdido")]
+    KIND_CHOICES = [
+        ("open", "Em andamento"),
+        ("won", "Ganho"),
+        ("lost", "Perdido"),
+        ("disqualified", "Desqualificado"),
+    ]
 
     pipeline = models.ForeignKey(Pipeline, on_delete=models.CASCADE, related_name="stages")
     key = models.SlugField(max_length=40)
     name = models.CharField("Nome", max_length=60)
     color = models.CharField("Cor", max_length=7, default="#2563eb")
-    kind = models.CharField("Tipo", max_length=10, choices=KIND_CHOICES, default="open")
+    kind = models.CharField("Tipo", max_length=20, choices=KIND_CHOICES, default="open")
+    card_fields = models.JSONField(default=default_stage_card_fields, blank=True)
     order = models.PositiveIntegerField(default=0)
 
     class Meta:
@@ -213,7 +232,7 @@ class Deal(TimestampedModel):
         Pipeline, on_delete=models.SET_NULL, null=True, blank=True, related_name="deals",
         verbose_name="Pipeline",
     )
-    stage_kind = models.CharField(max_length=10, default="open")  # denormalized open/won/lost
+    stage_kind = models.CharField(max_length=20, default="open")  # denormalized status
     custom = models.JSONField(default=dict, blank=True)
     title = models.CharField("Título", max_length=200)
     value = models.DecimalField("Valor", max_digits=12, decimal_places=2, default=0)

@@ -1,0 +1,11 @@
+{% comment %}Brand logo for an integration provider; falls back to the stroke icon.
+Usage: {% include "core/partials/_brand_logo.html" with provider=item.provider icon=item.icon %}{% endcomment %}
+{% if provider == "facebook" %}
+<span class="brand-logo"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect width="40" height="40" rx="9" fill="#1877F2"/><path d="M26.5 20.06C26.5 16.16 23.59 13 20 13s-6.5 3.16-6.5 7.06c0 3.5 2.45 6.4 5.66 6.94v-4.91h-1.7v-2.03h1.7v-1.55c0-1.72 1.01-2.67 2.56-2.67.74 0 1.52.13 1.52.13v1.68h-.86c-.84 0-1.11.53-1.11 1.08v1.3h1.89l-.3 2.03h-1.59V27c3.21-.53 5.73-3.43 5.73-6.94Z" fill="#fff"/></svg></span>
+{% elif provider == "instagram" %}
+<span class="brand-logo"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><defs><linearGradient id="ig" x1="4" y1="36" x2="36" y2="4" gradientUnits="userSpaceOnUse"><stop stop-color="#FEDA75"/><stop offset=".45" stop-color="#FA7E1E"/><stop offset=".7" stop-color="#D62976"/><stop offset="1" stop-color="#962FBF"/></linearGradient></defs><rect width="40" height="40" rx="9" fill="url(#ig)"/><rect x="12" y="12" width="16" height="16" rx="5" stroke="#fff" stroke-width="2.2"/><circle cx="20" cy="20" r="3.7" stroke="#fff" stroke-width="2.2"/><circle cx="25.4" cy="14.6" r="1.2" fill="#fff"/></svg></span>
+{% elif provider == "whatsapp" %}
+<span class="brand-logo"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect width="40" height="40" rx="9" fill="#25D366"/><path d="M20 12a8 8 0 0 0-6.86 12.13L12 28l3.96-1.12A8 8 0 1 0 20 12Zm4.28 11.2c-.18.5-1.05.96-1.45 1-.38.03-.86.18-2.68-.56-2.27-.94-3.72-3.24-3.83-3.4-.11-.15-.92-1.22-.92-2.33 0-1.11.58-1.66.79-1.88.2-.22.44-.28.58-.28h.42c.14 0 .32-.05.5.38.18.44.62 1.52.68 1.63.05.11.09.24.02.39-.08.15-.11.24-.22.37l-.33.38c-.11.11-.22.24-.1.46.13.22.57.94 1.23 1.53.85.75 1.56.99 1.78 1.1.22.11.35.09.48-.06l.68-.79c.15-.18.3-.15.5-.08l1.42.67c.22.11.36.16.42.25.05.09.05.54-.14 1.08Z" fill="#fff"/></svg></span>
+{% else %}
+<span class="integration-card__icon">{% include "core/_icon.html" with icon=icon %}</span>
+{% endif %}

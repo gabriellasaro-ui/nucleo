@@ -1,0 +1,551 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head automation-page-head">
+  <div>
+    <h1>Automações</h1>
+    <p>Canvas de fluxo para conectar entrada, filtros, condições e ações.</p>
+  </div>
+</div>
+
+<div class="automation-layout automation-layout--canvas">
+  <div class="automation-main">
+    <form id="automation-form" class="automation-editor card" method="post" action="{% url 'automation_add' %}"
+          data-automation-canvas>
+      {% csrf_token %}
+      <input type="hidden" name="automation_id" value="{{ selected_automation.pk|default:'' }}">
+      <input type="hidden" name="canvas" data-canvas-input>
+      <div class="automation-editor__bar">
+        <a class="automation-back-btn" href="{% url 'automations' %}" title="Voltar para fluxos">
+          {% include "core/_icon.html" with icon="back" %} Fluxos
+        </a>
+        <div class="automation-title-row">
+          <div class="field automation-title-field">
+            <label for="automation_name">Nome do fluxo</label>
+            <input id="automation_name" type="text" name="name" value="{{ automation_name|default:'' }}" placeholder="Ex.: Lead novo entra no comercial" autocomplete="off">
+          </div>
+          <div class="field automation-icon-field">
+            <label for="automation_icon">Icone</label>
+            <div class="automation-icon-picker">
+              <span class="automation-icon-preview" data-automation-icon-preview>
+                {% include "core/_icon.html" with icon=automation_icon %}
+              </span>
+              <select id="automation_icon" name="icon" data-automation-icon-select>
+                {% for value, label in automation_icons %}
+                <option value="{{ value }}" {% if automation_icon == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="automation-editor__actions">
+          <button class="btn btn--ghost" type="submit" name="save_mode" value="draft">Salvar rascunho</button>
+          <button class="btn btn--primary" type="submit" name="save_mode" value="publish">{% include "core/_icon.html" with icon="bolt" %} Publicar</button>
+        </div>
+      </div>
+
+      {% if test_result %}
+      <div class="automation-test-result">
+        <b>Simulação do fluxo</b>
+        <div class="automation-test-result__steps">
+          {% for step in test_result %}
+          <span class="simulation-step simulation-step--{{ step.status }}">
+            <strong>{{ step.label }}</strong>
+            <small>{{ step.message }}</small>
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="node-canvas" data-node-canvas>
+        <div class="canvas-toolbar">
+          <div class="automation-zoom" aria-label="Zoom do canvas">
+            <button type="button" class="zoom-btn" data-zoom-out title="Diminuir zoom">-</button>
+            <button type="button" class="zoom-value" data-zoom-reset title="Resetar zoom"><span data-zoom-label>100%</span></button>
+            <button type="button" class="zoom-btn" data-zoom-in title="Aumentar zoom">+</button>
+          </div>
+          <button class="btn btn--ghost btn--sm" type="submit" name="save_mode" value="simulate">{% include "core/_icon.html" with icon="check" %} Simular</button>
+        </div>
+        <div class="node-stage" data-canvas-stage>
+          <div class="node-world" data-canvas-world>
+            <svg class="node-links" data-node-links aria-hidden="true"></svg>
+            <button type="button" class="edge-delete" data-edge-delete hidden>
+              {% include "core/_icon.html" with icon="trash" %}
+              Excluir ligacao
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <template id="automation-entry-template">
+        <section class="node-card node-card--entry" data-flow-node data-entry-node data-node-id="entry" data-node-kind="trigger">
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-card__icon">{% include "core/_icon.html" with icon="bolt" %}</span>
+            <div>
+              <div class="node-card__kicker">Entrada</div>
+              <b>Quando acontecer</b>
+            </div>
+            <button type="button" class="icon-btn node-remove" data-remove-entry title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <label>Gatilho</label>
+            <select name="trigger" data-trigger-select>
+              {% for value, label in triggers %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+            <div class="node-fields node-fields--trigger node-fields--schedule" data-trigger-extra="schedule_interval" hidden>
+              <label>Rodar a cada</label>
+              <div class="node-inline-fields">
+                <input type="number" min="1" value="1" name="trigger_interval_amount" data-trigger-amount>
+                <select name="trigger_interval_unit" data-trigger-unit>
+                  <option value="minutes">minutos</option>
+                  <option value="hours" selected>horas</option>
+                  <option value="days">dias</option>
+                </select>
+              </div>
+              <input type="hidden" name="trigger_interval_minutes" value="60" data-trigger-interval>
+            </div>
+            <div class="node-fields node-fields--trigger" data-trigger-extra="webhook_received" hidden>
+              <label>Endpoint</label>
+              <input type="hidden" name="webhook_key" data-trigger-webhook-key>
+              <input type="text" data-trigger-webhook-url readonly>
+            </div>
+          </div>
+          <span class="node-port node-port--out" data-port="out"></span>
+        </section>
+      </template>
+
+      <template id="automation-filter-template">
+        <section class="node-card node-card--filter" data-flow-node data-filter-node data-node-id="filter-__INDEX__" data-node-kind="filter" data-filter-index="__INDEX__">
+          <span class="node-port node-port--in" data-port="in"></span>
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-card__icon">{% include "core/_icon.html" with icon="sliders" %}</span>
+            <div>
+              <div class="node-card__kicker">Filtro</div>
+              <b data-filter-title>Filtrar</b>
+            </div>
+            <button type="button" class="icon-btn node-help-btn" data-node-help-toast data-help="Filtro deixa passar somente quem bater com a regra. Quem nao bater sai do fluxo." title="Como funciona">?</button>
+            <button type="button" class="icon-btn node-remove" data-remove-filter title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <p class="node-help">Mantem no fluxo somente registros que baterem com esta regra.</p>
+            {% include "core/partials/_condition_builder.html" %}
+          </div>
+          <span class="node-port node-port--out" data-port="out"></span>
+        </section>
+      </template>
+
+      <template id="automation-condition-template">
+        <section class="node-card node-card--condition" data-flow-node data-condition-node data-node-id="condition-__INDEX__" data-node-kind="condition" data-condition-index="__INDEX__">
+          <span class="node-port node-port--in" data-port="in"></span>
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-card__icon">{% include "core/_icon.html" with icon="switch" %}</span>
+            <div>
+              <div class="node-card__kicker">If / condicao</div>
+              <b data-filter-title>Se acontecer</b>
+            </div>
+            <button type="button" class="icon-btn node-help-btn" data-node-help-toast data-help="If cria uma decisao: se a regra bater, segue pelo caminho conectado; se nao bater, o fluxo para nesta rota." title="Como funciona">?</button>
+            <button type="button" class="icon-btn node-remove" data-remove-condition title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <p class="node-help">Se as regras baterem, sai pela porta <b>sim</b>; senão, pela porta <b>senão</b>.</p>
+            {% include "core/partials/_condition_builder.html" %}
+          </div>
+          <span class="node-port node-port--out node-port--yes" data-port="out" title="Sim — condição atendida"></span>
+          <span class="node-port node-port--out node-port--false" data-port="out-false" title="Senão — condição não atendida"></span>
+          <span class="node-port-label node-port-label--yes">sim</span>
+          <span class="node-port-label node-port-label--false">senão</span>
+        </section>
+      </template>
+
+      <template id="automation-switch-template">
+        <section class="node-card node-card--switch" data-flow-node data-switch-node data-node-id="switch-__INDEX__" data-node-kind="switch" data-switch-index="__INDEX__">
+          <span class="node-port node-port--in" data-port="in"></span>
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-card__icon">{% include "core/_icon.html" with icon="switch" %}</span>
+            <div>
+              <div class="node-card__kicker">Roteador</div>
+              <b data-filter-title>Roteador</b>
+            </div>
+            <button type="button" class="icon-btn node-help-btn" data-node-help-toast data-help="Roteador separa caminhos por regra. Use para mandar registros para rotas diferentes e depois mesclar se precisar." title="Como funciona">?</button>
+            <button type="button" class="icon-btn node-remove" data-remove-switch title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <p class="node-help">Separa a rota por regra antes de continuar para outros nodes.</p>
+            {% include "core/partials/_condition_builder.html" %}
+          </div>
+          <span class="node-port node-port--out" data-port="out"></span>
+        </section>
+      </template>
+
+      <template id="automation-merge-template">
+        <section class="node-card node-card--merge" data-flow-node data-merge-node data-node-id="merge-__INDEX__" data-node-kind="merge" data-merge-index="__INDEX__">
+          <span class="node-port node-port--in node-port--in-1" data-port="in" data-merge-input-port="1"></span>
+          <span class="node-port-label node-port-label--in-1">Input 1</span>
+          <span class="node-port node-port--in node-port--in-2" data-port="in" data-merge-input-port="2"></span>
+          <span class="node-port-label node-port-label--in-2">Input 2</span>
+          <span class="node-port node-port--in node-port--in-3" data-port="in" data-merge-input-port="3"></span>
+          <span class="node-port-label node-port-label--in-3">Input 3</span>
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-card__icon">{% include "core/_icon.html" with icon="pipeline" %}</span>
+            <div>
+              <div class="node-card__kicker">Mesclar</div>
+              <b>Unir caminhos</b>
+            </div>
+            <button type="button" class="icon-btn node-help-btn" data-node-help-toast data-help="Merge junta dados de caminhos diferentes. Exemplo: criar contato em uma linha, criar empresa em outra, juntar tudo e depois criar o negocio." title="Como funciona">?</button>
+            <button type="button" class="icon-btn node-remove" data-remove-merge title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <p class="node-help">Use para juntar contato, empresa ou outros dados criados em caminhos paralelos antes da proxima acao.</p>
+            <label>Como continuar</label>
+            <select name="merge__INDEX___mode" data-merge-mode>
+              <option value="wait_all" selected>Aguardar todos e juntar dados</option>
+              <option value="pass_through">Avancar com o primeiro caminho</option>
+            </select>
+          </div>
+          <span class="node-port node-port--out" data-port="out"></span>
+        </section>
+      </template>
+
+      <template id="automation-loop-template">
+        <section class="node-card node-card--loop" data-flow-node data-loop-node data-node-id="loop-__INDEX__" data-node-kind="loop" data-loop-index="__INDEX__">
+          <span class="node-port node-port--in" data-port="in"></span>
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-card__icon">{% include "core/_icon.html" with icon="loop" %}</span>
+            <div>
+              <div class="node-card__kicker">Loop</div>
+              <b>Repetir itens</b>
+            </div>
+            <button type="button" class="icon-btn node-help-btn" data-node-help-toast data-help="Loop pega uma lista e executa os proximos nodes em lotes. Use antes de acoes que precisam rodar item por item." title="Como funciona">?</button>
+            <button type="button" class="icon-btn node-remove" data-remove-loop title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <p class="node-help">Divide uma lista em lotes para repetir os proximos passos.</p>
+            <label>Modo</label>
+            <select name="loop__INDEX___mode" data-loop-mode>
+              <option value="for_each">Para cada item</option>
+              <option value="batch">Processar em lotes</option>
+              <option value="repeat_times">Repetir X vezes</option>
+            </select>
+            <div class="node-fields">
+              <label>Tamanho do lote / repeticoes</label>
+              <input type="number" min="1" value="1" name="loop__INDEX___count" data-loop-count>
+            </div>
+          </div>
+          <span class="node-port node-port--out" data-port="out"></span>
+        </section>
+      </template>
+
+      <template id="automation-rule-template">
+        <section class="node-card node-card--rule" data-flow-node data-rule-node data-node-id="rule-__INDEX__" data-node-kind="rule" data-rule-index="__INDEX__">
+          <span class="node-port node-port--in" data-port="in"></span>
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-card__icon">{% include "core/_icon.html" with icon="check" %}</span>
+            <div>
+              <div class="node-card__kicker">Regra</div>
+              <b data-rule-title>Controlar entrada</b>
+            </div>
+            <button type="button" class="icon-btn node-remove" data-remove-rule title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <label>Tipo de regra</label>
+            <select name="rule__INDEX___type" data-rule-type>
+              <option value="once_per_record">Entrar so uma vez por registro</option>
+              <option value="cooldown_days">Repetir so depois de X dias</option>
+              <option value="stop_if_open_deal">Parar se ja tiver negocio aberto</option>
+            </select>
+            <div class="node-fields">
+              <input type="number" min="0" value="7" name="rule__INDEX___days" data-rule-days title="Dias de bloqueio">
+            </div>
+          </div>
+          <span class="node-port node-port--out" data-port="out"></span>
+        </section>
+      </template>
+
+      <template id="automation-action-template">
+        <section class="node-card node-card--action" data-flow-node data-action-node data-node-id="action-__INDEX__" data-node-kind="action" data-action-index="__INDEX__">
+          <span class="node-port node-port--in" data-port="in"></span>
+          <div class="node-card__drag" data-node-drag>
+            <span class="node-step"><span data-action-icon></span><small data-action-order>__INDEX__</small></span>
+            <div>
+              <div class="node-card__kicker">Acao</div>
+              <b data-action-title>Executar</b>
+            </div>
+            <button type="button" class="icon-btn node-remove" data-remove-action title="Remover">
+              {% include "core/_icon.html" with icon="close" %}
+            </button>
+          </div>
+          <div class="node-card__body">
+            <input type="hidden" name="action__INDEX___type" data-action-type>
+            <div class="node-fields">
+              <div class="node-fieldset" data-action-fieldset data-show-for="create_deal,move_deal" hidden>
+                <label>Pipeline</label>
+                <select name="action__INDEX___pipeline" data-action-field data-show-for="create_deal,move_deal" hidden disabled>
+                  <option value="">Pipeline principal</option>
+                  {% for pipeline in pipelines %}
+                  <option value="{{ pipeline.pk }}">{{ pipeline.name }}</option>
+                  {% endfor %}
+                </select>
+                <label>Coluna</label>
+                <select name="action__INDEX___deal_stage" data-action-field data-show-for="create_deal,move_deal" hidden disabled>
+                  {% for pipeline in pipelines %}
+                  <optgroup label="{{ pipeline.name }}">
+                    {% for stage in pipeline.stages.all %}
+                    <option value="{{ stage.key }}" data-pipeline="{{ pipeline.pk }}">{{ stage.name }}</option>
+                    {% endfor %}
+                  </optgroup>
+                  {% endfor %}
+                  {% if not pipelines %}
+                  {% for value, label in deal_stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                  {% endif %}
+                </select>
+              </div>
+
+              <div class="node-fieldset" data-action-fieldset data-show-for="set_contact_stage" hidden>
+                <label>Estagio do contato</label>
+                <select name="action__INDEX___contact_stage" data-action-field data-show-for="set_contact_stage" hidden disabled>
+                  {% for value, label in contact_stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+              </div>
+
+              <div class="node-fieldset" data-action-fieldset data-show-for="create_contact" hidden>
+                <label>Nome do contato</label>
+                <div class="node-inline-fields">
+                  <input type="text" name="action__INDEX___contact_first_name" data-action-field data-show-for="create_contact" placeholder="Nome" hidden disabled>
+                  <input type="text" name="action__INDEX___contact_last_name" data-action-field data-show-for="create_contact" placeholder="Sobrenome" hidden disabled>
+                </div>
+                <label>E-mail</label>
+                <input type="email" name="action__INDEX___contact_email" data-action-field data-show-for="create_contact" placeholder="lead@empresa.com" hidden disabled>
+                <label>Telefone</label>
+                <input type="text" name="action__INDEX___contact_phone" data-action-field data-show-for="create_contact" placeholder="(11) 99999-9999" hidden disabled>
+                <label>Cargo</label>
+                <input type="text" name="action__INDEX___contact_job_title" data-action-field data-show-for="create_contact" placeholder="Diretor comercial" hidden disabled>
+                <label>Estagio</label>
+                <select name="action__INDEX___contact_stage" data-action-field data-show-for="create_contact" hidden disabled>
+                  {% for value, label in contact_stages %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+              </div>
+
+              <div class="node-fieldset" data-action-fieldset data-show-for="create_company" hidden>
+                <label>Nome da empresa</label>
+                <input type="text" name="action__INDEX___company_name" data-action-field data-show-for="create_company" placeholder="Acme Tecnologia" hidden disabled>
+                <label>Dominio</label>
+                <input type="text" name="action__INDEX___company_domain" data-action-field data-show-for="create_company" placeholder="acme.com.br" hidden disabled>
+                <label>Segmento</label>
+                <input type="text" name="action__INDEX___company_industry" data-action-field data-show-for="create_company" placeholder="SaaS" hidden disabled>
+                <label>Cidade</label>
+                <input type="text" name="action__INDEX___company_city" data-action-field data-show-for="create_company" placeholder="Sao Paulo" hidden disabled>
+              </div>
+
+              <div class="node-fieldset" data-action-fieldset data-show-for="set_custom_field" hidden>
+                <label>Campo</label>
+                <select name="action__INDEX___custom_key" data-action-field data-show-for="set_custom_field" hidden disabled>
+                  <option value="">Escolha o campo</option>
+                  {% for f in automation_custom_fields %}
+                  <option value="{{ f.object_type }}:{{ f.key }}">{{ f }}</option>
+                  {% endfor %}
+                </select>
+                <label>Novo valor</label>
+                <input type="text" name="action__INDEX___custom_value" data-action-field data-show-for="set_custom_field"
+                       placeholder="Novo valor do campo" hidden disabled>
+              </div>
+
+              <div class="node-fieldset node-fieldset--time" data-action-fieldset data-show-for="delay" hidden>
+                <label>Tempo de espera</label>
+                <div class="node-inline-fields">
+                  <input type="number" name="action__INDEX___delay_amount" value="15" min="0" data-action-field data-show-for="delay" hidden disabled>
+                  <select name="action__INDEX___delay_unit" data-action-field data-show-for="delay" hidden disabled>
+                    <option value="minutes">minutos</option>
+                    <option value="hours">horas</option>
+                    <option value="days">dias</option>
+                  </select>
+                </div>
+                <label>Aguardar ate</label>
+                <input type="datetime-local" name="action__INDEX___delay_until" data-action-field data-show-for="delay" hidden disabled>
+                <input type="hidden" name="action__INDEX___delay_minutes" value="15" data-action-field data-show-for="delay" hidden disabled>
+              </div>
+
+              <div class="node-fieldset" data-action-fieldset data-show-for="send_webhook" hidden>
+                <label>URL do webhook</label>
+                <input type="url" name="action__INDEX___webhook_url" data-action-field data-show-for="send_webhook"
+                       placeholder="https://exemplo.com/webhook" hidden disabled>
+              </div>
+
+              <div class="node-fieldset node-fieldset--http" data-action-fieldset data-show-for="http_request" hidden>
+                <label>Metodo e URL</label>
+                <div class="node-inline-fields node-inline-fields--http">
+                  <select name="action__INDEX___http_method" data-action-field data-show-for="http_request" hidden disabled>
+                    <option value="POST">POST</option>
+                    <option value="GET">GET</option>
+                    <option value="PUT">PUT</option>
+                    <option value="PATCH">PATCH</option>
+                    <option value="DELETE">DELETE</option>
+                  </select>
+                  <input type="url" name="action__INDEX___http_url" data-action-field data-show-for="http_request"
+                         placeholder="https://api.exemplo.com/leads" hidden disabled>
+                </div>
+                <label>Autenticacao</label>
+                <select name="action__INDEX___http_auth_type" data-action-field data-show-for="http_request" hidden disabled>
+                  <option value="none">Nenhuma</option>
+                  <option value="bearer">Bearer token</option>
+                  <option value="basic">Basic auth</option>
+                </select>
+                <input type="text" name="action__INDEX___http_auth_token" data-action-field data-show-for="http_request"
+                       data-http-auth-field="bearer" placeholder="Token bearer" hidden disabled>
+                <div class="node-inline-fields" data-http-auth-block="basic" hidden>
+                  <input type="text" name="action__INDEX___http_username" data-action-field data-show-for="http_request"
+                         data-http-auth-field="basic" placeholder="Usuario" hidden disabled>
+                  <input type="password" name="action__INDEX___http_password" data-action-field data-show-for="http_request"
+                         data-http-auth-field="basic" placeholder="Senha" hidden disabled>
+                </div>
+
+                <label class="node-toggle">
+                  <input type="checkbox" name="action__INDEX___http_send_query" value="1" data-action-field data-show-for="http_request" hidden disabled data-http-toggle="query">
+                  <span>Enviar query params</span>
+                </label>
+                <div class="node-http-section" data-http-block="query" hidden>
+                  <div class="node-pair-head"><span>Nome</span><span>Valor</span></div>
+                  {% for row in "123" %}
+                  <div class="node-pair-row">
+                    <input type="text" name="action__INDEX___http_query_name_{{ forloop.counter }}" data-action-field data-show-for="http_request" data-http-query-name="{{ forloop.counter }}" data-http-optional-field="query" placeholder="lead_id" hidden disabled>
+                    <input type="text" name="action__INDEX___http_query_value_{{ forloop.counter }}" data-action-field data-show-for="http_request" data-http-query-value="{{ forloop.counter }}" data-http-optional-field="query" placeholder="123" hidden disabled>
+                  </div>
+                  {% endfor %}
+                  <input type="hidden" name="action__INDEX___http_query" data-http-query-json>
+                </div>
+
+                <label class="node-toggle">
+                  <input type="checkbox" name="action__INDEX___http_send_headers" value="1" data-action-field data-show-for="http_request" hidden disabled data-http-toggle="headers">
+                  <span>Enviar headers</span>
+                </label>
+                <div class="node-http-section" data-http-block="headers" hidden>
+                  <label>Headers JSON</label>
+                  <textarea name="action__INDEX___http_headers" data-action-field data-show-for="http_request"
+                            data-http-optional-field="headers" placeholder='{"X-Source":"Nucleo"}' hidden disabled></textarea>
+                </div>
+
+                <label class="node-toggle">
+                  <input type="checkbox" name="action__INDEX___http_send_body" value="1" data-action-field data-show-for="http_request" hidden disabled data-http-toggle="body">
+                  <span>Enviar body</span>
+                </label>
+                <div class="node-http-section" data-http-block="body" hidden>
+                  <label>Tipo de body</label>
+                  <select name="action__INDEX___http_content_type" data-action-field data-show-for="http_request" data-http-optional-field="body" hidden disabled>
+                    <option value="json">JSON</option>
+                    <option value="text">Texto puro</option>
+                  </select>
+                  <textarea name="action__INDEX___http_body" data-action-field data-show-for="http_request"
+                            data-http-optional-field="body" placeholder='{"status":"ganho","nome":"Lead"}' hidden disabled></textarea>
+                </div>
+                <label>Timeout</label>
+                <input type="number" name="action__INDEX___http_timeout" value="10" min="1" data-action-field data-show-for="http_request"
+                       title="Timeout em segundos" hidden disabled>
+              </div>
+
+              <div class="node-fieldset" data-action-fieldset data-show-for="create_task,create_note,create_deal">
+                <label>Texto</label>
+                <input type="text" name="action__INDEX___text" data-action-field data-show-for="create_task,create_note,create_deal"
+                       placeholder="Titulo, nota ou descricao">
+              </div>
+
+              <div class="node-fieldset" data-action-fieldset data-show-for="create_task" hidden>
+                <label>Prazo em dias</label>
+                <input type="number" name="action__INDEX___due_days" value="0" min="0" data-action-field data-show-for="create_task"
+                       title="Prazo em dias" hidden disabled>
+              </div>
+            </div>
+          </div>
+          <span class="node-port node-port--out" data-port="out"></span>
+        </section>
+      </template>
+    </form>
+  </div>
+
+  <aside class="automation-side" aria-label="Biblioteca de nodes">
+    <div class="automation-side__head">
+      <b>Biblioteca</b>
+      <span>Arraste ou clique</span>
+    </div>
+    <div class="node-palette node-palette--side" data-node-palette data-side-palette>
+      <div class="action-group">
+        <div class="action-group__label">Entrada</div>
+        {% for value, label in triggers %}
+        {% if value != 'schedule_interval' %}
+        <button type="button" class="action-pill {% if value == 'webhook_received' %}action-pill--webhook{% else %}action-pill--entry{% endif %}" data-add-trigger="{{ value }}">
+          <span>
+            {% if value == 'webhook_received' %}
+              {% include "core/_icon.html" with icon="command" %}
+            {% else %}
+              {% include "core/_icon.html" with icon="bolt" %}
+            {% endif %}
+          </span>{{ label }}
+        </button>
+        {% endif %}
+        {% endfor %}
+      </div>
+      <div class="action-group">
+        <div class="action-group__label">Controle</div>
+        <button type="button" class="action-pill action-pill--filter" data-add-filter="contact"><span>{% include "core/_icon.html" with icon="users" %}</span>Filtro de contato</button>
+        <button type="button" class="action-pill action-pill--filter" data-add-filter="deal"><span>{% include "core/_icon.html" with icon="sliders" %}</span>Filtro de negocio</button>
+        <button type="button" class="action-pill action-pill--condition" data-add-condition="contact"><span>{% include "core/_icon.html" with icon="switch" %}</span>If contato</button>
+        <button type="button" class="action-pill action-pill--condition" data-add-condition="deal"><span>{% include "core/_icon.html" with icon="switch" %}</span>If negocio</button>
+        <button type="button" class="action-pill action-pill--switch" data-add-switch="contact"><span>{% include "core/_icon.html" with icon="switch" %}</span>Roteador contato</button>
+        <button type="button" class="action-pill action-pill--switch" data-add-switch="deal"><span>{% include "core/_icon.html" with icon="switch" %}</span>Roteador negocio</button>
+        <button type="button" class="action-pill action-pill--merge" data-add-merge="wait_all"><span>{% include "core/_icon.html" with icon="pipeline" %}</span>Mesclar caminhos</button>
+        <button type="button" class="action-pill action-pill--loop" data-add-loop="for_each"><span>{% include "core/_icon.html" with icon="loop" %}</span>Loop em lotes</button>
+      </div>
+      <div class="action-group">
+        <div class="action-group__label">Regras</div>
+        <button type="button" class="action-pill action-pill--rule" data-add-rule="once_per_record"><span>{% include "core/_icon.html" with icon="check" %}</span>Entrar uma vez</button>
+        <button type="button" class="action-pill action-pill--rule" data-add-rule="cooldown_days"><span>{% include "core/_icon.html" with icon="clock" %}</span>Cooldown por dias</button>
+        <button type="button" class="action-pill action-pill--rule" data-add-rule="stop_if_open_deal"><span>{% include "core/_icon.html" with icon="pipeline" %}</span>Bloquear se tiver negocio</button>
+      </div>
+      <div class="action-group">
+        <div class="action-group__label">Acoes CRM</div>
+        <button type="button" class="action-pill action-pill--contact" data-add-action="create_contact" data-node-tone="contact"><span>{% include "core/_icon.html" with icon="users" %}</span>Criar contato</button>
+        <button type="button" class="action-pill action-pill--company" data-add-action="create_company" data-node-tone="company"><span>{% include "core/_icon.html" with icon="building" %}</span>Criar empresa</button>
+        <button type="button" class="action-pill action-pill--deal" data-add-action="create_deal" data-node-tone="deal"><span>{% include "core/_icon.html" with icon="pipeline" %}</span>Criar negocio</button>
+        <button type="button" class="action-pill action-pill--move" data-add-action="move_deal" data-node-tone="move"><span>{% include "core/_icon.html" with icon="switch" %}</span>Mover negocio</button>
+        <button type="button" class="action-pill action-pill--contact" data-add-action="set_contact_stage" data-node-tone="contact"><span>{% include "core/_icon.html" with icon="users" %}</span>Atualizar contato</button>
+        <button type="button" class="action-pill action-pill--field" data-add-action="set_custom_field" data-node-tone="field"><span>{% include "core/_icon.html" with icon="hash" %}</span>Atualizar campo</button>
+      </div>
+      <div class="action-group">
+        <div class="action-group__label">Atendimento</div>
+        <button type="button" class="action-pill action-pill--task" data-add-action="create_task" data-node-tone="task"><span>{% include "core/_icon.html" with icon="task" %}</span>Criar tarefa</button>
+        <button type="button" class="action-pill action-pill--note" data-add-action="create_note" data-node-tone="note"><span>{% include "core/_icon.html" with icon="note" %}</span>Adicionar nota</button>
+      </div>
+      <div class="action-group">
+        <div class="action-group__label">Tempo</div>
+        <button type="button" class="action-pill action-pill--time" data-add-trigger="schedule_interval"><span>{% include "core/_icon.html" with icon="clock" %}</span>Schedule trigger</button>
+        <button type="button" class="action-pill action-pill--time" data-add-action="delay" data-node-tone="time"><span>{% include "core/_icon.html" with icon="clock" %}</span>Aguardar tempo</button>
+      </div>
+      <div class="action-group">
+        <div class="action-group__label">Integracoes</div>
+        <button type="button" class="action-pill action-pill--webhook" data-add-action="send_webhook" data-node-tone="webhook"><span>{% include "core/_icon.html" with icon="command" %}</span>Enviar webhook</button>
+        <button type="button" class="action-pill action-pill--http" data-add-action="http_request" data-node-tone="http"><span>{% include "core/_icon.html" with icon="command" %}</span>HTTP request</button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+{{ initial_canvas|json_script:"automation-initial-canvas" }}
+<div class="automation-icon-templates" hidden>
+  {% for value, label in automation_icons %}
+  <span data-icon-template="{{ value }}">{% include "core/_icon.html" with icon=value %}</span>
+  {% endfor %}
+</div>
+{% endblock %}

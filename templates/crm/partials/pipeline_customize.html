@@ -1,0 +1,244 @@
+<div class="modal modal--wide pipeline-modal">
+  <div class="modal__head">
+    <div>
+      <h2>Personalizar pipeline</h2>
+      <p class="modal__subtitle">Configure as fases e os campos específicos de cada etapa do fluxo.</p>
+    </div>
+    <button type="button" class="icon-btn" @click="modal = false">{% include "core/_icon.html" with icon="close" %}</button>
+  </div>
+
+  <div class="modal__body pipeline-layout">
+    <form class="pipeline-name-card"
+          hx-post="{% url 'crm:pipeline_update' pipeline.pk %}" hx-target="#modal-content" hx-swap="innerHTML">
+      {% csrf_token %}
+      <label for="pipeline-name-{{ pipeline.pk }}">Nome da pipeline</label>
+      <div class="pipeline-name-card__row">
+        <input id="pipeline-name-{{ pipeline.pk }}" type="text" name="name" value="{{ pipeline.name }}" required>
+        <button type="submit" class="btn btn--ghost btn--sm">
+          {% include "core/_icon.html" with icon="check" %} Salvar
+        </button>
+      </div>
+    </form>
+
+    <section class="pipeline-stages-card">
+      <div class="pipeline-stages-card__head">
+        <div>
+          <b>Fases do fluxo</b>
+          <span>Clique numa fase para editar nome, cor, resultado e adicionar os campos específicos dela.</span>
+        </div>
+        <strong>{{ stages|length }} fase{{ stages|length|pluralize }}</strong>
+      </div>
+
+      <div class="pipeline-stage-list"
+           data-stage-list
+           data-pipeline-id="{{ pipeline.pk }}"
+           data-reorder-url="{% url 'crm:stage_reorder' %}">
+        {% for stage in stages %}
+        <div class="stage-row"
+             data-stage-id="{{ stage.pk }}"
+             x-data="{ open: false, color: '{{ stage.color }}' }"
+             x-bind:style="'--stage-color: ' + color"
+             style="--stage-color: {{ stage.color }};">
+
+          <div class="stage-row__bar">
+            <span class="stage-row__grip" title="Arrastar fase">
+              {% include "core/_icon.html" with icon="sliders" %}
+            </span>
+            <button type="button" class="stage-row__toggle" @click="open = !open">
+              <span class="stage-row__num">{{ forloop.counter }}</span>
+              <span class="stage-row__dot"></span>
+              <span class="stage-row__name">{{ stage.name }}</span>
+              <span class="stage-row__badge">{{ stage.get_kind_display }}</span>
+              <span class="stage-row__count">{{ stage.deal_count }}</span>
+              <span class="stage-row__chev" x-bind:class="{ 'is-open': open }">
+                {% include "core/_icon.html" with icon="chevron" %}
+              </span>
+            </button>
+          </div>
+
+          <div class="stage-row__body" x-show="open" x-cloak x-transition>
+            {# Nome / resultado / cor + o que mostrar no card — um único form (stage_update) #}
+            <form class="stage-edit-form"
+                  hx-post="{% url 'crm:stage_update' stage.pk %}" hx-target="#modal-content" hx-swap="innerHTML">
+              {% csrf_token %}
+              <input type="hidden" name="return_modal" value="1">
+              <input type="hidden" name="pipeline" value="{{ pipeline.pk }}">
+              <input type="hidden" name="card_fields_present" value="1">
+
+              <div class="stage-row__fields">
+                <div class="field">
+                  <label for="stage-name-{{ stage.pk }}">Nome</label>
+                  <input id="stage-name-{{ stage.pk }}" type="text" name="name" value="{{ stage.name }}" required>
+                </div>
+                <div class="field">
+                  <label for="stage-kind-{{ stage.pk }}">Resultado</label>
+                  <select id="stage-kind-{{ stage.pk }}" name="kind">
+                    {% for value,label in kind_choices %}
+                    <option value="{{ value }}" {% if stage.kind == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Cor</label>
+                  <div class="stage-color-pick">
+                    <span class="stage-color-dot"></span>
+                    <input type="color" name="color" x-model="color" title="Cor da fase">
+                  </div>
+                </div>
+              </div>
+
+              <div class="stage-row__cards-section">
+                <div class="stage-row__cards-head">
+                  <b>Mostrar no card</b>
+                  <span>Informações padrão que aparecem no card quando o negócio está nesta fase.</span>
+                </div>
+                <div class="stage-card-chips">
+                  {% for option in card_field_options %}
+                  <label class="chip-option">
+                    <input type="checkbox" name="card_fields" value="{{ option.key }}"
+                           {% if option.key in stage.selected_card_fields %}checked{% endif %}>
+                    <span>{{ option.label }}</span>
+                  </label>
+                  {% endfor %}
+                </div>
+              </div>
+
+              <div class="stage-row__actions">
+                <button type="submit" class="btn btn--primary btn--sm">
+                  {% include "core/_icon.html" with icon="check" %} Salvar fase
+                </button>
+                <button type="button"
+                        class="btn btn--danger btn--sm"
+                        hx-post="{% url 'crm:stage_delete' stage.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+                        hx-confirm="Excluir a fase &quot;{{ stage.name|escapejs }}&quot;?">
+                  {% include "core/_icon.html" with icon="trash" %} Excluir
+                </button>
+              </div>
+            </form>
+
+            {# Campos específicos desta fase — forms próprios, fora do form acima #}
+            <div class="stage-fields-block">
+              <div class="stage-fields-block__head">
+                <b>Campos desta fase</b>
+                <span>Aparecem no card e na ficha do negócio quando ele estiver nesta fase.</span>
+              </div>
+
+              {% for field in stage.stage_fields %}
+              <div class="pipeline-field-item" x-data="{ edit: false, fieldType: '{{ field.field_type }}' }">
+                <div class="pipeline-field-item__row">
+                  <span class="pipeline-field-item__icon">
+                    {% if field.field_type == "number" %}{% include "core/_icon.html" with icon="hash" %}
+                    {% elif field.field_type == "date" %}{% include "core/_icon.html" with icon="calendar" %}
+                    {% elif field.field_type == "select" %}{% include "core/_icon.html" with icon="sliders" %}
+                    {% elif field.field_type == "checkbox" %}{% include "core/_icon.html" with icon="task" %}
+                    {% else %}{% include "core/_icon.html" with icon="text" %}{% endif %}
+                  </span>
+                  <div class="pipeline-field-item__info">
+                    <b>{{ field.label }}{% if field.required %} <span class="role-badge">obrig.</span>{% endif %}</b>
+                    <span>{{ field.get_field_type_display }}{% if field.options %} · {{ field.options|join:", " }}{% endif %}</span>
+                  </div>
+                  <button class="btn btn--ghost btn--sm" type="button" @click="edit = !edit">
+                    {% include "core/_icon.html" with icon="edit" %}
+                  </button>
+                  <button class="btn btn--danger btn--sm" type="button"
+                          hx-post="{% url 'crm:pipeline_field_delete' pipeline.pk field.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+                          hx-confirm="Remover o campo &quot;{{ field.label|escapejs }}&quot; desta fase?">
+                    {% include "core/_icon.html" with icon="trash" %}
+                  </button>
+                </div>
+                <form class="field-editor pipeline-field-edit"
+                      x-show="edit" x-cloak
+                      hx-post="{% url 'crm:pipeline_field_update' pipeline.pk field.pk %}" hx-target="#modal-content" hx-swap="innerHTML">
+                  {% csrf_token %}
+                  <div class="field-editor__row">
+                    <input type="text" name="label" value="{{ field.label }}" placeholder="Nome do campo" required>
+                    <select name="field_type" x-model="fieldType">
+                      {% for value,label in custom_field_type_choices %}
+                      <option value="{{ value }}" {% if field.field_type == value %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <input type="text" name="options" class="field-editor__opts" value="{{ field.options|join:', ' }}"
+                         placeholder="Opções separadas por vírgula (ex.: Baixa, Média, Alta)"
+                         x-show="fieldType === 'select' || fieldType === 'multiselect'" x-cloak>
+                  <div class="field-editor__hint" x-show="fieldType === 'checkbox'" x-cloak>
+                    Vira um <b>Sim / Não</b> no formulário do negócio.
+                  </div>
+                  <div class="field-editor__foot">
+                    <label class="cf-req"><input type="checkbox" name="required" {% if field.required %}checked{% endif %}> Obrigatório</label>
+                    <div class="field-editor__foot-actions">
+                      <button class="btn btn--ghost btn--sm" type="button" @click="edit = false">Cancelar</button>
+                      <button class="btn btn--primary btn--sm" type="submit">Salvar</button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+              {% endfor %}
+
+              <form class="field-editor stage-field-add"
+                    hx-post="{% url 'crm:stage_field_add' stage.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+                    x-data="{ fieldType: 'text' }">
+                {% csrf_token %}
+                <div class="field-editor__row">
+                  <input type="text" name="label" placeholder="Nome do campo…" autocomplete="off" required>
+                  <select name="field_type" x-model="fieldType">
+                    {% for value,label in custom_field_type_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <input type="text" name="options" class="field-editor__opts"
+                       placeholder="Opções separadas por vírgula (ex.: Baixa, Média, Alta)"
+                       x-show="fieldType === 'select' || fieldType === 'multiselect'" x-cloak>
+                <div class="field-editor__hint" x-show="fieldType === 'checkbox'" x-cloak>
+                  Vira um <b>Sim / Não</b> no formulário do negócio.
+                </div>
+                <div class="field-editor__hint" x-show="fieldType === 'date'" x-cloak>
+                  Abre um seletor de <b>data</b>.
+                </div>
+                <div class="field-editor__foot">
+                  <label class="cf-req"><input type="checkbox" name="required"> Obrigatório</label>
+                  <button type="submit" class="btn btn--primary btn--sm">
+                    {% include "core/_icon.html" with icon="plus" %} Adicionar campo
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% empty %}
+        <div class="empty">Nenhuma fase criada ainda.</div>
+        {% endfor %}
+      </div>
+
+      <form class="stage-create"
+            hx-post="{% url 'crm:stage_add' %}" hx-target="#modal-content" hx-swap="innerHTML"
+            x-data="{ color: '#2563eb' }"
+            x-bind:style="'--stage-color: ' + color">
+        {% csrf_token %}
+        <input type="hidden" name="return_modal" value="1">
+        <input type="hidden" name="pipeline" value="{{ pipeline.pk }}">
+        <div class="stage-create__row">
+          <div class="stage-color-pick">
+            <span class="stage-color-dot"></span>
+            <input type="color" name="color" value="#2563eb" x-model="color" title="Cor da fase">
+          </div>
+          <input type="text" name="name" placeholder="Nome da nova fase…" required>
+          <select name="kind" title="Resultado da fase">
+            {% for value,label in kind_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn--primary btn--sm">
+            {% include "core/_icon.html" with icon="plus" %} Criar
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal__foot">
+    <div class="modal__spacer"></div>
+    <button type="button" class="btn btn--ghost" @click="modal = false">Fechar</button>
+  </div>
+</div>

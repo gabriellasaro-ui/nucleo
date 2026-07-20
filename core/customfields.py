@@ -31,6 +31,10 @@ def read_from_post(post, fields):
         name = "cf_" + field.key
         if field.field_type == "checkbox":
             data[field.key] = name in post
+        elif field.field_type == "multiselect":
+            selected = post.getlist(name) if hasattr(post, "getlist") else []
+            options = field.options or []
+            data[field.key] = [v for v in selected if not options or v in options]
         else:
             value = coerce(field, post.get(name))
             if value is not None:

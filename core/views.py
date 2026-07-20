@@ -1,23 +1,31 @@
 import json
+import json
 import re
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from django.http import HttpResponse, JsonResponse
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.crypto import get_random_string
 from django.utils.text import slugify
-from django_tenants.utils import get_public_schema_name, schema_context
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+from django_tenants.utils import get_public_schema_name, schema_context, tenant_context
 
-from modules.crm.models import Company, Contact, Deal
+from modules.crm.models import Company, Contact, Deal, Pipeline
+
+from core.events import run_automation_for_event, CONDITION_OPERATORS
+from core.tenancy import clear_current_workspace, set_current_workspace
 
 from .forms import WorkspaceForm
-from .models import EVENT_CHOICES, Automation, CustomField, Domain, Membership
+from .models import EVENT_CHOICES, Automation, AutomationRun, CustomField, Domain, Event, IntegrationConnection, Membership
 from .rbac import require_role
 
 
@@ -25,6 +33,50 @@ from .rbac import require_role
 # light mode — CVD ΔE 39.3). Fixed order; never cycled.
 _CONTACT_COLORS = {"lead": "#2563eb", "qualificado": "#d97706", "cliente": "#059669", "inativo": "#7c3aed"}
 _FUNNEL_STAGES = ["novo", "qualificado", "proposta", "negociacao", "ganho"]
+_INTEGRATION_CATALOG = [
+    {
+        "provider": "facebook",
+        "name": "Facebook Lead Ads",
+        "summary": "Captura leads de campanhas e envia para automacoes.",
+        "icon": "users",
+        "available": True,
+    },
+    {
+        "provider": "instagram",
+        "name": "Instagram",
+        "summary": "Base para mensagens, formularios e origem de leads.",
+        "icon": "command",
+        "available": True,
+    },
+    {
+        "provider": "forms",
+        "name": "Forms nativos",
+        "summary": "Crie formulários próprios e dispare fluxos ao receber respostas.",
+        "icon": "text",
+        "available": True,
+    },
+    {
+        "provider": "webhook",
+        "name": "Webhooks",
+        "summary": "Receba eventos externos e use no canvas de automacao.",
+        "icon": "bolt",
+        "available": True,
+    },
+    {
+        "provider": "api",
+        "name": "API / HTTP",
+        "summary": "Envie dados para outras plataformas via HTTP request.",
+        "icon": "command",
+        "available": True,
+    },
+    {
+        "provider": "whatsapp",
+        "name": "WhatsApp",
+        "summary": "Canal de atendimento para receber conversas e acionar fluxos.",
+        "icon": "phone",
+        "available": True,
+    },
+]
 _AUTOMATION_IDEAS = [
     {
         "name": "Lead novo entra no comercial",
@@ -77,23 +129,41 @@ _AUTOMATION_IDEAS = [
 @login_required
 def dashboard(request):
     ws = request.workspace
-    deals = Deal.objects.filter(workspace=ws)
+    pipelines = list(Pipeline.objects.filter(workspace=ws).order_by("order", "id"))
 
-    open_value = deals.filter(stage__in=Deal.OPEN_STAGES).aggregate(v=Sum("value"))["v"] or 0
-    won = deals.filter(stage="ganho")
+    # Which pipeline is the dashboard looking at? ?pipeline=<pk>, else the
+    # default (or the first one). Everything below is scoped to it.
+    current = None
+    if pipelines:
+        requested = request.GET.get("pipeline")
+        if requested:
+            current = next((p for p in pipelines if str(p.pk) == requested), None)
+        if current is None:
+            current = next((p for p in pipelines if p.is_default), pipelines[0])
+
+    deals = Deal.objects.filter(workspace=ws)
+    if current is not None:
+        deals = deals.filter(pipeline=current)
+
+    # KPIs roll up on the denormalized stage_kind, so custom stages still count
+    # as open / won / lost without hardcoding stage keys.
+    open_value = deals.filter(stage_kind="open").aggregate(v=Sum("value"))["v"] or 0
+    won = deals.filter(stage_kind="won")
     won_value = won.aggregate(v=Sum("value"))["v"] or 0
     won_count = won.count()
-    lost_count = deals.filter(stage="perdido").count()
+    lost_count = deals.filter(stage_kind="lost").count()
     avg_ticket = (won_value / won_count) if won_count else 0
     conversion = (won_count / (won_count + lost_count) * 100) if (won_count + lost_count) else 0
 
-    # Funnel — value per stage (single-hue bars; identity is on the axis label)
-    stage_labels = dict(Deal.STAGE_CHOICES)
+    # Funnel — value per stage of the selected pipeline, in board order, painted
+    # with each stage's own colour. Lost/disqualified stages aren't part of it.
     funnel = []
-    for stage in _FUNNEL_STAGES:
-        qs = deals.filter(stage=stage)
-        funnel.append({"label": stage_labels[stage], "count": qs.count(),
-                       "value": qs.aggregate(v=Sum("value"))["v"] or 0})
+    if current is not None:
+        stages = current.stages.exclude(kind__in=["lost", "disqualified"]).order_by("order", "id")
+        for stage in stages:
+            qs = deals.filter(stage=stage.key)
+            funnel.append({"label": stage.name, "color": stage.color, "count": qs.count(),
+                           "value": qs.aggregate(v=Sum("value"))["v"] or 0})
     max_value = max([row["value"] for row in funnel] + [1])
     for row in funnel:
         row["pct"] = round(row["value"] / max_value * 100)
@@ -116,6 +186,8 @@ def dashboard(request):
     context = {
         "page_title": "Dashboard",
         "breadcrumb": ["Workspace", "Dashboard"],
+        "pipelines": pipelines,
+        "current_pipeline": current,
         "kpis": [
             {"label": "Pipeline aberto", "value": f"R$ {open_value:,.0f}", "accent": True},
             {"label": "Ganho", "value": f"R$ {won_value:,.0f}"},
@@ -313,12 +385,44 @@ def custom_fields(request):
         for obj_type, label in CustomField.OBJECT_CHOICES
     ]
     return render(request, "core/custom_fields.html", {
-        "page_title": "Campos personalizados",
-        "breadcrumb": ["Configurações", "Campos personalizados"],
+        "page_title": "Campos do CRM",
+        "breadcrumb": ["Configurações", "Campos do CRM"],
         "groups": groups,
         "type_choices": CustomField.TYPE_CHOICES,
         "object_choices": CustomField.OBJECT_CHOICES,
     })
+
+
+def _custom_field_label(object_type):
+    return dict(CustomField.OBJECT_CHOICES).get(object_type, "Registros")
+
+
+def _custom_field_modal_context(request, object_type):
+    if object_type not in dict(CustomField.OBJECT_CHOICES):
+        object_type = "deal"
+    return {
+        "object_type": object_type,
+        "object_label": _custom_field_label(object_type),
+        "fields": CustomField.objects.filter(workspace=request.workspace, object_type=object_type),
+        "type_choices": CustomField.TYPE_CHOICES,
+    }
+
+
+def _custom_field_modal_response(request, object_type, message=None, kind="success"):
+    resp = render(request, "core/partials/object_fields_modal.html", _custom_field_modal_context(request, object_type))
+    events = {"nucleo:dataChanged": True}
+    if object_type == "deal":
+        events["nucleo:dealsBoard"] = True
+    if message:
+        events["nucleo:toast"] = {"text": message, "kind": kind}
+    resp["HX-Trigger"] = json.dumps(events)
+    return resp
+
+
+@login_required
+@require_role("admin")
+def custom_fields_object(request, object_type):
+    return render(request, "core/partials/object_fields_modal.html", _custom_field_modal_context(request, object_type))
 
 
 @login_required
@@ -331,12 +435,17 @@ def custom_field_add(request):
         field_type = request.POST.get("field_type", "text")
         required = request.POST.get("required") == "on"
         options = [o.strip() for o in request.POST.get("options", "").split(",") if o.strip()]
+        error = ""
         if not label:
-            messages.error(request, "Informe um rótulo para o campo.")
+            error = "Informe um rótulo para o campo."
         elif object_type not in dict(CustomField.OBJECT_CHOICES) or field_type not in dict(CustomField.TYPE_CHOICES):
-            messages.error(request, "Objeto ou tipo inválido.")
+            error = "Objeto ou tipo inválido."
         elif field_type == "select" and not options:
-            messages.error(request, "Para “Seleção”, informe as opções separadas por vírgula.")
+            error = "Para “Seleção”, informe as opções separadas por vírgula."
+        if error:
+            if request.POST.get("return_modal") == "1":
+                return _custom_field_modal_response(request, object_type, error, "error")
+            messages.error(request, error)
         else:
             CustomField.objects.create(
                 workspace=ws,
@@ -348,6 +457,8 @@ def custom_field_add(request):
                 required=required,
                 order=CustomField.objects.filter(workspace=ws, object_type=object_type).count(),
             )
+            if request.POST.get("return_modal") == "1":
+                return _custom_field_modal_response(request, object_type, f"Campo “{label}” criado.")
             messages.success(request, f"Campo “{label}” criado.")
     return redirect("custom_fields")
 
@@ -357,6 +468,7 @@ def custom_field_add(request):
 def custom_field_update(request, pk):
     if request.method == "POST":
         field = get_object_or_404(CustomField, pk=pk, workspace=request.workspace)
+        object_type = field.object_type
         label = request.POST.get("label", "").strip()
         if label:
             field.label = label
@@ -366,6 +478,8 @@ def custom_field_update(request, pk):
             if options:
                 field.options = options
         field.save()
+        if request.POST.get("return_modal") == "1":
+            return _custom_field_modal_response(request, object_type, f"Campo “{field.label}” atualizado.")
         messages.success(request, f"Campo “{field.label}” atualizado.")
     return redirect("custom_fields")
 
@@ -374,7 +488,11 @@ def custom_field_update(request, pk):
 @require_role("admin")
 def custom_field_delete(request, pk):
     if request.method == "POST":
-        get_object_or_404(CustomField, pk=pk, workspace=request.workspace).delete()
+        field = get_object_or_404(CustomField, pk=pk, workspace=request.workspace)
+        object_type = field.object_type
+        field.delete()
+        if request.POST.get("return_modal") == "1":
+            return _custom_field_modal_response(request, object_type, "Campo removido.")
         messages.success(request, "Campo removido.")
     return redirect("custom_fields")
 
@@ -394,26 +512,84 @@ def _unique_key(ws, object_type, label):
 # --------------------------------------------------------------------------- #
 # Automations (admin+)
 # --------------------------------------------------------------------------- #
-@login_required
-@require_role("admin")
-def automations(request):
+def _automation_pipelines(ws):
+    pipelines = list(Pipeline.objects.filter(workspace=ws).prefetch_related("stages"))
+    if not pipelines:
+        pipe = Pipeline.objects.create(workspace=ws, name="Vendas", is_default=True)
+        pipe.ensure_stages()
+        pipelines = [pipe]
+    return pipelines
+
+
+def _automation_custom_fields(ws):
+    return list(CustomField.objects.filter(workspace=ws))
+
+
+def _condition_field_catalog(ws):
+    """Fields a condition rule can test (native + workspace custom fields)."""
+    fields = [
+        {"value": "stage", "label": "Etapa / coluna"},
+        {"value": "stage_kind", "label": "Situação (aberto/ganho/perdido)"},
+        {"value": "value", "label": "Valor do negócio"},
+        {"value": "score", "label": "Score"},
+        {"value": "owner", "label": "Responsável"},
+        {"value": "tag", "label": "Etiqueta"},
+        {"value": "email", "label": "E-mail (contato)"},
+        {"value": "phone", "label": "Telefone (contato)"},
+    ]
+    obj_labels = dict(CustomField.OBJECT_CHOICES)
+    for f in CustomField.objects.filter(workspace=ws):
+        fields.append({
+            "value": f"custom:{f.object_type}:{f.key}",
+            "label": f"{f.label} · {obj_labels.get(f.object_type, f.object_type)}",
+        })
+    return fields
+
+
+def _automation_editor_context(request, selected_automation=None, **extra):
     ws = request.workspace
-    selected_automation = None
-    flow_id = request.GET.get("flow", "").strip()
-    if flow_id.isdigit():
-        selected_automation = ws.automations.filter(pk=int(flow_id)).first()
-    return render(request, "core/automations.html", {
-        "page_title": "Automações",
-        "breadcrumb": ["Configurações", "Automações"],
+    context = {
+        "page_title": selected_automation.name if selected_automation else "Nova automação",
+        "breadcrumb": ["Configurações", "Automações", "Canvas"],
         "automations": ws.automations.all(),
         "selected_automation": selected_automation,
+        "automation_name": selected_automation.name if selected_automation else "",
+        "automation_icon": selected_automation.icon if selected_automation else "bolt",
+        "automation_icons": Automation.ICON_CHOICES,
         "initial_canvas": selected_automation.canvas if selected_automation else {},
-        "recent_events": ws.events.all()[:10],
         "triggers": EVENT_CHOICES,
         "actions": Automation.ACTION_CHOICES,
         "deal_stages": Deal.STAGE_CHOICES,
         "contact_stages": Contact.STAGE_CHOICES,
+        "pipelines": _automation_pipelines(ws),
+        "automation_custom_fields": _automation_custom_fields(ws),
+        "condition_fields": _condition_field_catalog(ws),
+        "condition_operators": CONDITION_OPERATORS,
+    }
+    context.update(extra)
+    return context
+
+
+@login_required
+@require_role("admin")
+def automations(request):
+    ws = request.workspace
+    return render(request, "core/automations.html", {
+        "page_title": "Automações",
+        "breadcrumb": ["Configurações", "Automações"],
+        "automations": ws.automations.all(),
+        "recent_runs": AutomationRun.objects.filter(workspace=ws).select_related("automation")[:8],
     })
+
+
+@login_required
+@require_role("admin")
+def automation_editor(request, pk=None):
+    ws = request.workspace
+    selected_automation = None
+    if pk is not None:
+        selected_automation = get_object_or_404(Automation, pk=pk, workspace=ws)
+    return render(request, "core/automation_editor.html", _automation_editor_context(request, selected_automation))
 
 
 @login_required
@@ -422,13 +598,27 @@ def automation_add(request):
     if request.method == "POST":
         ws = request.workspace
         name = request.POST.get("name", "").strip()
+        icon = _automation_icon(request.POST.get("icon", "bolt"))
         trigger = request.POST.get("trigger")
         automation_id = request.POST.get("automation_id", "").strip()
         existing = ws.automations.filter(pk=int(automation_id)).first() if automation_id.isdigit() else None
         canvas = _parse_automation_canvas(request)
+        canvas = _ensure_trigger_config(canvas, trigger)
         condition_stage = _automation_condition_stage(request, trigger, canvas)
         actions = _order_actions_by_canvas(_parse_automation_actions(request), canvas)
         first = actions[0] if actions else {}
+        save_mode = request.POST.get("save_mode", "publish")
+        if save_mode == "simulate":
+            result = _simulate_automation(canvas, actions, trigger)
+            messages.info(request, "Simulação gerada sem publicar o fluxo.")
+            return render(request, "core/automation_editor.html", _automation_editor_context(
+                request,
+                existing,
+                automation_name=name,
+                automation_icon=icon,
+                initial_canvas=canvas,
+                test_result=result,
+            ))
         if not name:
             messages.error(request, "Informe o nome da automação.")
         elif trigger not in dict(EVENT_CHOICES):
@@ -438,6 +628,7 @@ def automation_add(request):
         else:
             defaults = {
                 "name": name,
+                "icon": icon,
                 "trigger": trigger,
                 "condition_stage": condition_stage,
                 "action": first.get("type", "create_task"),
@@ -446,7 +637,7 @@ def automation_add(request):
                 "conditions": {"stage": condition_stage} if condition_stage else {},
                 "actions": actions,
                 "canvas": canvas,
-                "active": True,
+                "active": save_mode == "publish",
             }
             if existing:
                 for field, value in defaults.items():
@@ -455,15 +646,47 @@ def automation_add(request):
                 auto = existing
             else:
                 auto = Automation.objects.create(workspace=ws, **defaults)
-            messages.success(request, "Fluxo salvo.")
-            return redirect(f"{reverse('automations')}?flow={auto.pk}")
-            messages.success(request, f"Automação “{name}” criada.")
+            messages.success(request, "Fluxo publicado." if save_mode == "publish" else "Rascunho salvo.")
+            return redirect("automation_edit", pk=auto.pk)
+        return render(request, "core/automation_editor.html", _automation_editor_context(
+            request,
+            existing,
+            automation_name=name,
+            automation_icon=icon,
+            initial_canvas=canvas,
+        ))
     return redirect("automations")
+
+
+def _automation_icon(value):
+    valid = {key for key, _ in Automation.ICON_CHOICES}
+    return value if value in valid else "bolt"
+
+
+def _ensure_trigger_config(canvas, trigger):
+    if not isinstance(canvas, dict) or not canvas.get("nodes"):
+        return canvas
+    trigger_node = next((node for node in canvas.get("nodes", []) if node.get("type") == "trigger"), None)
+    if not trigger_node:
+        return canvas
+    data = trigger_node.setdefault("data", {})
+    data["trigger"] = trigger or data.get("trigger", "")
+    if trigger == "schedule_interval":
+        amount = _canvas_int(data.get("trigger_interval_amount") or data.get("trigger_interval_minutes") or 1, 1, 10080)
+        unit = data.get("trigger_interval_unit") or "hours"
+        if unit not in {"minutes", "hours", "days"}:
+            unit = "hours"
+        data["trigger_interval_amount"] = amount
+        data["trigger_interval_unit"] = unit
+        data["trigger_interval_minutes"] = amount * {"minutes": 1, "hours": 60, "days": 1440}[unit]
+    if trigger == "webhook_received" and not data.get("webhook_key"):
+        data["webhook_key"] = "wh_" + get_random_string(24).lower()
+    return canvas
 
 
 def _automation_condition_stage(request, trigger, canvas=None):
     for node in (canvas or {}).get("nodes", []):
-        if node.get("type") not in {"filter", "condition"}:
+        if node.get("type") not in {"filter", "condition", "switch"}:
             continue
         stage = node.get("data", {}).get("condition_stage", "")
         if stage:
@@ -505,13 +728,82 @@ def _parse_automation_actions(request):
             stage = request.POST.get(f"action{i}_contact_stage", "").strip()
             if stage:
                 action["contact_stage"] = stage
+        if action_type == "create_contact":
+            for field in ("contact_first_name", "contact_last_name", "contact_email", "contact_phone", "contact_job_title", "contact_stage"):
+                value = request.POST.get(f"action{i}_{field}", "").strip()
+                if value:
+                    action[field] = value
+        if action_type == "create_company":
+            for field in ("company_name", "company_domain", "company_industry", "company_city"):
+                value = request.POST.get(f"action{i}_{field}", "").strip()
+                if value:
+                    action[field] = value
         if action_type == "create_task":
             try:
                 action["due_days"] = max(0, int(request.POST.get(f"action{i}_due_days") or 0))
             except ValueError:
                 action["due_days"] = 0
+        if action_type == "set_custom_field":
+            custom_key = request.POST.get(f"action{i}_custom_key", "").strip()
+            custom_value = request.POST.get(f"action{i}_custom_value", "").strip()
+            if custom_key:
+                action["custom_key"] = custom_key
+                action["custom_value"] = custom_value
+        if action_type == "delay":
+            amount = _canvas_int(
+                request.POST.get(f"action{i}_delay_amount") or request.POST.get(f"action{i}_delay_minutes"),
+                0,
+                3650,
+            )
+            unit = request.POST.get(f"action{i}_delay_unit", "minutes").strip()
+            if unit not in {"minutes", "hours", "days"}:
+                unit = "minutes"
+            action["delay_amount"] = amount
+            action["delay_unit"] = unit
+            action["delay_until"] = request.POST.get(f"action{i}_delay_until", "").strip()
+            action["delay_minutes"] = amount * {"minutes": 1, "hours": 60, "days": 1440}[unit]
+        if action_type == "send_webhook":
+            webhook_url = request.POST.get(f"action{i}_webhook_url", "").strip()
+            if webhook_url:
+                action["webhook_url"] = webhook_url
+        if action_type == "http_request":
+            method = request.POST.get(f"action{i}_http_method", "POST").strip().upper()
+            action["http_method"] = method if method in {"GET", "POST", "PUT", "PATCH", "DELETE"} else "POST"
+            action["http_url"] = request.POST.get(f"action{i}_http_url", "").strip()
+            action["http_auth_type"] = request.POST.get(f"action{i}_http_auth_type", "none").strip()
+            if action["http_auth_type"] not in {"none", "bearer", "basic"}:
+                action["http_auth_type"] = "none"
+            action["http_auth_token"] = request.POST.get(f"action{i}_http_auth_token", "").strip()
+            action["http_username"] = request.POST.get(f"action{i}_http_username", "").strip()
+            action["http_password"] = request.POST.get(f"action{i}_http_password", "").strip()
+            action["http_send_query"] = "1" if request.POST.get(f"action{i}_http_send_query") else ""
+            action["http_query"] = (
+                request.POST.get(f"action{i}_http_query", "").strip()
+                or _http_query_from_pairs(request, i)
+            )
+            action["http_send_headers"] = "1" if request.POST.get(f"action{i}_http_send_headers") else ""
+            action["http_headers"] = request.POST.get(f"action{i}_http_headers", "").strip()
+            action["http_content_type"] = request.POST.get(f"action{i}_http_content_type", "json").strip()
+            if action["http_content_type"] not in {"json", "text"}:
+                action["http_content_type"] = "json"
+            action["http_send_body"] = "1" if request.POST.get(f"action{i}_http_send_body") else ""
+            action["http_body"] = request.POST.get(f"action{i}_http_body", "").strip()
+            try:
+                action["http_timeout"] = max(1, int(request.POST.get(f"action{i}_http_timeout") or 10))
+            except ValueError:
+                action["http_timeout"] = 10
         actions.append(action)
     return actions
+
+
+def _http_query_from_pairs(request, index):
+    query = {}
+    for row in range(1, 6):
+        key = request.POST.get(f"action{index}_http_query_name_{row}", "").strip()
+        if not key:
+            continue
+        query[key] = request.POST.get(f"action{index}_http_query_value_{row}", "")
+    return json.dumps(query) if query else ""
 
 
 def _parse_automation_canvas(request):
@@ -532,7 +824,7 @@ def _parse_automation_canvas(request):
             continue
         node_id = str(node.get("id", ""))[:80]
         node_type = str(node.get("type", ""))[:30]
-        if not node_id or node_id in node_ids or node_type not in {"trigger", "filter", "condition", "action"}:
+        if not node_id or node_id in node_ids or node_type not in {"trigger", "filter", "condition", "switch", "merge", "loop", "rule", "action"}:
             continue
         node_ids.add(node_id)
         nodes.append({
@@ -550,13 +842,19 @@ def _parse_automation_canvas(request):
             continue
         source = str(edge.get("from", ""))[:80]
         target = str(edge.get("to", ""))[:80]
-        key = (source, target)
+        branch = str(edge.get("branch", ""))
+        if branch not in ("true", "false"):
+            branch = ""
+        key = (source, target, branch)
         if not source or not target or source == target or source not in node_ids or target not in node_ids:
             continue
         if key in seen_edges:
             continue
         seen_edges.add(key)
-        edges.append({"from": source, "to": target})
+        edge_clean = {"from": source, "to": target}
+        if branch:
+            edge_clean["branch"] = branch
+        edges.append(edge_clean)
 
     viewport = data.get("viewport", {})
     if not isinstance(viewport, dict):
@@ -574,18 +872,82 @@ def _parse_automation_canvas(request):
     }
 
 
+def _clean_condition(value):
+    """Validate a rich condition {match, rules:[{field,op,value}]} from the canvas."""
+    if not isinstance(value, dict):
+        return None
+    match = "any" if str(value.get("match")) == "any" else "all"
+    rules = []
+    for rule in (value.get("rules") or [])[:20]:
+        if not isinstance(rule, dict):
+            continue
+        field = str(rule.get("field", ""))[:80]
+        if not field:
+            continue
+        rules.append({
+            "field": field,
+            "op": str(rule.get("op", "eq"))[:20],
+            "value": str(rule.get("value", ""))[:300],
+        })
+    if not rules:
+        return None
+    return {"match": match, "rules": rules}
+
+
 def _clean_canvas_data(data):
     if not isinstance(data, dict):
         return {}
     allowed = {
         "trigger",
+        "trigger_interval_amount",
+        "trigger_interval_unit",
+        "trigger_interval_minutes",
+        "webhook_key",
         "condition_kind",
         "condition_stage",
+        "condition_custom_key",
+        "condition_custom_value",
+        "condition",
+        "merge_mode",
+        "loop_mode",
+        "loop_count",
+        "rule_type",
+        "rule_days",
         "action_index",
         "action_type",
         "pipeline",
         "deal_stage",
         "contact_stage",
+        "contact_first_name",
+        "contact_last_name",
+        "contact_email",
+        "contact_phone",
+        "contact_job_title",
+        "company_name",
+        "company_domain",
+        "company_industry",
+        "company_city",
+        "custom_key",
+        "custom_value",
+        "delay_amount",
+        "delay_unit",
+        "delay_until",
+        "delay_minutes",
+        "webhook_url",
+        "http_method",
+        "http_url",
+        "http_auth_type",
+        "http_auth_token",
+        "http_username",
+        "http_password",
+        "http_send_query",
+        "http_query",
+        "http_send_headers",
+        "http_headers",
+        "http_content_type",
+        "http_send_body",
+        "http_body",
+        "http_timeout",
         "text",
         "due_days",
     }
@@ -593,8 +955,30 @@ def _clean_canvas_data(data):
     for key, value in data.items():
         if key not in allowed:
             continue
-        if key in {"action_index", "due_days"}:
+        if key == "condition":
+            cleaned = _clean_condition(value)
+            if cleaned:
+                clean[key] = cleaned
+        elif key == "loop_count":
+            clean[key] = _canvas_int(value, 1, 10000)
+        elif key in {"action_index", "due_days", "delay_amount", "delay_minutes", "rule_days", "http_timeout", "trigger_interval_amount"}:
             clean[key] = _canvas_int(value, 0, 3650)
+        elif key == "trigger_interval_minutes":
+            clean[key] = _canvas_int(value, 1, 10080)
+        elif key == "trigger_interval_unit":
+            clean[key] = str(value) if str(value) in {"minutes", "hours", "days"} else "hours"
+        elif key == "delay_unit":
+            clean[key] = str(value) if str(value) in {"minutes", "hours", "days"} else "minutes"
+        elif key == "loop_mode":
+            clean[key] = str(value) if str(value) in {"for_each", "batch", "repeat_times"} else "for_each"
+        elif key in {"http_send_query", "http_send_headers", "http_send_body"}:
+            clean[key] = "1" if str(value).lower() in {"1", "true", "on", "yes"} else ""
+        elif key in {"http_auth_type", "http_content_type"}:
+            clean[key] = str(value)[:40]
+        elif key == "webhook_key":
+            clean[key] = re.sub(r"[^a-zA-Z0-9_-]", "", str(value))[:80]
+        elif key in {"http_headers", "http_body", "http_query"}:
+            clean[key] = str(value)[:5000]
         else:
             clean[key] = str(value)[:500]
     return clean
@@ -643,6 +1027,574 @@ def _order_actions_by_canvas(actions, canvas):
     for action in ordered:
         action.pop("_index", None)
     return ordered
+
+
+def _simulate_automation(canvas, actions, trigger):
+    nodes = {node.get("id"): node for node in canvas.get("nodes", [])}
+    outgoing = {}
+    incoming_count = {}
+    for edge in canvas.get("edges", []):
+        source = edge.get("from")
+        target = edge.get("to")
+        outgoing.setdefault(source, []).append(target)
+        incoming_count[target] = incoming_count.get(target, 0) + 1
+    trigger_nodes = [node_id for node_id, node in nodes.items() if node.get("type") == "trigger"]
+    current = trigger_nodes[0] if trigger_nodes else "entry"
+    trigger_data = nodes.get(current, {}).get("data", {}) if current in nodes else {}
+    trigger_message = dict(EVENT_CHOICES).get(trigger, "Escolha um gatilho para publicar.")
+    if trigger == "schedule_interval":
+        trigger_message = _schedule_summary(trigger_data)
+    elif trigger == "webhook_received":
+        webhook_key = trigger_data.get("webhook_key") or "sera gerado ao salvar"
+        trigger_message = f"Receber POST no webhook {webhook_key}."
+    steps = [{
+        "label": "Entrada",
+        "status": "ok" if trigger else "warning",
+        "message": trigger_message,
+    }]
+    action_labels = dict(Automation.ACTION_CHOICES)
+    queue = [current]
+    edge_visits = {}
+    merge_arrivals = {}
+    released_merges = set()
+    max_steps = max(20, len(nodes) * 12)
+    step_count = 0
+
+    while queue and step_count < max_steps:
+        current = queue.pop(0)
+        next_nodes = [node_id for node_id in outgoing.get(current, []) if node_id in nodes]
+        if not next_nodes:
+            continue
+        for node_id in next_nodes:
+            visit_key = (current, node_id)
+            edge_visits[visit_key] = edge_visits.get(visit_key, 0) + 1
+            if edge_visits[visit_key] > 30:
+                steps.append({"label": "Loop", "status": "error", "message": "O canvas tem um loop nesta rota."})
+                queue = []
+                break
+            step_count += 1
+            if step_count >= max_steps:
+                steps.append({"label": "Loop", "status": "error", "message": "Limite da simulacao atingido."})
+                queue = []
+                break
+            node = nodes[node_id]
+            data = node.get("data") or {}
+            node_type = node.get("type")
+            if node_type in {"filter", "condition", "switch"}:
+                msg = "Condicao configurada."
+                if data.get("condition_custom_key"):
+                    msg = f"Campo {data.get('condition_custom_key')} deve ser {data.get('condition_custom_value') or 'preenchido'}."
+                elif data.get("condition_stage"):
+                    msg = f"Etapa/estagio deve ser {data.get('condition_stage')}."
+                label = {"condition": "If / condicao", "switch": "Roteador"}.get(node_type, "Filtro")
+                steps.append({"label": label, "status": "ok", "message": msg})
+                queue.append(node_id)
+            elif node_type == "merge":
+                merge_arrivals[node_id] = merge_arrivals.get(node_id, 0) + 1
+                expected = max(1, incoming_count.get(node_id, 1))
+                if data.get("merge_mode") == "wait_all" and merge_arrivals[node_id] < expected:
+                    steps.append({"label": "Mesclar", "status": "ok", "message": f"Aguardando entradas {merge_arrivals[node_id]}/{expected}."})
+                    continue
+                if node_id in released_merges:
+                    continue
+                released_merges.add(node_id)
+                steps.append({"label": "Mesclar", "status": "ok", "message": "Entradas unidas para continuar o fluxo."})
+                queue.append(node_id)
+            elif node_type == "loop":
+                mode = data.get("loop_mode") or "for_each"
+                count = data.get("loop_count") or 1
+                labels = {
+                    "for_each": "Executar para cada item recebido.",
+                    "batch": f"Processar em lotes de {count}.",
+                    "repeat_times": f"Repetir os proximos passos {count} vez(es).",
+                }
+                steps.append({"label": "Loop", "status": "ok", "message": labels.get(mode, "Loop configurado.")})
+                repeat = _canvas_int(count, 1, 30) if mode == "repeat_times" else 1
+                for _ in range(repeat):
+                    queue.append(node_id)
+            elif node_type == "rule":
+                rule = data.get("rule_type") or "once_per_record"
+                steps.append({"label": "Regra", "status": "ok", "message": _rule_summary(rule, data)})
+                queue.append(node_id)
+            elif node_type == "action":
+                action_type = data.get("action_type")
+                status = "ok"
+                msg = action_labels.get(action_type, "Acao nao configurada.")
+                if action_type == "delay":
+                    status = "warning"
+                    msg = f"{_delay_summary(data)} Requer worker/cron para retomar depois."
+                elif action_type == "send_webhook":
+                    msg = f"Enviar webhook para {data.get('webhook_url') or 'URL nao informada'}."
+                    if not data.get("webhook_url"):
+                        status = "warning"
+                elif action_type == "http_request":
+                    method = data.get("http_method") or "POST"
+                    auth = data.get("http_auth_type") or "none"
+                    auth_msg = " sem autenticacao" if auth == "none" else f" com auth {auth}"
+                    msg = f"HTTP {method} para {data.get('http_url') or 'URL nao informada'}{auth_msg}."
+                    if not data.get("http_url"):
+                        status = "warning"
+                elif action_type == "set_custom_field":
+                    msg = f"Atualizar {data.get('custom_key') or 'campo'} para {data.get('custom_value') or 'valor vazio'}."
+                elif action_type == "create_contact":
+                    msg = f"Criar contato {data.get('contact_first_name') or 'sem nome'}."
+                elif action_type == "create_company":
+                    msg = f"Criar empresa {data.get('company_name') or 'sem nome'}."
+                steps.append({"label": action_labels.get(action_type, "Acao"), "status": status, "message": msg})
+                queue.append(node_id)
+
+    if not any(step.get("label") in action_labels.values() for step in steps) and not actions:
+        steps.append({"label": "Acoes", "status": "warning", "message": "Nenhuma acao configurada nesta rota."})
+    return steps
+
+    for _ in range(len(nodes) + 1):
+        next_nodes = [node_id for node_id in outgoing.get(current, []) if node_id in nodes]
+        if not next_nodes:
+            break
+        current = next_nodes[0]
+        if current in seen:
+            steps.append({"label": "Loop", "status": "error", "message": "O canvas tem um loop nesta rota."})
+            break
+        seen.add(current)
+        node = nodes[current]
+        data = node.get("data") or {}
+        node_type = node.get("type")
+        if node_type in {"filter", "condition", "switch"}:
+            msg = "Condição configurada."
+            if data.get("condition_custom_key"):
+                msg = f"Campo {data.get('condition_custom_key')} deve ser {data.get('condition_custom_value') or 'preenchido'}."
+            elif data.get("condition_stage"):
+                msg = f"Etapa/estágio deve ser {data.get('condition_stage')}."
+            label = {"condition": "If / condição", "switch": "Roteador"}.get(node_type, "Filtro")
+            steps.append({"label": label, "status": "ok", "message": msg})
+        elif node_type == "merge":
+            steps.append({"label": "Mesclar", "status": "ok", "message": "Entradas unidas para continuar o fluxo."})
+        elif node_type == "loop":
+            mode = data.get("loop_mode") or "for_each"
+            count = data.get("loop_count") or 1
+            labels = {
+                "for_each": "Executar para cada item recebido.",
+                "batch": f"Processar em lotes de {count}.",
+                "repeat_times": f"Repetir os proximos passos {count} vez(es).",
+            }
+            steps.append({"label": "Loop", "status": "ok", "message": labels.get(mode, "Loop configurado.")})
+        elif node_type == "rule":
+            rule = data.get("rule_type") or "once_per_record"
+            steps.append({"label": "Regra", "status": "ok", "message": _rule_summary(rule, data)})
+        elif node_type == "action":
+            action_type = data.get("action_type")
+            status = "ok"
+            msg = action_labels.get(action_type, "Ação não configurada.")
+            if action_type == "delay":
+                status = "warning"
+                msg = f"{_delay_summary(data)} Requer worker/cron para retomar depois."
+            elif action_type == "send_webhook":
+                msg = f"Enviar webhook para {data.get('webhook_url') or 'URL não informada'}."
+                if not data.get("webhook_url"):
+                    status = "warning"
+            elif action_type == "http_request":
+                method = data.get("http_method") or "POST"
+                auth = data.get("http_auth_type") or "none"
+                auth_msg = " sem autenticacao" if auth == "none" else f" com auth {auth}"
+                msg = f"HTTP {method} para {data.get('http_url') or 'URL nao informada'}{auth_msg}."
+                if not data.get("http_url"):
+                    status = "warning"
+            elif action_type == "set_custom_field":
+                msg = f"Atualizar {data.get('custom_key') or 'campo'} para {data.get('custom_value') or 'valor vazio'}."
+            steps.append({"label": action_labels.get(action_type, "Ação"), "status": status, "message": msg})
+
+    if not any(step.get("label") in action_labels.values() for step in steps) and not actions:
+        steps.append({"label": "Ações", "status": "warning", "message": "Nenhuma ação configurada nesta rota."})
+    return steps
+
+
+def _delay_summary(data):
+    if data.get("delay_until"):
+        return f"Aguardar ate {data.get('delay_until')}."
+    amount = data.get("delay_amount") or data.get("delay_minutes") or 0
+    unit = {
+        "minutes": "minuto(s)",
+        "hours": "hora(s)",
+        "days": "dia(s)",
+    }.get(data.get("delay_unit"), "minuto(s)")
+    return f"Aguardar {amount} {unit}."
+
+
+def _schedule_summary(data):
+    amount = data.get("trigger_interval_amount") or data.get("trigger_interval_minutes") or 1
+    unit = {
+        "minutes": "minuto(s)",
+        "hours": "hora(s)",
+        "days": "dia(s)",
+    }.get(data.get("trigger_interval_unit"), "hora(s)")
+    return f"Rodar a cada {amount} {unit}."
+
+
+def _rule_summary(rule, data):
+    if rule == "once_per_record":
+        return "O mesmo registro só entra uma vez neste fluxo."
+    if rule == "cooldown_days":
+        return f"Bloquear repetição por {data.get('rule_days') or 0} dia(s)."
+    if rule == "stop_if_open_deal":
+        return "Parar se o contato já tiver negócio aberto."
+    return "Regra configurada."
+
+
+@login_required
+def whatsapp(request):
+    connection = IntegrationConnection.objects.filter(workspace=request.workspace, provider="whatsapp").first()
+    if request.method == "POST":
+        membership = getattr(request, "membership", None)
+        if not (membership and membership.can("admin")):
+            messages.error(request, "Voce nao tem permissao para configurar o WhatsApp.")
+            return redirect("whatsapp")
+        display_name = request.POST.get("display_name", "").strip()
+        phone_number = request.POST.get("phone_number", "").strip()
+        default_owner = request.POST.get("default_owner", "").strip()
+        connection, _ = IntegrationConnection.objects.get_or_create(
+            workspace=request.workspace,
+            provider="whatsapp",
+            defaults={"name": "WhatsApp"},
+        )
+        connection.name = "WhatsApp"
+        connection.status = "connected" if phone_number or display_name else "disconnected"
+        connection.config = {
+            **(connection.config or {}),
+            "display_name": display_name,
+            "phone_number": phone_number,
+            "default_owner": default_owner,
+            "source": "whatsapp_tab",
+            "updated_by": request.user.get_username(),
+        }
+        connection.save(update_fields=["name", "status", "config", "updated_at"])
+        messages.success(request, "Canal do WhatsApp salvo.")
+        return redirect("whatsapp")
+
+    config = connection.config if connection else {}
+    return render(request, "core/whatsapp.html", {
+        "page_title": "WhatsApp",
+        "breadcrumb": ["CRM", "WhatsApp"],
+        "connection": connection,
+        "whatsapp_config": config,
+        "whatsapp_connected": bool(connection and connection.status == "connected"),
+    })
+
+
+@login_required
+@require_role("admin")
+def integrations(request):
+    ws = request.workspace
+    connections = {item.provider: item for item in IntegrationConnection.objects.filter(workspace=ws)}
+    cards = []
+    for item in _INTEGRATION_CATALOG:
+        connection = connections.get(item["provider"])
+        cards.append({
+            **item,
+            "connection": connection,
+            "connected": bool(connection and connection.status == "connected"),
+        })
+    return render(request, "core/integrations.html", {
+        "page_title": "Integrações",
+        "breadcrumb": ["Configurações", "Integrações"],
+        "integration_cards": cards,
+    })
+
+
+@login_required
+@require_role("admin")
+@require_POST
+def integration_connect(request):
+    provider = request.POST.get("provider", "").strip()
+    catalog = {item["provider"]: item for item in _INTEGRATION_CATALOG}
+    item = catalog.get(provider)
+    if not item:
+        messages.error(request, "Integração inválida.")
+        return redirect("integrations")
+    if not item.get("available"):
+        messages.info(request, "Integração preparada, mas ainda não disponível para conectar.")
+        return redirect("integrations")
+    connection, _ = IntegrationConnection.objects.get_or_create(
+        workspace=request.workspace,
+        provider=provider,
+        defaults={"name": item["name"]},
+    )
+    connection.name = item["name"]
+    connection.status = "connected"
+    connection.config = {
+        **(connection.config or {}),
+        "connected_by": request.user.get_username(),
+        "source": "manual",
+    }
+    connection.save(update_fields=["name", "status", "config", "updated_at"])
+    messages.success(request, f"{item['name']} conectada.")
+    return redirect("integrations")
+
+
+@login_required
+@require_role("admin")
+@require_POST
+def integration_disconnect(request):
+    provider = request.POST.get("provider", "").strip()
+    connection = IntegrationConnection.objects.filter(workspace=request.workspace, provider=provider).first()
+    if connection:
+        connection.status = "disconnected"
+        connection.save(update_fields=["status", "updated_at"])
+        messages.success(request, f"{connection.name} desconectada.")
+    return redirect("integrations")
+
+
+# --------------------------------------------------------------------------- #
+# Facebook Lead Ads — OAuth "connect page" flow (like Kommo).
+#   connect -> Facebook consent -> callback lists the user's Pages ->
+#   pick a Page -> store its token + subscribe it to leadgen webhooks.
+# The Graph calls need a real Meta app (App ID/Secret) + public HTTPS callback,
+# so they can't be exercised locally — the flow degrades gracefully without them.
+# --------------------------------------------------------------------------- #
+FB_SCOPES = "pages_show_list,pages_read_engagement,pages_manage_metadata,leads_retrieval"
+
+
+def _facebook_redirect_uri(request):
+    return request.build_absolute_uri(reverse("facebook_callback"))
+
+
+def _fb_graph(path, params, method="GET"):
+    import urllib.parse
+    import urllib.request
+
+    base = f"https://graph.facebook.com/{settings.FACEBOOK_GRAPH_VERSION}/{path}"
+    if method == "POST":
+        req = urllib.request.Request(base, data=urllib.parse.urlencode(params).encode(), method="POST")
+    else:
+        req = urllib.request.Request(base + "?" + urllib.parse.urlencode(params))
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+@login_required
+@require_role("admin")
+def facebook_connect(request):
+    if not settings.FACEBOOK_APP_ID or not settings.FACEBOOK_APP_SECRET:
+        messages.error(request, "Configure FACEBOOK_APP_ID e FACEBOOK_APP_SECRET no ambiente para conectar o Facebook.")
+        return redirect("integrations")
+    import urllib.parse
+
+    state = get_random_string(24)
+    request.session["fb_oauth_state"] = state
+    params = urllib.parse.urlencode({
+        "client_id": settings.FACEBOOK_APP_ID,
+        "redirect_uri": _facebook_redirect_uri(request),
+        "scope": FB_SCOPES,
+        "response_type": "code",
+        "state": state,
+    })
+    return redirect(f"https://www.facebook.com/{settings.FACEBOOK_GRAPH_VERSION}/dialog/oauth?{params}")
+
+
+@login_required
+@require_role("admin")
+def facebook_callback(request):
+    if request.GET.get("error"):
+        messages.info(request, "Conexão com o Facebook cancelada.")
+        return redirect("integrations")
+    if not request.GET.get("state") or request.GET.get("state") != request.session.get("fb_oauth_state"):
+        messages.error(request, "A sessão do Facebook expirou. Conecte de novo.")
+        return redirect("integrations")
+    code = request.GET.get("code")
+    if not code:
+        messages.error(request, "O Facebook não retornou o código de autorização.")
+        return redirect("integrations")
+    try:
+        token_data = _fb_graph("oauth/access_token", {
+            "client_id": settings.FACEBOOK_APP_ID,
+            "client_secret": settings.FACEBOOK_APP_SECRET,
+            "redirect_uri": _facebook_redirect_uri(request),
+            "code": code,
+        })
+        pages_data = _fb_graph("me/accounts", {"access_token": token_data.get("access_token"), "limit": 100})
+    except Exception:
+        messages.error(request, "Falha ao falar com o Facebook. Verifique o App e tente de novo.")
+        return redirect("integrations")
+    pages = [
+        {"id": p.get("id"), "name": p.get("name", "Página"), "access_token": p.get("access_token", "")}
+        for p in pages_data.get("data", []) if p.get("id")
+    ]
+    if not pages:
+        messages.error(request, "Nenhuma página do Facebook encontrada nessa conta.")
+        return redirect("integrations")
+    request.session["fb_pages"] = pages
+    return render(request, "core/facebook_pages.html", {
+        "page_title": "Conectar Facebook",
+        "breadcrumb": ["Configurações", "Integrações", "Facebook"],
+        "pages": pages,
+    })
+
+
+@login_required
+@require_role("admin")
+@require_POST
+def facebook_select_page(request):
+    page_id = request.POST.get("page_id", "")
+    pages = request.session.get("fb_pages", [])
+    page = next((p for p in pages if str(p.get("id")) == str(page_id)), None)
+    if not page:
+        messages.error(request, "Página inválida. Conecte de novo.")
+        return redirect("integrations")
+    subscribed = False
+    try:
+        result = _fb_graph(
+            f"{page['id']}/subscribed_apps",
+            {"subscribed_fields": "leadgen", "access_token": page["access_token"]},
+            method="POST",
+        )
+        subscribed = bool(result.get("success"))
+    except Exception:
+        subscribed = False
+    conn, _ = IntegrationConnection.objects.get_or_create(
+        workspace=request.workspace, provider="facebook", defaults={"name": "Facebook Lead Ads"},
+    )
+    conn.name = "Facebook Lead Ads"
+    conn.status = "connected"
+    conn.config = {
+        **(conn.config or {}),
+        "page_id": page["id"],
+        "page_name": page["name"],
+        "page_access_token": page["access_token"],
+        "leadgen_subscribed": subscribed,
+        "connected_by": request.user.get_username(),
+        "source": "oauth",
+    }
+    conn.save(update_fields=["name", "status", "config", "updated_at"])
+    request.session.pop("fb_pages", None)
+    request.session.pop("fb_oauth_state", None)
+    if subscribed:
+        messages.success(request, f"Página “{page['name']}” conectada. Novos leads viram contato e negócio automaticamente.")
+    else:
+        messages.warning(request, f"Página “{page['name']}” salva, mas não consegui assinar os leads — confira as permissões do App.")
+    return redirect("integrations")
+
+
+@csrf_exempt
+def automation_webhook(request, key):
+    # Facebook (and other providers) verify a webhook with a GET handshake: echo
+    # back hub.challenge when hub.verify_token matches this webhook's key.
+    if request.method == "GET" and request.GET.get("hub.mode") == "subscribe":
+        if request.GET.get("hub.verify_token") == key:
+            return HttpResponse(request.GET.get("hub.challenge", ""))
+        return HttpResponse("verify token invalido", status=403)
+
+    body = _request_body_payload(request)
+    matched = 0
+    autos = Automation.objects.filter(active=True, trigger="webhook_received").select_related("workspace")
+    for auto in autos:
+        trigger_data = _automation_trigger_data(auto)
+        if trigger_data.get("webhook_key") != key:
+            continue
+        with tenant_context(auto.workspace):
+            set_current_workspace(auto.workspace)
+            try:
+                # A Facebook Lead Ads payload is flattened to standard lead fields
+                # so the same "create contact/company/deal" actions just work.
+                fb = _normalize_facebook_leadgen(body, auto.workspace)
+                event = Event.objects.create(
+                    workspace=auto.workspace,
+                    event_type="webhook_received",
+                    object_repr=f"Webhook {key}",
+                    payload={
+                        "webhook_key": key,
+                        "body": fb if fb else body,
+                        "query": request.GET.dict(),
+                        "method": request.method,
+                        "source": "facebook" if fb else "webhook",
+                    },
+                )
+                run_automation_for_event(auto, event, None)
+                event.processed = True
+                event.save(update_fields=["processed"])
+            finally:
+                clear_current_workspace()
+        matched += 1
+    return JsonResponse({"received": True, "matched": matched})
+
+
+def _facebook_flatten_fields(field_data):
+    """Turn Facebook's field_data ([{name, values:[...]}]) into a flat dict, and
+    map FB field names to the ones our create actions understand."""
+    out = {}
+    for field in field_data or []:
+        if not isinstance(field, dict):
+            continue
+        name = str(field.get("name", "")).strip().lower()
+        values = field.get("values") or []
+        if name and values:
+            out[name] = values[0] if len(values) == 1 else ", ".join(str(v) for v in values)
+    for fb_name, std_name in (("full_name", "name"), ("phone_number", "phone"), ("company_name", "company")):
+        if fb_name in out and std_name not in out:
+            out[std_name] = out[fb_name]
+    return out
+
+
+def _normalize_facebook_leadgen(body, workspace):
+    """If `body` is a Facebook Lead Ads payload, return a flat lead dict; else None.
+    Handles inline field_data (test tool / connectors) and the native leadgen
+    webhook (entry[].changes[].value), fetching the lead via Graph API when only a
+    leadgen_id is present and a page token is configured."""
+    if not isinstance(body, dict):
+        return None
+    if isinstance(body.get("field_data"), list):
+        return _facebook_flatten_fields(body["field_data"]) or None
+    entries = body.get("entry")
+    if not isinstance(entries, list):
+        return None
+    for entry in entries:
+        for change in (entry.get("changes") or []) if isinstance(entry, dict) else []:
+            value = change.get("value") or {} if isinstance(change, dict) else {}
+            if isinstance(value.get("field_data"), list):
+                return _facebook_flatten_fields(value["field_data"]) or None
+            leadgen_id = value.get("leadgen_id")
+            if leadgen_id:
+                fetched = _facebook_fetch_lead(leadgen_id, workspace)
+                if fetched:
+                    return fetched
+    return None
+
+
+def _facebook_fetch_lead(leadgen_id, workspace):
+    """Fetch a lead's fields from the Graph API using the workspace's stored
+    Facebook page token. Returns a flat dict, or None on any failure."""
+    conn = IntegrationConnection.objects.filter(workspace=workspace, provider="facebook").first()
+    token = (conn.config or {}).get("page_access_token", "") if conn else ""
+    if not token or not leadgen_id:
+        return None
+    import urllib.parse
+    import urllib.request
+
+    url = "https://graph.facebook.com/v19.0/{}?{}".format(
+        urllib.parse.quote(str(leadgen_id)),
+        urllib.parse.urlencode({"access_token": token}),
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=8) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        return _facebook_flatten_fields(payload.get("field_data")) or None
+    except Exception:
+        return None
+
+
+def _request_body_payload(request):
+    raw = request.body.decode("utf-8", errors="ignore") if request.body else ""
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"raw": raw}
+
+
+def _automation_trigger_data(auto):
+    for node in (auto.canvas or {}).get("nodes", []):
+        if node.get("type") == "trigger":
+            return node.get("data") or {}
+    return {}
 
 
 @login_required

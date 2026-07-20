@@ -1,11 +1,23 @@
 {% if members %}
 <div class="field">
-  <label for="id_assignees">Responsáveis</label>
-  <select name="assignees" id="id_assignees" multiple class="assignees-select" size="{{ members|length|add:1 }}">
-    {% for m in members %}
-    <option value="{{ m.pk }}" {% if m.pk in assignee_ids %}selected{% endif %}>{{ m.get_username }}</option>
-    {% endfor %}
-  </select>
-  <div class="cf-hint" style="font-size:12px;color:var(--ink-3);margin-top:4px;">Segure Ctrl para selecionar vários.</div>
+  <label>Responsáveis</label>
+  <div class="multi"
+       x-data="{ open: false, sel: [{% for id in assignee_ids %}'{{ id }}'{% if not forloop.last %}, {% endif %}{% endfor %}] }"
+       @click.outside="open = false">
+    <button type="button" class="multi__btn" :class="{ 'is-open': open }" @click="open = !open">
+      <span class="multi__val" :class="{ 'is-empty': !sel.length }"
+            x-text="sel.length ? sel.length + (sel.length > 1 ? ' responsáveis' : ' responsável') : 'Ninguém atribuído'"></span>
+      <span class="multi__chev" :class="{ 'is-open': open }">{% include "core/_icon.html" with icon="chevron" %}</span>
+    </button>
+    <div class="multi__menu" x-show="open" x-cloak x-transition.origin.top>
+      {% for m in members %}
+      <label class="multi__opt">
+        <input type="checkbox" name="assignees" value="{{ m.pk }}" x-model="sel">
+        <span class="multi__check">{% include "core/_icon.html" with icon="check" %}</span>
+        <span class="multi__name">{{ m.get_username }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
 </div>
 {% endif %}

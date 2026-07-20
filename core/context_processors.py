@@ -65,6 +65,7 @@ def _nav_model(request):
                 {"label": "Negócios", "url_name": "crm:deal_board", "icon": "pipeline", "shortcut": "G N"},
                 {"label": "Empresas", "url_name": "crm:company_list", "icon": "building", "shortcut": "G E"},
                 {"label": "Contatos", "url_name": "crm:contact_list", "icon": "users", "shortcut": "G C"},
+                {"label": "WhatsApp", "url_name": "whatsapp", "icon": "phone", "shortcut": "G W"},
             ],
         },
     ]
@@ -75,8 +76,8 @@ def _nav_model(request):
             "items": [
                 {"label": "Aparência", "url_name": "appearance", "icon": "palette", "shortcut": ""},
                 {"label": "Membros", "url_name": "members", "icon": "users", "shortcut": ""},
-                {"label": "Campos personalizados", "url_name": "custom_fields", "icon": "sliders", "shortcut": ""},
                 {"label": "Automações", "url_name": "automations", "icon": "bolt", "shortcut": ""},
+                {"label": "Integrações", "url_name": "integrations", "icon": "command", "shortcut": ""},
             ],
         })
     return sections
@@ -97,8 +98,10 @@ def navigation(request):
             palette.append({**entry, "section": section["section"]})
         if items:
             sections.append({"section": section["section"], "items": items})
+    membership = getattr(request, "membership", None)
     return {
         "nav_sections": sections,
         "command_palette": palette,
         "can_edit": _can_edit(request),
+        "can_admin": bool(membership and membership.can("admin")),
     }
