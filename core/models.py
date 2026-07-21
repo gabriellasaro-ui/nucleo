@@ -187,6 +187,7 @@ EVENT_CHOICES = [
     ("contact_stage_changed", "Contato mudou de estágio"),
     ("schedule_interval", "Schedule trigger"),
     ("webhook_received", "Webhook recebido"),
+    ("facebook_lead", "Lead do Facebook"),
 ]
 
 

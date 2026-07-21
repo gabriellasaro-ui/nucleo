@@ -1590,8 +1590,6 @@ def facebook_leadgen(request):
             return HttpResponse(request.GET.get("hub.challenge", ""))
         return HttpResponse("verify token invalido", status=403)
 
-    from core.events import ingest_lead
-
     body = _request_body_payload(request)
     entries = body.get("entry", []) if isinstance(body, dict) else []
     processed = 0
@@ -1620,7 +1618,16 @@ def facebook_leadgen(request):
                 try:
                     data = _facebook_fetch_lead(leadgen_id, ws)
                     if data:
-                        ingest_lead(ws, data)
+                        event = Event.objects.create(
+                            workspace=ws,
+                            event_type="facebook_lead",
+                            object_repr="Lead do Facebook",
+                            payload={"body": data, "source": "facebook", "page_id": page_id},
+                        )
+                        for auto in Automation.objects.filter(workspace=ws, active=True, trigger="facebook_lead"):
+                            run_automation_for_event(auto, event, None)
+                        event.processed = True
+                        event.save(update_fields=["processed"])
                         processed += 1
                 finally:
                     clear_current_workspace()
