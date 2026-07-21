@@ -16,7 +16,7 @@
       <div>
         <h2>{{ item.name }}</h2>
         <p>{{ item.summary }}</p>
-        {% if item.provider == "facebook" and item.connection.config.page_name %}<span class="integration-card__page">{% include "core/_icon.html" with icon="check" %} {{ item.connection.config.page_name }}</span>{% endif %}
+        {% if item.provider == "facebook" and item.connected and item.connection.config.page_name %}<span class="integration-card__page">{% include "core/_icon.html" with icon="check" %} {{ item.connection.config.page_name }}</span>{% endif %}
       </div>
     </div>
     <div class="integration-card__foot">

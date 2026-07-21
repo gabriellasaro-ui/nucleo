@@ -1338,7 +1338,10 @@ def integration_disconnect(request):
     connection = IntegrationConnection.objects.filter(workspace=request.workspace, provider=provider).first()
     if connection:
         connection.status = "disconnected"
-        connection.save(update_fields=["status", "updated_at"])
+        # Fully clear the stored page/token so it doesn't keep showing as connected
+        # and a fresh "Conectar página" starts clean.
+        connection.config = {}
+        connection.save(update_fields=["status", "config", "updated_at"])
         messages.success(request, f"{connection.name} desconectada.")
     return redirect("integrations")
 
