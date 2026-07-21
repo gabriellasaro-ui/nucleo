@@ -29,18 +29,11 @@ if _env_file.exists():
 
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-insecure-change-me")
 DEBUG = env("DJANGO_DEBUG", "1") == "1"
+# Set these in production (Docker / self-hosted) via env vars, e.g.:
+#   DJANGO_ALLOWED_HOSTS=crm.gabriellasaro.cloud
+#   DJANGO_CSRF_ORIGINS=https://crm.gabriellasaro.cloud
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 CSRF_TRUSTED_ORIGINS = [o for o in env("DJANGO_CSRF_ORIGINS", "").split(",") if o]
-
-# On Vercel the deploy host isn't known up front, so allow the platform domains
-# (production + preview) automatically and trust them for HTTPS form posts (CSRF).
-if env("VERCEL") or env("VERCEL_URL"):
-    ALLOWED_HOSTS += [".vercel.app"]
-    CSRF_TRUSTED_ORIGINS.append("https://*.vercel.app")
-    _vercel_url = env("VERCEL_URL")
-    if _vercel_url:
-        ALLOWED_HOSTS.append(_vercel_url)
-        CSRF_TRUSTED_ORIGINS.append(f"https://{_vercel_url}")
 
 # Multi-tenant (schema-per-workspace via django-tenants).
 # SHARED_APPS live in the `public` schema (auth, the tenant model, shared config).
