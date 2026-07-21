@@ -20,6 +20,7 @@ from .rbac import can_edit, require_role
 from .views import (
     _automation_pipelines,
     _automation_trigger_data,
+    _editor_trigger_choices,
     _facebook_apply_form_map,
     _facebook_body_key_for_token,
     _facebook_build_automation,
@@ -346,6 +347,25 @@ class FacebookDestinoNeedsTests(SimpleTestCase):
         needs = _facebook_destino_needs({"q1": "contact:email", "q2": "ignore"})
         self.assertFalse(needs["deal"])
         self.assertFalse(needs["company"])
+
+
+class EditorTriggerChoicesTests(SimpleTestCase):
+    """The canvas hides 'Lead do Facebook' (owned by the Formulários screen) unless
+    you're editing a flow that already uses it."""
+
+    def test_facebook_hidden_for_new_automations(self):
+        values = [value for value, _label in _editor_trigger_choices(None)]
+        self.assertNotIn("facebook_lead", values)
+        self.assertIn("contact_created", values)
+        self.assertIn("webhook_received", values)
+
+    def test_facebook_kept_when_editing_a_facebook_flow(self):
+        values = [value for value, _label in _editor_trigger_choices("facebook_lead")]
+        self.assertIn("facebook_lead", values)
+
+    def test_editing_other_trigger_still_hides_facebook(self):
+        values = [value for value, _label in _editor_trigger_choices("contact_created")]
+        self.assertNotIn("facebook_lead", values)
 
 
 class FacebookFlowGeneratorTests(TransactionTestCase):

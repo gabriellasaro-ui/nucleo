@@ -103,9 +103,10 @@
       <div><b>Ao salvar, o fluxo é criado e ativado sozinho.</b><br><small class="cell-sub">Cada lead deste formulário vira os registros marcados acima. Some em <a href="{% url 'facebook_forms' %}">Formulários</a> como “Ativo” — sem montar nada no canvas.</small></div>
     </div>
 
-    <div style="margin-top:20px; display:flex; gap:10px;">
+    <div style="margin-top:20px; display:flex; gap:10px; align-items:center;">
       <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="check" %} Salvar e ativar fluxo</button>
       <a class="btn btn--ghost" href="{% url 'facebook_forms' %}">Cancelar</a>
+      {% if flow_pk %}<a class="btn btn--ghost" href="{% url 'automation_edit' flow_pk %}" style="margin-left:auto;">Editar no modo avançado</a>{% endif %}
     </div>
   </form>
   {% endif %}

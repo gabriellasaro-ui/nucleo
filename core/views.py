@@ -546,9 +546,19 @@ def _condition_field_catalog(ws):
     return fields
 
 
+def _editor_trigger_choices(selected_trigger=None):
+    """Triggers offered in the canvas. "Lead do Facebook" is owned by the
+    Formulários screen (one flow per form, created there) — hide it here so nobody
+    builds a parallel FB flow that would double-create. Keep it only when editing a
+    flow that already uses it, so its trigger still renders."""
+    return [c for c in EVENT_CHOICES if c[0] != "facebook_lead" or c[0] == selected_trigger]
+
+
 def _automation_editor_context(request, selected_automation=None, **extra):
     ws = request.workspace
     fb_conn = IntegrationConnection.objects.filter(workspace=ws, provider="facebook", status="connected").first()
+    selected_trigger = selected_automation.trigger if selected_automation else None
+    trigger_choices = _editor_trigger_choices(selected_trigger)
     context = {
         "page_title": selected_automation.name if selected_automation else "Nova automação",
         "breadcrumb": ["Configurações", "Automações", "Canvas"],
@@ -558,7 +568,7 @@ def _automation_editor_context(request, selected_automation=None, **extra):
         "automation_icon": selected_automation.icon if selected_automation else "bolt",
         "automation_icons": Automation.ICON_CHOICES,
         "initial_canvas": selected_automation.canvas if selected_automation else {},
-        "triggers": EVENT_CHOICES,
+        "triggers": trigger_choices,
         "actions": Automation.ACTION_CHOICES,
         "deal_stages": Deal.STAGE_CHOICES,
         "contact_stages": Contact.STAGE_CHOICES,
@@ -625,6 +635,10 @@ def automation_add(request):
             messages.error(request, "Informe o nome da automação.")
         elif trigger not in dict(EVENT_CHOICES):
             messages.error(request, "Gatilho inválido.")
+        elif trigger == "facebook_lead" and not (existing and existing.trigger == "facebook_lead"):
+            # FB flows are born in Integrações → Formulários (one per form). The
+            # canvas only edits an already-generated one — never creates a parallel.
+            messages.error(request, "Fluxos do Facebook são criados em Integrações → Facebook → Formulários.")
         elif not actions:
             messages.error(request, "Configure pelo menos uma ação no fluxo.")
         else:
@@ -1951,6 +1965,7 @@ def facebook_form_map(request, form_id):
         "pipelines": pipelines,
         "dest": dest,
         "has_custom_fields": CustomField.objects.filter(workspace=ws).exists(),
+        "flow_pk": (cfg.get("form_flows") or {}).get(form_id),
     })
 
 
