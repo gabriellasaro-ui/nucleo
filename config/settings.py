@@ -38,6 +38,9 @@ CSRF_TRUSTED_ORIGINS = [o for o in env("DJANGO_CSRF_ORIGINS", "").split(",") if 
 # app works right after deploy (your custom domain still goes in DJANGO_ALLOWED_HOSTS).
 ALLOWED_HOSTS.append(".easypanel.host")
 CSRF_TRUSTED_ORIGINS += ["https://*.easypanel.host", "http://*.easypanel.host"]
+# Behind Easypanel/Traefik (an HTTPS reverse proxy): trust the forwarded scheme so
+# Django knows requests are HTTPS — needed for OAuth redirect URIs to come out https://.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Multi-tenant (schema-per-workspace via django-tenants).
 # SHARED_APPS live in the `public` schema (auth, the tenant model, shared config).
