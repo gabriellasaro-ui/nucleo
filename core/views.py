@@ -46,14 +46,14 @@ _INTEGRATION_CATALOG = [
         "name": "Instagram",
         "summary": "Base para mensagens, formularios e origem de leads.",
         "icon": "command",
-        "available": True,
+        "available": False,
     },
     {
         "provider": "forms",
-        "name": "Forms nativos",
-        "summary": "Crie formulários próprios e dispare fluxos ao receber respostas.",
+        "name": "Formulários (site/LP)",
+        "summary": "Formulário próprio no seu site ou landing page — respostas viram lead na automação.",
         "icon": "text",
-        "available": True,
+        "available": False,
     },
     {
         "provider": "webhook",
@@ -67,14 +67,14 @@ _INTEGRATION_CATALOG = [
         "name": "API / HTTP",
         "summary": "Envie dados para outras plataformas via HTTP request.",
         "icon": "command",
-        "available": True,
+        "available": False,
     },
     {
         "provider": "whatsapp",
         "name": "WhatsApp",
         "summary": "Canal de atendimento para receber conversas e acionar fluxos.",
         "icon": "phone",
-        "available": True,
+        "available": False,
     },
 ]
 _AUTOMATION_IDEAS = [
