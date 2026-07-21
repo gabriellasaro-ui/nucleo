@@ -107,7 +107,7 @@ def _run_automation(auto, event, obj):
         return _run_canvas(auto, event, obj)
     if not _matches(auto, event):
         return "skipped", [{"label": "Condicao", "status": "skipped", "message": "Evento nao passou pela condicao."}]
-    path = _run_action(auto, obj)
+    path = _run_action(auto, obj, event)
     return _status_from_path(path), path
 
 
@@ -447,11 +447,11 @@ def _rule_allows(auto, event, obj, data):
     return True, "Regra permitida."
 
 
-def _run_action(auto, obj):
+def _run_action(auto, obj, event=None):
     path = []
     current = obj
     for action in auto.normalized_actions():
-        result = _run_single_action(auto, current, action)
+        result = _run_single_action(auto, current, action, event)
         if result.get("object") is not None:
             current = result["object"]
         path.append({

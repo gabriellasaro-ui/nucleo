@@ -17,7 +17,7 @@
 <div class="table-wrap">
   <table class="tbl">
     <thead>
-      <tr><th>Formulário</th><th>Status</th><th>Mapeamento</th><th></th></tr>
+      <tr><th>Formulário</th><th>Fluxo</th><th></th></tr>
     </thead>
     <tbody>
       {% for f in forms %}
@@ -28,21 +28,22 @@
             <div class="cell-sub">ID {{ f.id }}</div>
           </div>
         </td>
-        <td>{{ f.status|default:"—" }}</td>
         <td>
-          {% if f.mapped %}
-          <span class="role-badge integration-status integration-status--on">Mapeado</span>
+          {% if f.flow_active %}
+          <span class="role-badge integration-status integration-status--on">Ativo</span>
+          {% elif f.mapped %}
+          <span class="role-badge integration-status">Pausado</span>
           {% else %}
-          <span class="role-badge integration-status">Não mapeado</span>
+          <span class="role-badge integration-status">Não configurado</span>
           {% endif %}
         </td>
         <td class="cell-actions">
-          <a class="btn btn--ghost btn--sm" href="{% url 'facebook_form_map' f.id %}">Mapear campos</a>
+          <a class="btn btn--ghost btn--sm" href="{% url 'facebook_form_map' f.id %}">{% if f.mapped %}Editar{% else %}Configurar{% endif %}</a>
         </td>
       </tr>
       {% empty %}
       <tr>
-        <td colspan="4">
+        <td colspan="3">
           <div class="cf-empty" style="padding:26px 10px;">
             {% include "core/_icon.html" with icon="text" %}
             <div>Nenhum formulário sincronizado ainda. Clique em <b>Sincronizar</b> para buscar os formulários da página.</div>

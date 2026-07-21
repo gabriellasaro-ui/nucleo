@@ -5,8 +5,8 @@
 
 <div class="page-head">
   <div>
-    <h1>Mapear: {{ form_name }}</h1>
-    <p>Escolha, para cada pergunta do formulário, o campo do CRM que vai receber a resposta. As sugestões já vêm preenchidas — ajuste o que precisar.</p>
+    <h1>Configurar: {{ form_name }}</h1>
+    <p>Diga para onde vão os dados deste formulário e o que criar no CRM. As sugestões já vêm preenchidas — ajuste o que precisar. Ao salvar, o fluxo é montado sozinho.</p>
   </div>
 </div>
 
@@ -18,6 +18,11 @@
 {% else %}
 <form method="post" action="{% url 'facebook_form_map' form_id %}">
   {% csrf_token %}
+
+  <h2 style="font-size:16px; margin:0 0 12px;">1. De onde vem cada dado</h2>
+  {% if not has_custom_fields %}
+  <p class="node-help">Quer mandar respostas para campos próprios? Crie-os em <a href="{% url 'custom_fields' %}">Configurações → Campos personalizados</a> e eles aparecem aqui.</p>
+  {% endif %}
   <div class="table-wrap">
     <table class="tbl">
       <thead>
@@ -49,8 +54,48 @@
       </tbody>
     </table>
   </div>
-  <div style="margin-top:16px; display:flex; gap:10px;">
-    <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="check" %} Salvar mapeamento</button>
+
+  <h2 style="font-size:16px; margin:28px 0 12px;">2. O que criar quando chegar um lead</h2>
+  <div class="card" style="padding:18px; display:flex; flex-direction:column; gap:14px; max-width:560px;">
+    <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
+      <input type="checkbox" name="create_contact" {% if dest.create_contact %}checked{% endif %}>
+      <span><b>Criar contato</b><br><small class="cell-sub">Nome, e-mail e telefone do lead.</small></span>
+    </label>
+    <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
+      <input type="checkbox" name="create_company" {% if dest.create_company %}checked{% endif %}>
+      <span><b>Criar empresa</b><br><small class="cell-sub">Só se o formulário perguntar a empresa.</small></span>
+    </label>
+    <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
+      <input type="checkbox" name="create_deal" {% if dest.create_deal %}checked{% endif %}>
+      <span><b>Criar negócio</b><br><small class="cell-sub">Entra na pipeline escolhida abaixo.</small></span>
+    </label>
+    <div class="node-inline-fields">
+      <div style="flex:1;">
+        <label>Pipeline</label>
+        <select name="pipeline" class="role-select" data-fb-pipeline>
+          {% for pipeline in pipelines %}
+          <option value="{{ pipeline.pk }}" {% if dest.pipeline == pipeline.pk|stringformat:'s' %}selected{% endif %}>{{ pipeline.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="flex:1;">
+        <label>Etapa</label>
+        <select name="deal_stage" class="role-select">
+          {% for pipeline in pipelines %}
+          <optgroup label="{{ pipeline.name }}">
+            {% for stage in pipeline.stages.all %}
+            <option value="{{ stage.key }}" data-pipeline="{{ pipeline.pk }}" {% if dest.stage == stage.key %}selected{% endif %}>{{ stage.name }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <p class="node-help">Se você mandar uma resposta para um campo de <b>Empresa</b> ou <b>Negócio</b>, esse objeto é criado automaticamente (pra nada se perder).</p>
+  </div>
+
+  <div style="margin-top:20px; display:flex; gap:10px;">
+    <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="check" %} Salvar e ativar</button>
     <a class="btn btn--ghost" href="{% url 'facebook_forms' %}">Cancelar</a>
   </div>
 </form>

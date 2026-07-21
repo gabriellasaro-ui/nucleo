@@ -1740,24 +1740,122 @@ def facebook_sync_forms(request):
 @login_required
 @require_role("admin")
 def facebook_forms(request):
-    conn = _facebook_active_connection(request.workspace)
+    ws = request.workspace
+    conn = _facebook_active_connection(ws)
     if not conn:
         messages.error(request, "Conecte uma página do Facebook primeiro.")
         return redirect("integrations")
     cfg = conn.config or {}
     maps = cfg.get("form_maps") or {}
-    items = [{
-        "id": str(form.get("id")),
-        "name": form.get("name") or "Formulário",
-        "status": form.get("status", ""),
-        "mapped": bool(maps.get(str(form.get("id")))),
-    } for form in (cfg.get("forms") or [])]
+    flows = cfg.get("form_flows") or {}
+    flow_autos = {a.pk: a for a in Automation.objects.filter(workspace=ws, pk__in=[v for v in flows.values() if v])}
+    items = []
+    for form in (cfg.get("forms") or []):
+        fid = str(form.get("id"))
+        auto = flow_autos.get(flows.get(fid))
+        items.append({
+            "id": fid,
+            "name": form.get("name") or "Formulário",
+            "status": form.get("status", ""),
+            "mapped": bool(maps.get(fid)),
+            "flow_active": bool(auto and auto.active),
+        })
     return render(request, "core/facebook_forms.html", {
         "page_title": "Formulários do Facebook",
         "breadcrumb": ["Configurações", "Integrações", "Facebook"],
         "page_name": cfg.get("page_name", ""),
         "forms": items,
     })
+
+
+def _facebook_destino_needs(mapping):
+    """Which objects the mapping implies must exist so no answer is lost.
+    A field mapped to a Company/Deal (native or custom) means that object has to
+    be created, otherwise its value would fall into the void."""
+    needs = {"company": False, "deal": False}
+    for token in (mapping or {}).values():
+        obj = ""
+        if token.startswith("custom:"):
+            parts = token.split(":", 2)
+            obj = parts[1] if len(parts) == 3 else ""
+        elif ":" in token:
+            obj = token.split(":", 1)[0]
+        if obj in needs:
+            needs[obj] = True
+    return needs
+
+
+def _facebook_build_automation(ws, conn, form_id, form_name, destino):
+    """Create or update the Automation for a Facebook form from a simple destino
+    (which objects to create + pipeline/stage). Generates a valid canvas because
+    ONLY the canvas execution path passes the event (so the lead data maps), and
+    so the flow stays editable in the advanced canvas. Idempotent via
+    conn.config['form_flows'][form_id]."""
+    form_id = str(form_id)
+    ordered = []
+    if destino.get("create_company"):
+        ordered.append({"type": "create_company"})
+    if destino.get("create_contact"):
+        ordered.append({"type": "create_contact"})
+    if destino.get("create_deal"):
+        deal = {"type": "create_deal"}
+        if destino.get("pipeline"):
+            deal["pipeline"] = str(destino["pipeline"])
+        if destino.get("stage"):
+            deal["deal_stage"] = str(destino["stage"])
+        ordered.append(deal)
+
+    nodes = [{
+        "id": "entry", "type": "trigger", "x": 120, "y": 200,
+        "data": {"trigger": "facebook_lead", "trigger_form_id": form_id},
+    }]
+    edges = []
+    prev_id, x = "entry", 120
+    for i, action in enumerate(ordered, start=1):
+        x += 360
+        node_id = f"action-{i}"
+        data = {"action_index": i, "action_type": action["type"]}
+        if action.get("pipeline"):
+            data["pipeline"] = action["pipeline"]
+        if action.get("deal_stage"):
+            data["deal_stage"] = action["deal_stage"]
+        nodes.append({"id": node_id, "type": "action", "x": x, "y": 200, "data": data})
+        edges.append({"from": prev_id, "to": node_id})
+        prev_id = node_id
+    canvas = {
+        "version": 1,
+        "nodes": nodes,
+        "edges": edges,
+        "viewport": {"scroll_left": 0, "scroll_top": 0, "zoom": 1},
+    }
+
+    cfg = conn.config or {}
+    flows = dict(cfg.get("form_flows") or {})
+    existing_pk = flows.get(form_id)
+    auto = Automation.objects.filter(pk=existing_pk, workspace=ws).first() if existing_pk else None
+    fields = {
+        "name": f"Facebook — {form_name}"[:120],
+        "icon": "users",
+        "trigger": "facebook_lead",
+        "condition_stage": "",
+        "action": ordered[0]["type"] if ordered else "create_contact",
+        "action_text": "",
+        "action_due_days": 0,
+        "conditions": {},
+        "actions": ordered,
+        "canvas": canvas,
+        "active": bool(ordered),
+    }
+    if auto:
+        for key, value in fields.items():
+            setattr(auto, key, value)
+        auto.save()
+    else:
+        auto = Automation.objects.create(workspace=ws, **fields)
+    flows[form_id] = auto.pk
+    conn.config = {**cfg, "form_flows": flows}
+    conn.save(update_fields=["config", "updated_at"])
+    return auto
 
 
 @login_required
@@ -1770,6 +1868,10 @@ def facebook_form_map(request, form_id):
         return redirect("integrations")
     form_id = str(form_id)
     cfg = conn.config or {}
+    form_name = next(
+        (form.get("name") for form in (cfg.get("forms") or []) if str(form.get("id")) == form_id),
+        form_id,
+    )
     if request.method == "POST":
         valid = _facebook_valid_targets(ws)
         new_map = {}
@@ -1779,12 +1881,29 @@ def facebook_form_map(request, form_id):
                 continue
             token = request.POST.get(key, "ignore").strip()
             new_map[match.group(1)] = token if token in valid else "ignore"
+        # Destino: what to create + where. Guard: if a Company/Deal field was
+        # mapped, force that object on so its answer isn't lost.
+        needs = _facebook_destino_needs(new_map)
+        destino = {
+            "create_contact": bool(request.POST.get("create_contact")),
+            "create_company": bool(request.POST.get("create_company")) or needs["company"],
+            "create_deal": bool(request.POST.get("create_deal")) or needs["deal"],
+            "pipeline": request.POST.get("pipeline", "").strip(),
+            "stage": request.POST.get("deal_stage", "").strip(),
+        }
         form_maps = dict(cfg.get("form_maps") or {})
         form_maps[form_id] = new_map
-        conn.config = {**cfg, "form_maps": form_maps}
+        form_dest = dict(cfg.get("form_dest") or {})
+        form_dest[form_id] = destino
+        conn.config = {**cfg, "form_maps": form_maps, "form_dest": form_dest}
         conn.save(update_fields=["config", "updated_at"])
-        messages.success(request, "Mapeamento salvo.")
+        auto = _facebook_build_automation(ws, conn, form_id, form_name, destino)
+        if auto.active:
+            messages.success(request, f"Formulário “{form_name}” configurado — leads viram registros automaticamente.")
+        else:
+            messages.warning(request, "Mapeamento salvo, mas nenhum registro foi marcado para criar — o fluxo ficou pausado.")
         return redirect("facebook_forms")
+
     saved = (cfg.get("form_maps") or {}).get(form_id, {})
     questions = _facebook_form_questions(conn, form_id)
     rows = [{
@@ -1793,18 +1912,20 @@ def facebook_form_map(request, form_id):
         "type": question.get("type", ""),
         "current": saved.get(question["key"]) or _facebook_suggest_target(question, ws),
     } for question in questions]
-    form_name = next(
-        (form.get("name") for form in (cfg.get("forms") or []) if str(form.get("id")) == form_id),
-        form_id,
-    )
+    # Destino state: last saved for this form, else sensible defaults.
+    dest = (cfg.get("form_dest") or {}).get(form_id) or {"create_contact": True, "create_deal": True}
+    pipelines = _automation_pipelines(ws)
     return render(request, "core/facebook_form_map.html", {
-        "page_title": "Mapear formulário",
-        "breadcrumb": ["Configurações", "Integrações", "Facebook", "Mapear"],
+        "page_title": "Configurar formulário",
+        "breadcrumb": ["Configurações", "Integrações", "Facebook", "Configurar"],
         "form_id": form_id,
         "form_name": form_name,
         "rows": rows,
         "catalog": _facebook_target_catalog(ws),
         "has_questions": bool(questions),
+        "pipelines": pipelines,
+        "dest": dest,
+        "has_custom_fields": CustomField.objects.filter(workspace=ws).exists(),
     })
 
 

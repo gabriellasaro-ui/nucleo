@@ -4,6 +4,7 @@ The isolation tests are the important ones — they prove that data written in o
 workspace's Postgres schema is invisible from another, which is the whole safety
 promise of the schema-per-tenant design.
 """
+import json
 from types import SimpleNamespace
 
 from django.db import connection
@@ -11,17 +12,21 @@ from django.http import HttpResponse
 from django.test import SimpleTestCase, TransactionTestCase
 from django_tenants.utils import tenant_context
 
-from modules.crm.models import Company
+from modules.crm.models import Company, Contact, Deal
 
-from .events import _coerce_custom_value, _create_contact, _norm_key
-from .models import CustomField, Domain, Membership, Workspace
+from .events import _coerce_custom_value, _create_contact, _norm_key, run_automation_for_event
+from .models import Automation, CustomField, Domain, Event, IntegrationConnection, Membership, Workspace
 from .rbac import can_edit, require_role
 from .views import (
+    _automation_pipelines,
     _automation_trigger_data,
     _facebook_apply_form_map,
     _facebook_body_key_for_token,
+    _facebook_build_automation,
+    _facebook_destino_needs,
     _facebook_suggest_target,
     _facebook_target_catalog,
+    _parse_automation_canvas,
 )
 
 
@@ -308,3 +313,102 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         tokens = [token for token, _label in deal_group["options"]]
         self.assertIn("deal:title", tokens)
         self.assertIn("custom:deal:orcamento", tokens)
+
+
+class FacebookDestinoNeedsTests(SimpleTestCase):
+    """A mapping that targets a Company/Deal field implies that object must be
+    created — pure logic, no DB."""
+
+    def test_deal_and_company_fields_force_their_objects(self):
+        needs = _facebook_destino_needs({
+            "q1": "contact:email",
+            "q2": "custom:deal:orcamento",
+            "q3": "company:name",
+        })
+        self.assertTrue(needs["deal"])
+        self.assertTrue(needs["company"])
+
+    def test_contact_only_mapping_forces_nothing(self):
+        needs = _facebook_destino_needs({"q1": "contact:email", "q2": "ignore"})
+        self.assertFalse(needs["deal"])
+        self.assertFalse(needs["company"])
+
+
+class FacebookFlowGeneratorTests(TransactionTestCase):
+    """The generated automation must actually run: a Facebook lead should create a
+    contact + a deal in the chosen pipeline, with the mapped custom field filled —
+    and re-saving the same form must not spawn a second automation."""
+
+    def setUp(self):
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_fb_flow", name="FbFlow")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="fbflow.test")
+        CustomField.objects.create(
+            workspace=self.ws, object_type="deal",
+            key="orcamento", label="Orçamento", field_type="number",
+        )
+        self.conn = IntegrationConnection.objects.create(
+            workspace=self.ws, provider="facebook", name="Facebook Lead Ads",
+            status="connected", config={"page_id": "P1", "page_access_token": "t"},
+        )
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    def _destino(self):
+        with tenant_context(self.ws):
+            pipeline = _automation_pipelines(self.ws)[0]
+            stage = pipeline.stages.first().key
+        return {"create_contact": True, "create_deal": True, "pipeline": str(pipeline.pk), "stage": stage}, pipeline
+
+    def test_generated_flow_creates_contact_and_deal_with_custom(self):
+        destino, pipeline = self._destino()
+        auto = _facebook_build_automation(self.ws, self.conn, "F1", "Forms Qualify-01", destino)
+        self.assertTrue(auto.active)
+
+        with tenant_context(self.ws):
+            event = Event.objects.create(
+                workspace=self.ws, event_type="facebook_lead", object_repr="Lead",
+                payload={"body": {
+                    "name": "Maria Silva",
+                    "email": "maria@example.com",
+                    "phone": "+5511999998888",
+                    "orcamento": "5000",  # as the form map would have renamed it
+                }, "form_id": "F1"},
+            )
+            run_automation_for_event(auto, event, None)
+            contact = Contact.all_objects.get(email="maria@example.com")
+            deal = Deal.all_objects.filter(pipeline=pipeline).first()
+
+        self.assertEqual(contact.first_name, "Maria")
+        self.assertIsNotNone(deal)
+        self.assertEqual(deal.contact_id, contact.id)
+        self.assertEqual(dict(deal.custom or {}).get("orcamento"), 5000)
+
+    def test_regenerating_updates_the_same_automation(self):
+        destino, _ = self._destino()
+        auto1 = _facebook_build_automation(self.ws, self.conn, "F1", "Forms Qualify-01", destino)
+        auto2 = _facebook_build_automation(self.ws, self.conn, "F1", "Forms Qualify-01 (novo nome)", destino)
+        self.assertEqual(auto1.pk, auto2.pk)
+        self.assertEqual(Automation.objects.filter(workspace=self.ws).count(), 1)
+
+    def test_generated_canvas_survives_a_parse_roundtrip(self):
+        destino, _ = self._destino()
+        auto = _facebook_build_automation(self.ws, self.conn, "F1", "Forms Qualify-01", destino)
+        parsed = _parse_automation_canvas(SimpleNamespace(POST={"canvas": json.dumps(auto.canvas)}))
+        trigger = next(n for n in parsed["nodes"] if n["type"] == "trigger")
+        self.assertEqual(trigger["data"].get("trigger_form_id"), "F1")
+        self.assertEqual(len([n for n in parsed["nodes"] if n["type"] == "action"]), 2)
+        self.assertEqual(len(parsed["edges"]), 2)
+
+    def test_no_objects_selected_pauses_the_flow(self):
+        auto = _facebook_build_automation(
+            self.ws, self.conn, "F2", "Vazio",
+            {"create_contact": False, "create_company": False, "create_deal": False},
+        )
+        self.assertFalse(auto.active)
