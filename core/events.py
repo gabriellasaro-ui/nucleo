@@ -2,11 +2,13 @@
 import base64
 from datetime import timedelta
 import json
+import re
 from urllib import parse as urlparse, request as urlrequest
 from urllib.error import URLError
 
 from django.db.models import F
 from django.utils.dateparse import parse_datetime
+from django.utils.text import slugify
 from django.utils import timezone
 
 from .models import Automation, AutomationRun, Event
@@ -658,6 +660,85 @@ def _pick(data, *keys):
     return ""
 
 
+# Lead fields already consumed by the standard mapping (name/email/phone/...),
+# so they are NOT re-saved as "extra" custom fields.
+_STANDARD_LEAD_KEYS = {
+    "company": {
+        "company", "company_name", "empresa", "organization", "organizacao",
+        "domain", "website", "site", "url", "industry", "segmento", "setor",
+        "city", "cidade",
+    },
+    "contact": {
+        "first_name", "firstname", "nome", "primeiro_nome",
+        "last_name", "lastname", "surname", "sobrenome",
+        "name", "full_name", "fullname", "nome_completo",
+        "email", "e_mail", "email_address",
+        "phone", "phone_number", "telefone", "celular", "whatsapp",
+        "job_title", "cargo", "company", "company_name", "empresa",
+    },
+    "deal": {"title", "titulo", "deal", "negocio", "interesse", "produto"},
+}
+
+
+def _norm_key(name):
+    """Canonical token for matching lead fields to CRM fields (accent-insensitive)."""
+    return slugify(str(name)).replace("-", "_")
+
+
+def _coerce_custom_value(field, value):
+    """Coerce a raw lead value to the CRM custom field's type."""
+    ftype = getattr(field, "field_type", "text") if field else "text"
+    if ftype == "checkbox":
+        return str(value).strip().lower() in ("1", "true", "sim", "yes", "on", "verdadeiro", "checked")
+    if ftype == "number":
+        try:
+            n = float(str(value).replace(",", "."))
+            return int(n) if n.is_integer() else n
+        except (TypeError, ValueError):
+            return str(value).strip()
+    if ftype == "multiselect":
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return [p.strip() for p in re.split(r"[;,]", str(value)) if p.strip()]
+    return str(value).strip()
+
+
+def _apply_lead_custom_fields(workspace, obj, object_type, data):
+    """Save the lead's extra fields into obj.custom so nothing from the form is lost.
+
+    1. Fields matching a workspace CustomField (by key or label) fill that field,
+       typed to the field's kind — so they render nicely in the CRM.
+    2. Any remaining answers are kept under their normalized name (raw), so no
+       data is ever dropped even before the gestor defines a matching field.
+    """
+    from core.models import CustomField
+
+    if obj is None or not isinstance(data, dict) or not data:
+        return
+    incoming = {}
+    for key, value in data.items():
+        nk = _norm_key(key)
+        if nk and nk not in incoming:
+            incoming[nk] = value
+    if not incoming:
+        return
+    custom = dict(obj.custom or {})
+    consumed = set(_STANDARD_LEAD_KEYS.get(object_type, set()))
+    for field in CustomField.objects.filter(workspace=workspace, object_type=object_type):
+        for cand in {_norm_key(field.key), _norm_key(field.label)}:
+            if cand in incoming and incoming[cand] not in (None, "", []):
+                custom[field.key] = _coerce_custom_value(field, incoming[cand])
+                consumed.add(cand)
+                break
+    for nk, value in incoming.items():
+        if nk in consumed or value in (None, "", []):
+            continue
+        custom.setdefault(nk, value if isinstance(value, (str, int, float, bool, list)) else str(value))
+    if custom != (obj.custom or {}):
+        obj.custom = custom
+        obj.save(update_fields=["custom", "updated_at"])
+
+
 def _create_company(auto, obj, action, event=None):
     from modules.crm.models import Company
 
@@ -684,8 +765,10 @@ def _create_company(auto, obj, action, event=None):
             if updates:
                 updates.append("updated_at")
                 company.save(update_fields=updates)
-        return company
-    return Company.all_objects.create(workspace=auto.workspace, name=name, **defaults)
+    else:
+        company = Company.all_objects.create(workspace=auto.workspace, name=name, **defaults)
+    _apply_lead_custom_fields(auto.workspace, company, "company", data)
+    return company
 
 
 def _create_contact(auto, obj, action, event=None):
@@ -728,8 +811,10 @@ def _create_contact(auto, obj, action, event=None):
             if updates:
                 updates.append("updated_at")
                 contact.save(update_fields=updates)
-        return contact
-    return Contact.all_objects.create(workspace=auto.workspace, **defaults)
+    else:
+        contact = Contact.all_objects.create(workspace=auto.workspace, **defaults)
+    _apply_lead_custom_fields(auto.workspace, contact, "contact", data)
+    return contact
 
 
 def _create_deal(auto, obj, action, event=None):
@@ -770,6 +855,7 @@ def _create_deal(auto, obj, action, event=None):
         company=company,
         contact=contact,
     )
+    _apply_lead_custom_fields(auto.workspace, deal, "deal", data)
     return deal
 
 
