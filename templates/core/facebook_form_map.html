@@ -3,11 +3,11 @@
 {% block content %}
 <a href="{% url 'facebook_forms' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Formulários</a>
 
-<div style="max-width:900px;">
+<div style="max-width:860px;">
   <div class="page-head">
     <div>
       <h1>{{ form_name }}</h1>
-      <p>Quando um lead preenche este formulário no Facebook, o Núcleo cria os registros abaixo <b>automaticamente</b>. Você não precisa montar fluxo — configure aqui e salve.</p>
+      <p>Configure o que acontece quando alguém preenche este formulário no Facebook. Salvou, ativou — <b>sem montar fluxo</b>.</p>
     </div>
   </div>
 
@@ -17,11 +17,21 @@
     <div>Não consegui carregar as perguntas deste formulário. Confira as permissões do App no Facebook ou tente sincronizar de novo em <a href="{% url 'facebook_forms' %}">Formulários</a>.</div>
   </div>
   {% else %}
-  <form method="post" action="{% url 'facebook_form_map' form_id %}">
+  <form id="fb-form" method="post" action="{% url 'facebook_form_map' form_id %}">
     {% csrf_token %}
 
-    <h2 style="font-size:16px; margin:0 0 6px;">1. Para onde vai cada resposta</h2>
-    <p class="node-help" style="margin-bottom:12px;">Nome, e-mail e telefone já vêm sugeridos. Perguntas próprias viram um <b>campo novo</b> por padrão (ou escolha outro campo / "Não usar").</p>
+    <!-- Live summary: what this automation does -->
+    <div style="display:flex; gap:12px; align-items:center; padding:14px 16px; border:1px solid var(--blue-200); background:var(--blue-50); border-radius:12px;">
+      <span style="color:var(--blue-600); display:flex;">{% include "core/_icon.html" with icon="bolt" %}</span>
+      <div style="line-height:1.4;">
+        <small class="cell-sub">Quando um lead preenche este formulário, ele vira:</small><br>
+        <b data-fb-summary style="font-size:15px;">Contato + Negócio</b>
+      </div>
+    </div>
+
+    <!-- 1. Mapping -->
+    <h2 style="font-size:16px; margin:26px 0 4px;">1. Onde salvar cada resposta</h2>
+    <p class="node-help" style="margin-bottom:12px;">Nome, e-mail e telefone já vêm sugeridos. Uma pergunta própria vira um <b>campo novo</b> por padrão (ou escolha um campo existente / “Não usar”).</p>
     <div class="table-wrap">
       <table class="tbl">
         <thead>
@@ -35,12 +45,7 @@
               <div class="cell-sub">{{ row.key }}</div>
             </td>
             <td style="text-align:right;">
-              <select name="map_{{ row.key }}" class="role-select" style="min-width:230px;">
-                <optgroup label="Guardar como campo novo">
-                  <option value="new:contact" {% if row.current == "new:contact" %}selected{% endif %}>Novo campo no Contato</option>
-                  <option value="new:deal" {% if row.current == "new:deal" %}selected{% endif %}>Novo campo no Negócio</option>
-                  <option value="new:company" {% if row.current == "new:company" %}selected{% endif %}>Novo campo na Empresa</option>
-                </optgroup>
+              <select name="map_{{ row.key }}" class="role-select" style="min-width:240px;">
                 {% for group in catalog %}
                 <optgroup label="{{ group.label }}">
                   {% for token, label in group.options %}
@@ -48,7 +53,12 @@
                   {% endfor %}
                 </optgroup>
                 {% endfor %}
-                <optgroup label="—">
+                <optgroup label="Criar um campo novo para guardar isto">
+                  <option value="new:contact" {% if row.current == "new:contact" %}selected{% endif %}>+ Campo novo no Contato</option>
+                  <option value="new:deal" {% if row.current == "new:deal" %}selected{% endif %}>+ Campo novo no Negócio</option>
+                  <option value="new:company" {% if row.current == "new:company" %}selected{% endif %}>+ Campo novo na Empresa</option>
+                </optgroup>
+                <optgroup label="&nbsp;">
                   <option value="ignore" {% if row.current == "ignore" %}selected{% endif %}>Não usar (descartar)</option>
                 </optgroup>
               </select>
@@ -59,18 +69,20 @@
       </table>
     </div>
 
-    <h2 style="font-size:16px; margin:28px 0 6px;">2. O que criar quando chegar um lead</h2>
-    <p class="node-help" style="margin-bottom:12px;">Padrão <b>B2C</b>: criar <b>contato</b> e <b>negócio</b>. Empresa é opcional — marque só se for B2B.</p>
-    <div class="card" style="padding:18px; display:flex; flex-direction:column; gap:14px; max-width:560px;">
-      <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
+    <!-- 2. Records -->
+    <h2 style="font-size:16px; margin:28px 0 4px;">2. Quais registros criar</h2>
+    <p class="node-help" style="margin-bottom:12px;">Padrão <b>B2C</b>: <b>contato</b> + <b>negócio</b>. Empresa é opcional — marque só se for B2B.</p>
+    <div class="card" style="padding:18px 20px; display:flex; flex-direction:column; gap:16px;">
+      <label style="display:flex; gap:12px; align-items:flex-start; cursor:pointer;">
         <input type="checkbox" name="create_contact" {% if dest.create_contact %}checked{% endif %}>
-        <span><b>Criar contato</b><br><small class="cell-sub">Nome, e-mail e telefone do lead.</small></span>
+        <span><b>Criar contato</b><br><small class="cell-sub">A pessoa que preencheu — nome, e-mail, telefone.</small></span>
       </label>
-      <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
+
+      <label style="display:flex; gap:12px; align-items:flex-start; cursor:pointer;">
         <input type="checkbox" name="create_deal" {% if dest.create_deal %}checked{% endif %}>
-        <span><b>Criar negócio</b><br><small class="cell-sub">Entra na pipeline escolhida abaixo.</small></span>
+        <span><b>Criar negócio</b><br><small class="cell-sub">A oportunidade de venda, na pipeline abaixo.</small></span>
       </label>
-      <div class="node-inline-fields">
+      <div class="node-inline-fields" style="margin-left:30px;">
         <div style="flex:1;">
           <label>Pipeline</label>
           <select name="pipeline" class="role-select">
@@ -92,23 +104,45 @@
           </select>
         </div>
       </div>
-      <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer; border-top:1px solid var(--border); padding-top:14px;">
+
+      <label style="display:flex; gap:12px; align-items:flex-start; cursor:pointer; border-top:1px solid var(--border); padding-top:16px;">
         <input type="checkbox" name="create_company" {% if dest.create_company %}checked{% endif %}>
         <span><b>Criar empresa</b> <small class="cell-sub">(opcional — B2B)</small><br><small class="cell-sub">Só se o formulário perguntar a empresa.</small></span>
       </label>
     </div>
 
-    <div class="card" style="margin-top:18px; padding:14px 16px; display:flex; gap:10px; align-items:flex-start; background:var(--bg-2, transparent); max-width:560px;">
-      {% include "core/_icon.html" with icon="check" %}
-      <div><b>Ao salvar, o fluxo é criado e ativado sozinho.</b><br><small class="cell-sub">Cada lead deste formulário vira os registros marcados acima. Some em <a href="{% url 'facebook_forms' %}">Formulários</a> como “Ativo” — sem montar nada no canvas.</small></div>
-    </div>
-
-    <div style="margin-top:20px; display:flex; gap:10px; align-items:center;">
+    <div style="margin-top:22px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="check" %} Salvar e ativar fluxo</button>
       <a class="btn btn--ghost" href="{% url 'facebook_forms' %}">Cancelar</a>
       {% if flow_pk %}<a class="btn btn--ghost" href="{% url 'automation_edit' flow_pk %}" style="margin-left:auto;">Editar no modo avançado</a>{% endif %}
     </div>
+    <p class="node-help" style="margin-top:10px;">O fluxo é criado e ativado automaticamente a partir daqui — aparece em <a href="{% url 'facebook_forms' %}">Formulários</a> como “Ativo”, sem você tocar no canvas.</p>
   </form>
+
+  <script>
+    (function () {
+      var form = document.getElementById("fb-form");
+      if (!form) return;
+      var out = form.querySelector("[data-fb-summary]");
+      function optText(name) {
+        var s = form.querySelector('[name="' + name + '"]');
+        return s && s.options && s.selectedIndex >= 0 ? s.options[s.selectedIndex].text : "";
+      }
+      function isOn(name) {
+        var c = form.querySelector('[name="' + name + '"]');
+        return !!(c && c.checked);
+      }
+      function refresh() {
+        var parts = [];
+        if (isOn("create_contact")) parts.push("Contato");
+        if (isOn("create_deal")) parts.push("Negócio (" + optText("pipeline") + " · " + optText("deal_stage") + ")");
+        if (isOn("create_company")) parts.push("Empresa");
+        out.textContent = parts.length ? parts.join("  +  ") : "nada ainda — marque uma opção abaixo";
+      }
+      form.addEventListener("change", refresh);
+      refresh();
+    })();
+  </script>
   {% endif %}
 </div>
 {% endblock %}
