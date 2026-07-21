@@ -1580,6 +1580,53 @@ def _facebook_fetch_lead(leadgen_id, workspace):
         return None
 
 
+@csrf_exempt
+def facebook_leadgen(request):
+    """Meta app webhook for Facebook Lead Ads. Handles the verify handshake, then for
+    each incoming lead finds the workspace that connected that page, fetches the
+    lead's fields via the Graph API and creates the contact/company/deal."""
+    if request.method == "GET":
+        if settings.FACEBOOK_VERIFY_TOKEN and request.GET.get("hub.verify_token") == settings.FACEBOOK_VERIFY_TOKEN:
+            return HttpResponse(request.GET.get("hub.challenge", ""))
+        return HttpResponse("verify token invalido", status=403)
+
+    from core.events import ingest_lead
+
+    body = _request_body_payload(request)
+    entries = body.get("entry", []) if isinstance(body, dict) else []
+    processed = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        page_id_root = str(entry.get("id", ""))
+        for change in entry.get("changes", []) or []:
+            if not isinstance(change, dict) or change.get("field") != "leadgen":
+                continue
+            value = change.get("value") or {}
+            page_id = str(value.get("page_id") or page_id_root)
+            leadgen_id = value.get("leadgen_id")
+            if not leadgen_id or not page_id:
+                continue
+            conn = (
+                IntegrationConnection.objects
+                .filter(provider="facebook", config__page_id=page_id)
+                .select_related("workspace").first()
+            )
+            if not conn:
+                continue
+            ws = conn.workspace
+            with tenant_context(ws):
+                set_current_workspace(ws)
+                try:
+                    data = _facebook_fetch_lead(leadgen_id, ws)
+                    if data:
+                        ingest_lead(ws, data)
+                        processed += 1
+                finally:
+                    clear_current_workspace()
+    return JsonResponse({"received": True, "processed": processed})
+
+
 def _request_body_payload(request):
     raw = request.body.decode("utf-8", errors="ignore") if request.body else ""
     if not raw:

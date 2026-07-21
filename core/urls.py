@@ -29,5 +29,6 @@ urlpatterns = [
     path("settings/integrations/facebook/callback/", views.facebook_callback, name="facebook_callback"),
     path("settings/integrations/facebook/page/", views.facebook_select_page, name="facebook_select_page"),
     path("webhooks/automation/<str:key>/", views.automation_webhook, name="automation_webhook"),
+    path("webhooks/facebook/leadgen/", views.facebook_leadgen, name="facebook_leadgen"),
     path("settings/appearance/", views.appearance, name="appearance"),
 ]

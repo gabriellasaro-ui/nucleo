@@ -773,6 +773,21 @@ def _create_deal(auto, obj, action, event=None):
     return deal
 
 
+def ingest_lead(workspace, data):
+    """Create company (when present) + contact + deal from a flat lead dict.
+    Used by the Facebook Lead Ads webhook; fields are auto-mapped from `data`."""
+    from types import SimpleNamespace
+
+    auto = SimpleNamespace(workspace=workspace, pk=0)
+    event = Event(workspace=workspace, event_type="webhook_received", payload={"body": data})
+    company = None
+    if _pick(data, "company", "company_name", "empresa", "organization"):
+        company = _create_company(auto, None, {"type": "create_company"}, event)
+    contact = _create_contact(auto, company, {"type": "create_contact"}, event)
+    deal = _create_deal(auto, _merge_contexts([company, contact]), {"type": "create_deal"}, event)
+    return {"company": company, "contact": contact, "deal": deal}
+
+
 def _move_deal(auto, obj, action):
     from modules.crm.models import Contact, Deal
 

@@ -177,3 +177,5 @@ MESSAGE_TAGS = {
 FACEBOOK_APP_ID = env("FACEBOOK_APP_ID", "")
 FACEBOOK_APP_SECRET = env("FACEBOOK_APP_SECRET", "")
 FACEBOOK_GRAPH_VERSION = env("FACEBOOK_GRAPH_VERSION", "v19.0")
+# Verify token you also type in the Meta app's Webhooks config (leadgen).
+FACEBOOK_VERIFY_TOKEN = env("FACEBOOK_VERIFY_TOKEN", "nucleo-leadgen")
