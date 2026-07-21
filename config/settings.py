@@ -34,6 +34,10 @@ DEBUG = env("DJANGO_DEBUG", "1") == "1"
 #   DJANGO_CSRF_ORIGINS=https://crm.gabriellasaro.cloud
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 CSRF_TRUSTED_ORIGINS = [o for o in env("DJANGO_CSRF_ORIGINS", "").split(",") if o]
+# Easypanel gives every app a *.easypanel.host URL — allow it out of the box so the
+# app works right after deploy (your custom domain still goes in DJANGO_ALLOWED_HOSTS).
+ALLOWED_HOSTS.append(".easypanel.host")
+CSRF_TRUSTED_ORIGINS += ["https://*.easypanel.host", "http://*.easypanel.host"]
 
 # Multi-tenant (schema-per-workspace via django-tenants).
 # SHARED_APPS live in the `public` schema (auth, the tenant model, shared config).
