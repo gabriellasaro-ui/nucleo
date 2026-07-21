@@ -22,6 +22,7 @@
     <div class="integration-card__foot">
       {% if item.connected %}
       <span class="role-badge integration-status integration-status--on">Conectada</span>
+      {% if item.provider == "facebook" %}<a href="{% url 'facebook_forms' %}" class="btn btn--ghost btn--sm">Formulários</a>{% endif %}
       <form method="post" action="{% url 'integration_disconnect' %}">
         {% csrf_token %}
         <input type="hidden" name="provider" value="{{ item.provider }}">

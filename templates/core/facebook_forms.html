@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<a href="{% url 'integrations' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Integrações</a>
+
+<div class="page-head">
+  <div>
+    <h1>Formulários do Facebook</h1>
+    <p>Página <b>{{ page_name|default:"—" }}</b>. Sincronize os formulários da página e mapeie os campos de cada um para o CRM.</p>
+  </div>
+  <form method="post" action="{% url 'facebook_sync_forms' %}">
+    {% csrf_token %}
+    <button class="btn btn--primary btn--sm" type="submit">{% include "core/_icon.html" with icon="loop" %} Sincronizar</button>
+  </form>
+</div>
+
+<div class="table-wrap">
+  <table class="tbl">
+    <thead>
+      <tr><th>Formulário</th><th>Status</th><th>Mapeamento</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for f in forms %}
+      <tr>
+        <td>
+          <div>
+            <b>{{ f.name }}</b>
+            <div class="cell-sub">ID {{ f.id }}</div>
+          </div>
+        </td>
+        <td>{{ f.status|default:"—" }}</td>
+        <td>
+          {% if f.mapped %}
+          <span class="role-badge integration-status integration-status--on">Mapeado</span>
+          {% else %}
+          <span class="role-badge integration-status">Não mapeado</span>
+          {% endif %}
+        </td>
+        <td class="cell-actions">
+          <a class="btn btn--ghost btn--sm" href="{% url 'facebook_form_map' f.id %}">Mapear campos</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="4">
+          <div class="cf-empty" style="padding:26px 10px;">
+            {% include "core/_icon.html" with icon="text" %}
+            <div>Nenhum formulário sincronizado ainda. Clique em <b>Sincronizar</b> para buscar os formulários da página.</div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

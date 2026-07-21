@@ -548,6 +548,7 @@ def _condition_field_catalog(ws):
 
 def _automation_editor_context(request, selected_automation=None, **extra):
     ws = request.workspace
+    fb_conn = IntegrationConnection.objects.filter(workspace=ws, provider="facebook", status="connected").first()
     context = {
         "page_title": selected_automation.name if selected_automation else "Nova automação",
         "breadcrumb": ["Configurações", "Automações", "Canvas"],
@@ -565,6 +566,7 @@ def _automation_editor_context(request, selected_automation=None, **extra):
         "automation_custom_fields": _automation_custom_fields(ws),
         "condition_fields": _condition_field_catalog(ws),
         "condition_operators": CONDITION_OPERATORS,
+        "facebook_forms": (fb_conn.config or {}).get("forms", []) if fb_conn else [],
     }
     context.update(extra)
     return context
@@ -902,6 +904,7 @@ def _clean_canvas_data(data):
         "trigger_interval_amount",
         "trigger_interval_unit",
         "trigger_interval_minutes",
+        "trigger_form_id",
         "webhook_key",
         "condition_kind",
         "condition_stage",
@@ -1467,6 +1470,12 @@ def facebook_select_page(request):
         "source": "oauth",
     }
     conn.save(update_fields=["name", "status", "config", "updated_at"])
+    # Best-effort: cache the page's lead forms so the automation trigger can offer
+    # a form picker right away (refreshable later in Integrações → Formulários).
+    forms = _facebook_list_forms(conn)
+    if forms:
+        conn.config = {**conn.config, "forms": forms}
+        conn.save(update_fields=["config", "updated_at"])
     request.session.pop("fb_pages", None)
     request.session.pop("fb_oauth_state", None)
     if subscribed:
@@ -1474,6 +1483,279 @@ def facebook_select_page(request):
     else:
         messages.warning(request, f"Página “{page['name']}” salva, mas não consegui assinar os leads — confira as permissões do App.")
     return redirect("integrations")
+
+
+# --------------------------------------------------------------------------- #
+# Facebook lead forms — list, per-form field mapping (Kommo/RD parity).
+#   Integrações → Formulários lists the page's forms; each form has a mapping
+#   screen (question -> CRM field). The map lives in conn.config["form_maps"].
+# --------------------------------------------------------------------------- #
+# Standard destination fields offered in the mapping <select>, grouped by object.
+# The token is resolved to a `body` key the create actions already understand.
+_FB_STANDARD_TARGETS = [
+    ("contact", "Contato", [
+        ("contact:name", "Nome completo"),
+        ("contact:first_name", "Nome"),
+        ("contact:last_name", "Sobrenome"),
+        ("contact:email", "Email"),
+        ("contact:phone", "Telefone"),
+        ("contact:job_title", "Cargo"),
+    ]),
+    ("company", "Empresa", [
+        ("company:name", "Nome da empresa"),
+        ("company:domain", "Site / Domínio"),
+        ("company:city", "Cidade"),
+        ("company:industry", "Segmento"),
+    ]),
+    ("deal", "Negócio", [
+        ("deal:title", "Título do negócio"),
+    ]),
+]
+
+# token -> the key the create actions (_create_contact/company/deal) read from body.
+_FB_STANDARD_BODY_KEYS = {
+    "contact:name": "name",
+    "contact:first_name": "first_name",
+    "contact:last_name": "last_name",
+    "contact:email": "email",
+    "contact:phone": "phone",
+    "contact:job_title": "job_title",
+    "company:name": "company",
+    "company:domain": "domain",
+    "company:city": "city",
+    "company:industry": "industry",
+    "deal:title": "title",
+}
+
+# Best-guess mapping: normalized question name -> target token.
+_FB_SUGGEST = {
+    "email": "contact:email", "e_mail": "contact:email", "email_address": "contact:email",
+    "full_name": "contact:name", "name": "contact:name", "nome": "contact:name",
+    "nome_completo": "contact:name", "fullname": "contact:name",
+    "first_name": "contact:first_name", "primeiro_nome": "contact:first_name",
+    "last_name": "contact:last_name", "sobrenome": "contact:last_name", "surname": "contact:last_name",
+    "phone": "contact:phone", "phone_number": "contact:phone", "telefone": "contact:phone",
+    "celular": "contact:phone", "whatsapp": "contact:phone",
+    "job_title": "contact:job_title", "cargo": "contact:job_title",
+    "company": "company:name", "company_name": "company:name", "empresa": "company:name",
+    "city": "company:city", "cidade": "company:city",
+}
+
+
+def _facebook_active_connection(ws):
+    return IntegrationConnection.objects.filter(workspace=ws, provider="facebook", status="connected").first()
+
+
+def _facebook_list_forms(conn):
+    """List the connected page's lead forms via Graph. Returns [{id,name,status}]."""
+    cfg = conn.config or {}
+    page_id = cfg.get("page_id")
+    token = cfg.get("page_access_token")
+    if not page_id or not token:
+        return []
+    try:
+        data = _fb_graph(f"{page_id}/leadgen_forms", {"access_token": token, "fields": "id,name,status", "limit": 200})
+    except Exception:
+        return []
+    forms = []
+    for item in data.get("data", []) if isinstance(data, dict) else []:
+        if isinstance(item, dict) and item.get("id"):
+            forms.append({
+                "id": str(item["id"]),
+                "name": item.get("name") or "Formulário",
+                "status": item.get("status", ""),
+            })
+    return forms
+
+
+def _facebook_form_questions(conn, form_id):
+    """Fetch a form's questions from Graph: [{key,label,type}]."""
+    token = (conn.config or {}).get("page_access_token")
+    if not token or not form_id:
+        return []
+    try:
+        data = _fb_graph(str(form_id), {"access_token": token, "fields": "name,questions"})
+    except Exception:
+        return []
+    out = []
+    for question in (data.get("questions") or []) if isinstance(data, dict) else []:
+        if not isinstance(question, dict):
+            continue
+        key = str(question.get("key") or question.get("id") or "").strip()
+        if not key:
+            continue
+        out.append({"key": key, "label": question.get("label") or key, "type": question.get("type", "")})
+    return out
+
+
+def _facebook_target_catalog(ws):
+    """Grouped (token, label) options for the mapping <select>, incl. custom fields."""
+    custom_by_obj = {"contact": [], "company": [], "deal": []}
+    for field in CustomField.objects.filter(workspace=ws):
+        if field.object_type in custom_by_obj:
+            custom_by_obj[field.object_type].append((f"custom:{field.object_type}:{field.key}", field.label))
+    groups = []
+    for obj, label, std in _FB_STANDARD_TARGETS:
+        groups.append({"object": obj, "label": label, "options": list(std) + custom_by_obj.get(obj, [])})
+    return groups
+
+
+def _facebook_valid_targets(ws):
+    tokens = {"ignore"}
+    for group in _facebook_target_catalog(ws):
+        for token, _label in group["options"]:
+            tokens.add(token)
+    return tokens
+
+
+def _facebook_suggest_target(question, ws):
+    """Best-guess destination token for a form question (matched by key/label)."""
+    from core.events import _norm_key
+
+    norm = _norm_key(question.get("key") or question.get("label") or "")
+    if norm in _FB_SUGGEST:
+        return _FB_SUGGEST[norm]
+    for field in CustomField.objects.filter(workspace=ws):
+        if norm and norm in {_norm_key(field.key), _norm_key(field.label)}:
+            return f"custom:{field.object_type}:{field.key}"
+    return "ignore"
+
+
+def _facebook_body_key_for_token(token):
+    """Resolve a mapping token to the body key the create actions read from."""
+    if not token or token == "ignore":
+        return None
+    if token in _FB_STANDARD_BODY_KEYS:
+        return _FB_STANDARD_BODY_KEYS[token]
+    if token.startswith("custom:"):
+        parts = token.split(":", 2)
+        if len(parts) == 3 and parts[2]:
+            return parts[2]  # the CRM custom field key
+    return None
+
+
+def _facebook_apply_form_map(conn, form_id, flat):
+    """Turn a flat lead dict into the standard `body` using the form's saved mapping.
+
+    Mapped questions go to the body key the create actions understand; 'ignore'
+    drops them; questions with no mapping entry are kept raw so nothing is lost.
+    Without a saved map, returns the flat dict unchanged (auto-map still applies).
+    """
+    from core.events import _norm_key
+
+    if not isinstance(flat, dict):
+        return {}
+    fmap = ((conn.config or {}).get("form_maps") or {}).get(str(form_id or ""), {})
+    if not fmap:
+        return dict(flat)
+    norm_flat = {}
+    for key, value in flat.items():
+        norm_flat.setdefault(_norm_key(key), value)
+    body = {}
+    for qkey, token in fmap.items():
+        value = flat.get(qkey)
+        if value in (None, "", []):
+            value = norm_flat.get(_norm_key(qkey))
+        if value in (None, "", []):
+            continue
+        body_key = _facebook_body_key_for_token(token)
+        if body_key:
+            body.setdefault(body_key, value)
+    mapped_norms = {_norm_key(qkey) for qkey in fmap.keys()}
+    for key, value in flat.items():
+        if _norm_key(key) in mapped_norms or value in (None, "", []):
+            continue
+        body.setdefault(key, value)
+    return body
+
+
+@login_required
+@require_role("admin")
+@require_POST
+def facebook_sync_forms(request):
+    conn = _facebook_active_connection(request.workspace)
+    if not conn:
+        messages.error(request, "Conecte uma página do Facebook primeiro.")
+        return redirect("integrations")
+    forms = _facebook_list_forms(conn)
+    conn.config = {**(conn.config or {}), "forms": forms}
+    conn.save(update_fields=["config", "updated_at"])
+    if forms:
+        messages.success(request, f"{len(forms)} formulário(s) sincronizado(s).")
+    else:
+        messages.warning(request, "Nenhum formulário encontrado nessa página. Publique um formulário de leads no Facebook e sincronize de novo.")
+    return redirect("facebook_forms")
+
+
+@login_required
+@require_role("admin")
+def facebook_forms(request):
+    conn = _facebook_active_connection(request.workspace)
+    if not conn:
+        messages.error(request, "Conecte uma página do Facebook primeiro.")
+        return redirect("integrations")
+    cfg = conn.config or {}
+    maps = cfg.get("form_maps") or {}
+    items = [{
+        "id": str(form.get("id")),
+        "name": form.get("name") or "Formulário",
+        "status": form.get("status", ""),
+        "mapped": bool(maps.get(str(form.get("id")))),
+    } for form in (cfg.get("forms") or [])]
+    return render(request, "core/facebook_forms.html", {
+        "page_title": "Formulários do Facebook",
+        "breadcrumb": ["Configurações", "Integrações", "Facebook"],
+        "page_name": cfg.get("page_name", ""),
+        "forms": items,
+    })
+
+
+@login_required
+@require_role("admin")
+def facebook_form_map(request, form_id):
+    ws = request.workspace
+    conn = _facebook_active_connection(ws)
+    if not conn:
+        messages.error(request, "Conecte uma página do Facebook primeiro.")
+        return redirect("integrations")
+    form_id = str(form_id)
+    cfg = conn.config or {}
+    if request.method == "POST":
+        valid = _facebook_valid_targets(ws)
+        new_map = {}
+        for key in request.POST:
+            match = re.match(r"map_(.+)$", key)
+            if not match:
+                continue
+            token = request.POST.get(key, "ignore").strip()
+            new_map[match.group(1)] = token if token in valid else "ignore"
+        form_maps = dict(cfg.get("form_maps") or {})
+        form_maps[form_id] = new_map
+        conn.config = {**cfg, "form_maps": form_maps}
+        conn.save(update_fields=["config", "updated_at"])
+        messages.success(request, "Mapeamento salvo.")
+        return redirect("facebook_forms")
+    saved = (cfg.get("form_maps") or {}).get(form_id, {})
+    questions = _facebook_form_questions(conn, form_id)
+    rows = [{
+        "key": question["key"],
+        "label": question["label"],
+        "type": question.get("type", ""),
+        "current": saved.get(question["key"]) or _facebook_suggest_target(question, ws),
+    } for question in questions]
+    form_name = next(
+        (form.get("name") for form in (cfg.get("forms") or []) if str(form.get("id")) == form_id),
+        form_id,
+    )
+    return render(request, "core/facebook_form_map.html", {
+        "page_title": "Mapear formulário",
+        "breadcrumb": ["Configurações", "Integrações", "Facebook", "Mapear"],
+        "form_id": form_id,
+        "form_name": form_name,
+        "rows": rows,
+        "catalog": _facebook_target_catalog(ws),
+        "has_questions": bool(questions),
+    })
 
 
 @csrf_exempt
@@ -1606,6 +1888,7 @@ def facebook_leadgen(request):
             value = change.get("value") or {}
             page_id = str(value.get("page_id") or page_id_root)
             leadgen_id = value.get("leadgen_id")
+            form_id = str(value.get("form_id") or "")
             if not leadgen_id or not page_id:
                 continue
             conn = (
@@ -1616,18 +1899,31 @@ def facebook_leadgen(request):
             if not conn:
                 continue
             ws = conn.workspace
+            form_name = next(
+                (f.get("name") for f in (conn.config or {}).get("forms", []) if str(f.get("id")) == form_id),
+                "",
+            )
             with tenant_context(ws):
                 set_current_workspace(ws)
                 try:
                     data = _facebook_fetch_lead(leadgen_id, ws)
                     if data:
+                        # Apply the form's field mapping (if the gestor configured one)
+                        # so answers land on the exact CRM fields they chose.
+                        data = _facebook_apply_form_map(conn, form_id, data)
                         event = Event.objects.create(
                             workspace=ws,
                             event_type="facebook_lead",
-                            object_repr="Lead do Facebook",
-                            payload={"body": data, "source": "facebook", "page_id": page_id},
+                            object_repr=f"Lead do Facebook — {form_name}" if form_name else "Lead do Facebook",
+                            payload={"body": data, "source": "facebook", "page_id": page_id,
+                                     "form_id": form_id, "form_name": form_name},
                         )
+                        # One trigger per form: run only automations whose trigger form
+                        # matches this lead's form (empty = any form).
                         for auto in Automation.objects.filter(workspace=ws, active=True, trigger="facebook_lead"):
+                            trigger_form = str(_automation_trigger_data(auto).get("trigger_form_id") or "")
+                            if trigger_form and trigger_form != form_id:
+                                continue
                             run_automation_for_event(auto, event, None)
                         event.processed = True
                         event.save(update_fields=["processed"])

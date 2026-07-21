@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<a href="{% url 'facebook_forms' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Formulários</a>
+
+<div class="page-head">
+  <div>
+    <h1>Mapear: {{ form_name }}</h1>
+    <p>Escolha, para cada pergunta do formulário, o campo do CRM que vai receber a resposta. As sugestões já vêm preenchidas — ajuste o que precisar.</p>
+  </div>
+</div>
+
+{% if not has_questions %}
+<div class="cf-empty" style="padding:34px 16px;">
+  {% include "core/_icon.html" with icon="text" %}
+  <div>Não consegui carregar as perguntas deste formulário. Confira as permissões do App no Facebook ou tente sincronizar de novo em <a href="{% url 'facebook_forms' %}">Formulários</a>.</div>
+</div>
+{% else %}
+<form method="post" action="{% url 'facebook_form_map' form_id %}">
+  {% csrf_token %}
+  <div class="table-wrap">
+    <table class="tbl">
+      <thead>
+        <tr><th>Pergunta do formulário</th><th>Campo no CRM</th></tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>
+            <div>
+              <b>{{ row.label }}</b>
+              <div class="cell-sub">{{ row.key }}</div>
+            </div>
+          </td>
+          <td>
+            <select name="map_{{ row.key }}" class="role-select">
+              <option value="ignore" {% if row.current == "ignore" %}selected{% endif %}>— Ignorar —</option>
+              {% for group in catalog %}
+              <optgroup label="{{ group.label }}">
+                {% for token, label in group.options %}
+                <option value="{{ token }}" {% if token == row.current %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </optgroup>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div style="margin-top:16px; display:flex; gap:10px;">
+    <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="check" %} Salvar mapeamento</button>
+    <a class="btn btn--ghost" href="{% url 'facebook_forms' %}">Cancelar</a>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

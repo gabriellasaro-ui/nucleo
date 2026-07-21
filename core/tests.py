@@ -16,6 +16,13 @@ from modules.crm.models import Company
 from .events import _coerce_custom_value, _create_contact, _norm_key
 from .models import CustomField, Domain, Membership, Workspace
 from .rbac import can_edit, require_role
+from .views import (
+    _automation_trigger_data,
+    _facebook_apply_form_map,
+    _facebook_body_key_for_token,
+    _facebook_suggest_target,
+    _facebook_target_catalog,
+)
 
 
 class _FakeRequest:
@@ -207,3 +214,97 @@ class LeadCustomFieldCaptureTests(TransactionTestCase):
         # standard fields are NOT duplicated into custom
         self.assertNotIn("email", custom)
         self.assertNotIn("name", custom)
+
+
+class FacebookMappingLogicTests(SimpleTestCase):
+    """Pure logic for the per-form field mapping — no network, no DB."""
+
+    def test_body_key_resolves_every_token_kind(self):
+        self.assertEqual(_facebook_body_key_for_token("contact:name"), "name")
+        self.assertEqual(_facebook_body_key_for_token("contact:email"), "email")
+        self.assertEqual(_facebook_body_key_for_token("contact:phone"), "phone")
+        self.assertEqual(_facebook_body_key_for_token("company:name"), "company")
+        self.assertEqual(_facebook_body_key_for_token("deal:title"), "title")
+        self.assertEqual(_facebook_body_key_for_token("custom:deal:orcamento"), "orcamento")
+        self.assertIsNone(_facebook_body_key_for_token("ignore"))
+        self.assertIsNone(_facebook_body_key_for_token(""))
+        self.assertIsNone(_facebook_body_key_for_token("custom:contact:"))
+
+    def test_suggest_matches_standard_questions_without_db(self):
+        # keys/labels present in the suggestion table resolve before any DB query
+        self.assertEqual(_facebook_suggest_target({"key": "email"}, None), "contact:email")
+        self.assertEqual(_facebook_suggest_target({"key": "phone_number"}, None), "contact:phone")
+        self.assertEqual(_facebook_suggest_target({"key": "full_name"}, None), "contact:name")
+        self.assertEqual(_facebook_suggest_target({"key": "", "label": "Telefone"}, None), "contact:phone")
+
+    def test_apply_form_map_routes_ignores_and_keeps_extras(self):
+        conn = SimpleNamespace(config={"form_maps": {"F1": {
+            "full_name": "contact:name",
+            "email": "contact:email",
+            "phone_number": "contact:phone",
+            "qual_orcamento": "custom:deal:orcamento",
+            "extra_q": "ignore",
+        }}})
+        flat = {
+            "full_name": "Maria Silva",
+            "email": "maria@example.com",
+            "phone_number": "+5511999998888",
+            "qual_orcamento": "5000",
+            "extra_q": "descartar isso",
+            "nova_pergunta": "surpresa",  # not in the map -> kept raw
+        }
+        body = _facebook_apply_form_map(conn, "F1", flat)
+        self.assertEqual(body.get("name"), "Maria Silva")
+        self.assertEqual(body.get("email"), "maria@example.com")
+        self.assertEqual(body.get("phone"), "+5511999998888")
+        self.assertEqual(body.get("orcamento"), "5000")
+        # mapped source keys are not left dangling
+        self.assertNotIn("full_name", body)
+        # ignored answer is dropped entirely
+        self.assertNotIn("descartar isso", body.values())
+        # unmapped question is preserved (nothing lost)
+        self.assertEqual(body.get("nova_pergunta"), "surpresa")
+
+    def test_apply_form_map_is_a_noop_without_a_saved_map(self):
+        conn = SimpleNamespace(config={})
+        flat = {"email": "a@b.com", "phone_number": "123"}
+        self.assertEqual(_facebook_apply_form_map(conn, "F1", flat), flat)
+
+    def test_trigger_form_id_is_read_from_the_canvas(self):
+        auto = SimpleNamespace(canvas={"nodes": [
+            {"type": "trigger", "data": {"trigger": "facebook_lead", "trigger_form_id": "F1"}},
+        ]})
+        self.assertEqual(_automation_trigger_data(auto).get("trigger_form_id"), "F1")
+
+
+class FacebookMappingCatalogTests(TransactionTestCase):
+    """Suggestions and the target catalog resolve the workspace's custom fields."""
+
+    def setUp(self):
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_fb_map", name="FbMap")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="fbmap.test")
+        CustomField.objects.create(
+            workspace=self.ws, object_type="deal",
+            key="orcamento", label="Orçamento", field_type="number",
+        )
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    def test_suggest_matches_a_custom_field_then_falls_back_to_ignore(self):
+        self.assertEqual(_facebook_suggest_target({"key": "orcamento"}, self.ws), "custom:deal:orcamento")
+        self.assertEqual(_facebook_suggest_target({"label": "Orçamento"}, self.ws), "custom:deal:orcamento")
+        self.assertEqual(_facebook_suggest_target({"key": "pergunta_solta"}, self.ws), "ignore")
+
+    def test_catalog_lists_the_custom_field_in_its_object_group(self):
+        catalog = _facebook_target_catalog(self.ws)
+        deal_group = next(group for group in catalog if group["object"] == "deal")
+        tokens = [token for token, _label in deal_group["options"]]
+        self.assertIn("deal:title", tokens)
+        self.assertIn("custom:deal:orcamento", tokens)
