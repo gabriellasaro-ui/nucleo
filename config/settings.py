@@ -140,8 +140,8 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
-# Serve straight from the finders (the static/ dir) so it works on Vercel without
-# a collectstatic build step.
+# Serve straight from the finders (the static/ dir) so static works without a
+# collectstatic build step (handy for the Docker image).
 WHITENOISE_USE_FINDERS = True
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
