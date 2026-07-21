@@ -20,6 +20,7 @@
   {% csrf_token %}
 
   <h2 style="font-size:16px; margin:0 0 12px;">1. De onde vem cada dado</h2>
+  <p class="node-help">Cada resposta pode ir para um campo de <b>Contato</b>, <b>Negócio</b> ou <b>Empresa</b> — escolha no menu ao lado. Nome, e-mail e telefone já vêm sugeridos.</p>
   {% if not has_custom_fields %}
   <p class="node-help">Quer mandar respostas para campos próprios? Crie-os em <a href="{% url 'custom_fields' %}">Configurações → Campos personalizados</a> e eles aparecem aqui.</p>
   {% endif %}
@@ -56,14 +57,11 @@
   </div>
 
   <h2 style="font-size:16px; margin:28px 0 12px;">2. O que criar quando chegar um lead</h2>
+  <p class="node-help" style="margin-bottom:12px;">Padrão <b>B2C</b>: criar <b>contato</b> e <b>negócio</b>. Empresa é opcional — marque só se for B2B.</p>
   <div class="card" style="padding:18px; display:flex; flex-direction:column; gap:14px; max-width:560px;">
     <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
       <input type="checkbox" name="create_contact" {% if dest.create_contact %}checked{% endif %}>
       <span><b>Criar contato</b><br><small class="cell-sub">Nome, e-mail e telefone do lead.</small></span>
-    </label>
-    <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
-      <input type="checkbox" name="create_company" {% if dest.create_company %}checked{% endif %}>
-      <span><b>Criar empresa</b><br><small class="cell-sub">Só se o formulário perguntar a empresa.</small></span>
     </label>
     <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
       <input type="checkbox" name="create_deal" {% if dest.create_deal %}checked{% endif %}>
@@ -91,7 +89,11 @@
         </select>
       </div>
     </div>
-    <p class="node-help">Se você mandar uma resposta para um campo de <b>Empresa</b> ou <b>Negócio</b>, esse objeto é criado automaticamente (pra nada se perder).</p>
+    <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer; border-top:1px solid var(--border); padding-top:14px;">
+      <input type="checkbox" name="create_company" {% if dest.create_company %}checked{% endif %}>
+      <span><b>Criar empresa</b> <small class="cell-sub">(opcional — B2B)</small><br><small class="cell-sub">Só se o formulário perguntar a empresa.</small></span>
+    </label>
+    <p class="node-help">Se você mandar uma resposta para um campo de <b>Empresa</b> ou <b>Negócio</b>, esse objeto é ligado automaticamente (pra nada se perder).</p>
   </div>
 
   <div style="margin-top:20px; display:flex; gap:10px;">
