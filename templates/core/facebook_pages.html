@@ -5,8 +5,8 @@
 
 <div class="page-head">
   <div>
-    <h1>Escolha a página do Facebook</h1>
-    <p>Os leads (Lead Ads) da página escolhida vão criar <b>contato</b>, <b>empresa</b> e <b>negócio</b> automaticamente nas suas automações.</p>
+    <h1>{% if switching %}Trocar a página do Facebook{% else %}Escolha a página do Facebook{% endif %}</h1>
+    <p>{% if switching %}Escolha a nova página. Os leads passam a vir dela — sem precisar entrar no Facebook de novo.{% else %}Os leads (Lead Ads) da página escolhida vão disparar as suas automações com o gatilho <b>Lead do Facebook</b>.{% endif %}</p>
   </div>
 </div>
 

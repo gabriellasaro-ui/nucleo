@@ -1416,7 +1416,20 @@ def facebook_callback(request):
             "redirect_uri": _facebook_redirect_uri(request),
             "code": code,
         })
-        pages_data = _fb_graph("me/accounts", {"access_token": token_data.get("access_token"), "limit": 100})
+        user_token = token_data.get("access_token", "")
+        # Exchange the short-lived token for a long-lived one (~60 days) so the user
+        # can switch pages later without another trip through the Facebook dialog.
+        try:
+            longlived = _fb_graph("oauth/access_token", {
+                "grant_type": "fb_exchange_token",
+                "client_id": settings.FACEBOOK_APP_ID,
+                "client_secret": settings.FACEBOOK_APP_SECRET,
+                "fb_exchange_token": user_token,
+            })
+            user_token = longlived.get("access_token") or user_token
+        except Exception:
+            pass
+        pages_data = _fb_graph("me/accounts", {"access_token": user_token, "limit": 100})
     except Exception:
         messages.error(request, "Falha ao falar com o Facebook. Verifique o App e tente de novo.")
         return redirect("integrations")
@@ -1428,6 +1441,7 @@ def facebook_callback(request):
         messages.error(request, "Nenhuma página do Facebook encontrada nessa conta.")
         return redirect("integrations")
     request.session["fb_pages"] = pages
+    request.session["fb_user_token"] = user_token
     return render(request, "core/facebook_pages.html", {
         "page_title": "Conectar Facebook",
         "breadcrumb": ["Configurações", "Integrações", "Facebook"],
@@ -1465,6 +1479,9 @@ def facebook_select_page(request):
         "page_id": page["id"],
         "page_name": page["name"],
         "page_access_token": page["access_token"],
+        # Keep the (long-lived) user token so "Trocar página" can re-list the pages
+        # without sending the user back through the Facebook dialog.
+        "user_access_token": request.session.get("fb_user_token") or (conn.config or {}).get("user_access_token", ""),
         "leadgen_subscribed": subscribed,
         "connected_by": request.user.get_username(),
         "source": "oauth",
@@ -1478,11 +1495,44 @@ def facebook_select_page(request):
         conn.save(update_fields=["config", "updated_at"])
     request.session.pop("fb_pages", None)
     request.session.pop("fb_oauth_state", None)
+    request.session.pop("fb_user_token", None)
     if subscribed:
         messages.success(request, f"Página “{page['name']}” conectada. Novos leads viram contato e negócio automaticamente.")
     else:
         messages.warning(request, f"Página “{page['name']}” salva, mas não consegui assinar os leads — confira as permissões do App.")
     return redirect("integrations")
+
+
+@login_required
+@require_role("admin")
+def facebook_switch_page(request):
+    """Switch the connected page WITHOUT another Facebook dialog: reuse the stored
+    (long-lived) user token to re-list the pages. Falls back to full OAuth if the
+    token is missing or expired."""
+    conn = _facebook_active_connection(request.workspace)
+    token = (conn.config or {}).get("user_access_token") if conn else ""
+    if not token:
+        return redirect("facebook_connect")
+    try:
+        pages_data = _fb_graph("me/accounts", {"access_token": token, "limit": 100})
+    except Exception:
+        messages.info(request, "Sua sessão do Facebook expirou — conecte de novo.")
+        return redirect("facebook_connect")
+    pages = [
+        {"id": p.get("id"), "name": p.get("name", "Página"), "access_token": p.get("access_token", "")}
+        for p in pages_data.get("data", []) if p.get("id")
+    ]
+    if not pages:
+        messages.error(request, "Nenhuma página encontrada na sua conta do Facebook.")
+        return redirect("integrations")
+    request.session["fb_pages"] = pages
+    request.session["fb_user_token"] = token
+    return render(request, "core/facebook_pages.html", {
+        "page_title": "Trocar página do Facebook",
+        "breadcrumb": ["Configurações", "Integrações", "Facebook"],
+        "pages": pages,
+        "switching": True,
+    })
 
 
 # --------------------------------------------------------------------------- #

@@ -301,6 +301,7 @@
             <input type="hidden" name="action__INDEX___type" data-action-type>
             <div class="node-fields">
               <div class="node-fieldset" data-action-fieldset data-show-for="create_deal,move_deal" hidden>
+                <p class="node-help">A pipeline e a coluna definem onde o negócio entra. O título e os demais dados vêm do lead automaticamente.</p>
                 <label>Pipeline</label>
                 <select name="action__INDEX___pipeline" data-action-field data-show-for="create_deal,move_deal" hidden disabled>
                   <option value="">Pipeline principal</option>
@@ -331,6 +332,7 @@
               </div>
 
               <div class="node-fieldset" data-action-fieldset data-show-for="create_contact" hidden>
+                <p class="node-help">Deixe vazio para usar os dados do lead/formulário. Preencha só para forçar um valor fixo.</p>
                 <label>Nome do contato</label>
                 <div class="node-inline-fields">
                   <input type="text" name="action__INDEX___contact_first_name" data-action-field data-show-for="create_contact" placeholder="Nome" hidden disabled>
@@ -349,6 +351,7 @@
               </div>
 
               <div class="node-fieldset" data-action-fieldset data-show-for="create_company" hidden>
+                <p class="node-help">Deixe vazio para usar os dados do lead/formulário. Preencha só para forçar um valor fixo.</p>
                 <label>Nome da empresa</label>
                 <input type="text" name="action__INDEX___company_name" data-action-field data-show-for="create_company" placeholder="Acme Tecnologia" hidden disabled>
                 <label>Dominio</label>

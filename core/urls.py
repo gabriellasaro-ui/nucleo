@@ -28,6 +28,7 @@ urlpatterns = [
     path("settings/integrations/facebook/connect/", views.facebook_connect, name="facebook_connect"),
     path("settings/integrations/facebook/callback/", views.facebook_callback, name="facebook_callback"),
     path("settings/integrations/facebook/page/", views.facebook_select_page, name="facebook_select_page"),
+    path("settings/integrations/facebook/page/switch/", views.facebook_switch_page, name="facebook_switch_page"),
     path("settings/integrations/facebook/forms/", views.facebook_forms, name="facebook_forms"),
     path("settings/integrations/facebook/forms/sync/", views.facebook_sync_forms, name="facebook_sync_forms"),
     path("settings/integrations/facebook/forms/<str:form_id>/map/", views.facebook_form_map, name="facebook_form_map"),
