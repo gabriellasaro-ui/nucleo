@@ -30,6 +30,17 @@ if _env_file.exists():
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-insecure-change-me")
 DEBUG = env("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+CSRF_TRUSTED_ORIGINS = [o for o in env("DJANGO_CSRF_ORIGINS", "").split(",") if o]
+
+# On Vercel the deploy host isn't known up front, so allow the platform domains
+# (production + preview) automatically and trust them for HTTPS form posts (CSRF).
+if env("VERCEL") or env("VERCEL_URL"):
+    ALLOWED_HOSTS += [".vercel.app"]
+    CSRF_TRUSTED_ORIGINS.append("https://*.vercel.app")
+    _vercel_url = env("VERCEL_URL")
+    if _vercel_url:
+        ALLOWED_HOSTS.append(_vercel_url)
+        CSRF_TRUSTED_ORIGINS.append(f"https://{_vercel_url}")
 
 # Multi-tenant (schema-per-workspace via django-tenants).
 # SHARED_APPS live in the `public` schema (auth, the tenant model, shared config).
@@ -57,6 +68,7 @@ DATABASE_ROUTERS = ("django_tenants.routers.TenantSyncRouter",)
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # serve static files (CSS/JS) in prod
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -135,6 +147,13 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# Serve straight from the finders (the static/ dir) so it works on Vercel without
+# a collectstatic build step.
+WHITENOISE_USE_FINDERS = True
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+}
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"

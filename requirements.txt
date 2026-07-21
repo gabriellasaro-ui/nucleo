@@ -1,3 +1,4 @@
 Django>=6.0,<6.1
 psycopg[binary]>=3.2
 django-tenants>=3.10
+whitenoise>=6.6
