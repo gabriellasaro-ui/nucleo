@@ -1,0 +1,19 @@
+# Nunca copiar isto pra imagem (bloat / segredos / lixo local)
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+.github/
+db.sqlite3
+staticfiles/
+media/
+.env
+.env.*
+*.md
+.vscode/
+.idea/
+*.log

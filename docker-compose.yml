@@ -1,0 +1,38 @@
+# Núcleo CRM — sobe o app e conecta no seu Postgres (nucleodb).
+# Os valores abaixo vêm de um arquivo .env ao lado deste (o docker compose lê
+# automaticamente) ou das variáveis do painel (Easypanel).
+#
+#   docker compose up -d --build
+#
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-0}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}
+      - DJANGO_CSRF_ORIGINS=${DJANGO_CSRF_ORIGINS:-}
+      - FACEBOOK_APP_ID=${FACEBOOK_APP_ID:-}
+      - FACEBOOK_APP_SECRET=${FACEBOOK_APP_SECRET:-}
+
+# ---------------------------------------------------------------------------
+# Quer um Postgres self-contained (em vez do externo)? Descomente o bloco abaixo
+# e aponte DATABASE_URL para:  postgresql://nucleo:SUA_SENHA@db:5432/nucleodb
+# (banco novo = precisa migrar: docker compose exec web python manage.py migrate_schemas)
+# ---------------------------------------------------------------------------
+#  db:
+#    image: postgres:17
+#    restart: unless-stopped
+#    environment:
+#      POSTGRES_DB: nucleodb
+#      POSTGRES_USER: nucleo
+#      POSTGRES_PASSWORD: troque_esta_senha
+#    volumes:
+#      - nucleo_pgdata:/var/lib/postgresql/data
+#
+#volumes:
+#  nucleo_pgdata:
