@@ -24,6 +24,7 @@ from .views import (
     _facebook_body_key_for_token,
     _facebook_build_automation,
     _facebook_destino_needs,
+    _facebook_resolve_new_fields,
     _facebook_suggest_target,
     _facebook_target_catalog,
     _parse_automation_canvas,
@@ -302,10 +303,11 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         except Exception:
             pass
 
-    def test_suggest_matches_a_custom_field_then_falls_back_to_ignore(self):
+    def test_suggest_matches_a_custom_field_then_defaults_to_new_deal_field(self):
         self.assertEqual(_facebook_suggest_target({"key": "orcamento"}, self.ws), "custom:deal:orcamento")
         self.assertEqual(_facebook_suggest_target({"label": "Orçamento"}, self.ws), "custom:deal:orcamento")
-        self.assertEqual(_facebook_suggest_target({"key": "pergunta_solta"}, self.ws), "ignore")
+        # unmatched question -> captured as a new deal field (never silently dropped)
+        self.assertEqual(_facebook_suggest_target({"key": "pergunta_solta"}, self.ws), "new:deal")
 
     def test_catalog_lists_the_custom_field_in_its_object_group(self):
         catalog = _facebook_target_catalog(self.ws)
@@ -313,6 +315,18 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         tokens = [token for token, _label in deal_group["options"]]
         self.assertIn("deal:title", tokens)
         self.assertIn("custom:deal:orcamento", tokens)
+
+    def test_new_field_token_creates_a_custom_field_on_the_fly(self):
+        resolved = _facebook_resolve_new_fields(self.ws, {
+            "tipo de veículo": "new:deal",
+            "email": "contact:email",
+            "lixo": "new:bogus",
+        })
+        self.assertEqual(resolved["tipo de veículo"], "custom:deal:tipo-de-veiculo")
+        self.assertEqual(resolved["email"], "contact:email")   # untouched
+        self.assertEqual(resolved["lixo"], "ignore")            # unknown object
+        self.assertTrue(CustomField.objects.filter(
+            workspace=self.ws, object_type="deal", key="tipo-de-veiculo").exists())
 
 
 class FacebookDestinoNeedsTests(SimpleTestCase):

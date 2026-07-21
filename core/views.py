@@ -1668,7 +1668,9 @@ def _facebook_suggest_target(question, ws):
     for field in CustomField.objects.filter(workspace=ws):
         if norm and norm in {_norm_key(field.key), _norm_key(field.label)}:
             return f"custom:{field.object_type}:{field.key}"
-    return "ignore"
+    # No matching field yet: default to capturing it as a new deal field so the
+    # answer is never silently dropped (the gestor can switch to "Não usar").
+    return "new:deal"
 
 
 def _facebook_body_key_for_token(token):
@@ -1766,6 +1768,27 @@ def facebook_forms(request):
         "page_name": cfg.get("page_name", ""),
         "forms": items,
     })
+
+
+def _facebook_resolve_new_fields(ws, raw):
+    """Resolve 'new:<obj>' mapping tokens by creating a text custom field on the
+    fly (idempotent). Returns the mapping with those tokens turned into real
+    'custom:<obj>:<key>' targets, so a form question is never silently dropped."""
+    resolved = {}
+    for qkey, token in raw.items():
+        if token.startswith("new:"):
+            obj = token.split(":", 1)[1]
+            if obj in {"contact", "company", "deal"}:
+                fkey = slugify(qkey)[:60] or "campo"
+                field, _ = CustomField.objects.get_or_create(
+                    workspace=ws, object_type=obj, key=fkey,
+                    defaults={"label": (qkey[:80] or fkey), "field_type": "text"},
+                )
+                token = f"custom:{obj}:{field.key}"
+            else:
+                token = "ignore"
+        resolved[qkey] = token
+    return resolved
 
 
 def _facebook_destino_needs(mapping):
@@ -1873,14 +1896,16 @@ def facebook_form_map(request, form_id):
         form_id,
     )
     if request.method == "POST":
-        valid = _facebook_valid_targets(ws)
-        new_map = {}
+        raw = {}
         for key in request.POST:
             match = re.match(r"map_(.+)$", key)
-            if not match:
-                continue
-            token = request.POST.get(key, "ignore").strip()
-            new_map[match.group(1)] = token if token in valid else "ignore"
+            if match:
+                raw[match.group(1)] = request.POST.get(key, "ignore").strip()
+        # "new:<obj>" means "guardar como campo novo": create a custom field on the
+        # fly so a form question is never silently dropped for lack of a field.
+        raw = _facebook_resolve_new_fields(ws, raw)
+        valid = _facebook_valid_targets(ws)  # includes any fields just created
+        new_map = {qkey: (token if token in valid else "ignore") for qkey, token in raw.items()}
         # Destino: what to create + where. Guard: if a Company/Deal field was
         # mapped, force that object on so its answer isn't lost.
         needs = _facebook_destino_needs(new_map)
