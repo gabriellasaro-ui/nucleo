@@ -5,6 +5,10 @@ from . import views
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("whatsapp/", views.whatsapp, name="whatsapp"),
+    path("whatsapp/connect/", views.whatsapp_connect, name="whatsapp_connect"),
+    path("whatsapp/status/", views.whatsapp_status, name="whatsapp_status"),
+    path("whatsapp/disconnect/", views.whatsapp_disconnect, name="whatsapp_disconnect"),
+    path("whatsapp/send/", views.whatsapp_send, name="whatsapp_send"),
     path("workspaces/new/", views.workspace_new, name="workspace_new"),
     path("workspaces/<int:pk>/switch/", views.workspace_switch, name="workspace_switch"),
     path("settings/members/", views.members, name="members"),
@@ -35,5 +39,6 @@ urlpatterns = [
     path("settings/integrations/facebook/forms/<str:form_id>/toggle/", views.facebook_form_toggle, name="facebook_form_toggle"),
     path("webhooks/automation/<str:key>/", views.automation_webhook, name="automation_webhook"),
     path("webhooks/facebook/leadgen/", views.facebook_leadgen, name="facebook_leadgen"),
+    path("webhooks/whatsapp/<str:secret>/", views.whatsapp_webhook, name="whatsapp_webhook"),
     path("settings/appearance/", views.appearance, name="appearance"),
 ]

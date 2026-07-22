@@ -150,6 +150,80 @@ class Contact(TimestampedModel):
         return (first + last).upper() or "?"
 
 
+class WhatsAppConversation(TimestampedModel):
+    STATUS_CHOICES = [("open", "Aberta"), ("archived", "Arquivada")]
+
+    workspace = models.ForeignKey(
+        "core.Workspace", on_delete=models.CASCADE, related_name="whatsapp_conversations",
+    )
+    contact = models.ForeignKey(
+        Contact, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="whatsapp_conversations",
+    )
+    instance_id = models.CharField(max_length=80)
+    remote_jid = models.CharField(max_length=180)
+    phone = models.CharField(max_length=40)
+    name = models.CharField(max_length=160, blank=True)
+    avatar_url = models.URLField(max_length=500, blank=True)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="open")
+    unread_count = models.PositiveIntegerField(default=0)
+    last_message = models.CharField(max_length=300, blank=True)
+    last_message_at = models.DateTimeField(null=True, blank=True)
+
+    objects = TenantManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        ordering = ["-last_message_at", "-updated_at"]
+        unique_together = [("workspace", "instance_id", "remote_jid")]
+        indexes = [
+            models.Index(fields=["workspace", "-last_message_at"]),
+            models.Index(fields=["workspace", "phone"]),
+        ]
+        verbose_name = "Conversa do WhatsApp"
+        verbose_name_plural = "Conversas do WhatsApp"
+
+    def __str__(self):
+        return self.name or self.phone
+
+
+class WhatsAppMessage(TimestampedModel):
+    DIRECTION_CHOICES = [("incoming", "Recebida"), ("outgoing", "Enviada")]
+
+    workspace = models.ForeignKey(
+        "core.Workspace", on_delete=models.CASCADE, related_name="whatsapp_messages",
+    )
+    conversation = models.ForeignKey(
+        WhatsAppConversation, on_delete=models.CASCADE, related_name="messages",
+    )
+    instance_id = models.CharField(max_length=80)
+    provider_message_id = models.CharField(max_length=180)
+    direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
+    message_type = models.CharField(max_length=30, default="text")
+    text = models.TextField(blank=True)
+    media_url = models.URLField(max_length=700, blank=True)
+    status = models.CharField(max_length=30, default="received")
+    sent_at = models.DateTimeField()
+    raw = models.JSONField(default=dict, blank=True)
+
+    objects = TenantManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        ordering = ["sent_at", "id"]
+        unique_together = [("workspace", "instance_id", "provider_message_id")]
+        indexes = [
+            models.Index(fields=["conversation", "sent_at"]),
+        ]
+        verbose_name = "Mensagem do WhatsApp"
+        verbose_name_plural = "Mensagens do WhatsApp"
+
+    def __str__(self):
+        return self.text[:60] or self.message_type
+
+
 DEFAULT_STAGES = [
     # key, name, color, kind
     ("novo", "Novo", "#94a3b8", "open"),

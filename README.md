@@ -41,6 +41,20 @@ static/            # nucleo.css (design system) + htmx/alpine vendorizados
 - **PostgreSQL:** defina `DATABASE_URL` no `.env` (ex.: `postgres://nucleo:nucleo@localhost:5432/nucleo`).
   Necessário para o motor de dados schema-por-workspace previsto no blueprint.
 
+## WhatsApp (EvoGo)
+
+Configure estas variáveis no serviço do Núcleo:
+
+```env
+EVOGO_API_URL=https://seu-servidor-evogo.example
+EVOGO_GLOBAL_API_KEY=sua-chave-global
+# Opcional: fixa a URL pública usada nos webhooks. Sem ela, usa o host da requisição.
+NUCLEO_PUBLIC_URL=https://crm.example.com
+```
+
+Depois execute `python manage.py migrate_schemas` e abra `/whatsapp/` para gerar
+uma instância exclusiva do workspace e conectar o número por QR Code.
+
 ## Roadmap
 
 Este é o **Fase 0 — fundação** (app shell + design system + primeiro módulo CRM).

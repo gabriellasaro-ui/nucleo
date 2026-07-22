@@ -20,12 +20,19 @@
       {% for u in contact.assignees.all %}<span class="assignee-ava" title="Responsável: {{ u.get_username }}">{{ u.username|slice:":2"|upper }}</span>{% endfor %}
     </div>
   </div>
-  {% if can_edit %}
-  <button class="btn btn--ghost" hx-get="{% url 'crm:contact_edit' contact.pk %}"
-          hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
-    {% include "core/_icon.html" with icon="edit" %} Editar
-  </button>
-  {% endif %}
+  <div class="record__actions">
+    {% if contact.phone and can_edit %}
+    <a class="btn btn--primary" href="{% url 'whatsapp' %}?contact={{ contact.pk }}">
+      {% include "core/_icon.html" with icon="phone" %} Conversar
+    </a>
+    {% endif %}
+    {% if can_edit %}
+    <button class="btn btn--ghost" hx-get="{% url 'crm:contact_edit' contact.pk %}"
+            hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+      {% include "core/_icon.html" with icon="edit" %} Editar
+    </button>
+    {% endif %}
+  </div>
 </div>
 
 <div class="record__grid">

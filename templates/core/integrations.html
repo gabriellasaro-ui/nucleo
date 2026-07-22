@@ -23,14 +23,25 @@
       {% if item.connected %}
       <span class="role-badge integration-status integration-status--on">Conectada</span>
       {% if item.provider == "facebook" %}<a href="{% url 'facebook_forms' %}" class="btn btn--ghost btn--sm">Formulários</a><a href="{% url 'facebook_switch_page' %}" class="btn btn--ghost btn--sm">Trocar página</a>{% endif %}
+      {% if item.provider == "whatsapp" %}<a href="{% url 'whatsapp' %}" class="btn btn--ghost btn--sm">Conversas</a>{% endif %}
+      {% if item.provider == "whatsapp" %}
+      <form method="post" action="{% url 'whatsapp_disconnect' %}" data-confirm="Desconectar este número? As conversas continuarão salvas no CRM.">
+        {% csrf_token %}
+        <button class="btn btn--ghost btn--sm" type="submit">Desconectar</button>
+      </form>
+      {% else %}
       <form method="post" action="{% url 'integration_disconnect' %}">
         {% csrf_token %}
         <input type="hidden" name="provider" value="{{ item.provider }}">
         <button class="btn btn--ghost btn--sm" type="submit">Desconectar</button>
       </form>
+      {% endif %}
       {% elif item.provider == "facebook" %}
       <span class="role-badge integration-status">Disponível</span>
       <a href="{% url 'facebook_connect' %}" class="btn btn--primary btn--sm">Conectar página</a>
+      {% elif item.provider == "whatsapp" %}
+      <span class="role-badge integration-status">Disponível</span>
+      <a href="{% url 'whatsapp' %}" class="btn btn--primary btn--sm">Conectar</a>
       {% elif item.available %}
       <span class="role-badge integration-status">Disponível</span>
       <form method="post" action="{% url 'integration_connect' %}">

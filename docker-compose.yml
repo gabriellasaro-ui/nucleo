@@ -18,6 +18,9 @@ services:
       - DJANGO_CSRF_ORIGINS=${DJANGO_CSRF_ORIGINS:-}
       - FACEBOOK_APP_ID=${FACEBOOK_APP_ID:-}
       - FACEBOOK_APP_SECRET=${FACEBOOK_APP_SECRET:-}
+      - EVOGO_API_URL=${EVOGO_API_URL:-}
+      - EVOGO_GLOBAL_API_KEY=${EVOGO_GLOBAL_API_KEY:-}
+      - NUCLEO_PUBLIC_URL=${NUCLEO_PUBLIC_URL:-}
 
 # ---------------------------------------------------------------------------
 # Quer um Postgres self-contained (em vez do externo)? Descomente o bloco abaixo

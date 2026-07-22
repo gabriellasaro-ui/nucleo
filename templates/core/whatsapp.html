@@ -1,79 +1,208 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="page-head">
+<div class="page-head wa-page-head">
   <div>
     <h1>WhatsApp</h1>
-    <p>Canal de atendimento do workspace.</p>
+    <p>{% if whatsapp_connected %}{{ whatsapp_status.Name|default:"Atendimento conectado" }}{% else %}Atendimento comercial e conversas dos leads.{% endif %}</p>
   </div>
   <div class="page-actions">
     {% if whatsapp_connected %}
-    <span class="role-badge integration-status integration-status--on">Conectado</span>
+    <span class="role-badge integration-status integration-status--on"><span class="wa-status-dot"></span> Conectado</span>
+    {% elif whatsapp_pairing %}
+    <span class="role-badge integration-status">Aguardando leitura</span>
     {% else %}
-    <span class="role-badge integration-status">Não configurado</span>
+    <span class="role-badge integration-status">Desconectado</span>
+    {% endif %}
+    {% if whatsapp_connected and can_admin %}
+    <form method="post" action="{% url 'whatsapp_disconnect' %}" data-confirm="Desconectar este número? As conversas continuarão salvas no CRM.">
+      {% csrf_token %}
+      <button class="btn btn--ghost btn--sm" type="submit">{% include "core/_icon.html" with icon="unlink" %} Desconectar</button>
+    </form>
     {% endif %}
   </div>
 </div>
 
-<div class="whatsapp-layout">
-  <section class="card whatsapp-panel">
-    <div class="whatsapp-panel__head">
-      <span class="whatsapp-panel__icon">{% include "core/_icon.html" with icon="phone" %}</span>
-      <div>
-        <h2>Canal</h2>
-        <p>{% if whatsapp_connected %}{{ whatsapp_config.display_name|default:"WhatsApp" }}{% else %}Configure o número principal de atendimento.{% endif %}</p>
-      </div>
-    </div>
-
-    <form class="whatsapp-form" method="post">
-      {% csrf_token %}
-      <div class="field">
-        <label for="id_whatsapp_display">Nome exibido</label>
-        <input id="id_whatsapp_display" type="text" name="display_name" value="{{ whatsapp_config.display_name|default:'' }}" placeholder="Ex.: Atendimento comercial">
-      </div>
-      <div class="field">
-        <label for="id_whatsapp_phone">Número</label>
-        <input id="id_whatsapp_phone" type="text" name="phone_number" value="{{ whatsapp_config.phone_number|default:'' }}" placeholder="+55 11 99999-9999">
-      </div>
-      <div class="field">
-        <label for="id_whatsapp_owner">Responsável padrão</label>
-        <input id="id_whatsapp_owner" type="text" name="default_owner" value="{{ whatsapp_config.default_owner|default:'' }}" placeholder="Ex.: admin, comercial, suporte">
-      </div>
-      {% if can_admin %}
-      <button type="submit" class="btn btn--primary">
-        {% include "core/_icon.html" with icon="check" %} Salvar canal
-      </button>
-      {% else %}
-      <button type="button" class="btn btn--ghost" disabled>Somente admin configura</button>
-      {% endif %}
-    </form>
-  </section>
-
-  <section class="card whatsapp-panel">
-    <div class="whatsapp-panel__head">
-      <span class="whatsapp-panel__icon whatsapp-panel__icon--soft">{% include "core/_icon.html" with icon="pipeline" %}</span>
-      <div>
-        <h2>Roteamento</h2>
-        <p>Conversas recebidas poderão virar contato, negócio e automação.</p>
-      </div>
-    </div>
-    <div class="whatsapp-steps">
-      <div><b>1</b><span>Contato criado ou atualizado</span></div>
-      <div><b>2</b><span>Negócio enviado para a pipeline</span></div>
-      <div><b>3</b><span>Fluxos de automação executam ações</span></div>
-    </div>
-  </section>
-</div>
-
-<section class="card whatsapp-inbox">
-  <div class="panel__head">
-    <b>Conversas</b>
-    <span class="panel__count">0</span>
-  </div>
-  <div class="whatsapp-empty">
-    {% include "core/_icon.html" with icon="phone" %}
-    <b>Nenhuma conversa recebida ainda.</b>
-    <span>Quando o conector estiver ativo, as conversas entram aqui.</span>
+{% if not whatsapp_available %}
+<section class="wa-setup-panel">
+  <span class="wa-setup-panel__icon">{% include "core/_icon.html" with icon="phone" %}</span>
+  <div>
+    <h2>Servidor do WhatsApp não configurado</h2>
+    <p>Adicione <b>EVOGO_API_URL</b> e <b>EVOGO_GLOBAL_API_KEY</b> no ambiente do Núcleo.</p>
   </div>
 </section>
+{% elif not whatsapp_config.instance_token %}
+<section class="wa-setup-panel wa-setup-panel--connect">
+  <span class="wa-setup-panel__icon">{% include "core/_icon.html" with icon="phone" %}</span>
+  <div>
+    <h2>Conectar um número</h2>
+    <p>Uma instância exclusiva será criada para este workspace.</p>
+  </div>
+  {% if can_admin %}
+  <form method="post" action="{% url 'whatsapp_connect' %}">
+    {% csrf_token %}
+    <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="qr" %} Gerar QR Code</button>
+  </form>
+  {% endif %}
+</section>
+{% elif not whatsapp_connected %}
+<section class="wa-pairing" data-whatsapp-pairing data-status-url="{% url 'whatsapp_status' %}">
+  <div class="wa-pairing__qr">
+    <img data-whatsapp-qr alt="QR Code para conectar o WhatsApp" hidden>
+    <span class="wa-pairing__loading" data-whatsapp-loading>{% include "core/_icon.html" with icon="loop" %}</span>
+  </div>
+  <div class="wa-pairing__content">
+    <span class="wa-pairing__eyebrow">Conectar dispositivo</span>
+    <h2>Escaneie com o WhatsApp</h2>
+    <ol>
+      <li>Abra <b>Dispositivos conectados</b> no celular.</li>
+      <li>Toque em <b>Conectar dispositivo</b>.</li>
+      <li>Aponte a câmera para o QR Code.</li>
+    </ol>
+    <p class="wa-pairing__state" data-whatsapp-state>Gerando um QR Code seguro...</p>
+    <a class="btn btn--primary btn--sm" data-whatsapp-passkey hidden target="_blank" rel="noopener">Abrir WhatsApp Web</a>
+    {% if whatsapp_error %}<p class="wa-inline-error">{{ whatsapp_error }}</p>{% endif %}
+  </div>
+</section>
+{% else %}
+<div class="wa-inbox">
+  <aside class="wa-inbox__sidebar">
+    <div class="wa-sidebar-head">
+      <div>
+        <b>Conversas</b>
+        <span>{{ conversations|length }}</span>
+      </div>
+      <form method="get" class="wa-new-chat">
+        <label class="sr-only" for="id_wa_contact">Nova conversa</label>
+        <select id="id_wa_contact" name="contact" required>
+          <option value="">Nova conversa...</option>
+          {% for contact in contact_options %}
+          <option value="{{ contact.pk }}"{% if draft_contact.pk == contact.pk %} selected{% endif %}>{{ contact.full_name }} · {{ contact.phone }}</option>
+          {% endfor %}
+        </select>
+        <button class="icon-btn" type="submit" title="Iniciar conversa">{% include "core/_icon.html" with icon="plus" %}</button>
+      </form>
+      <form method="get" class="wa-search">
+        <span>{% include "core/_icon.html" with icon="search" %}</span>
+        <input type="search" name="q" value="{{ conversation_search }}" placeholder="Buscar conversa" aria-label="Buscar conversa">
+      </form>
+    </div>
+
+    <nav class="wa-conversation-list" aria-label="Conversas do WhatsApp">
+      {% for conversation in conversations %}
+      <a class="wa-conversation{% if selected_conversation.pk == conversation.pk %} is-active{% endif %}" href="{% url 'whatsapp' %}?conversation={{ conversation.pk }}{% if conversation_search %}&q={{ conversation_search|urlencode }}{% endif %}">
+        <span class="wa-avatar">{{ conversation.name|default:conversation.phone|slice:":1"|upper }}</span>
+        <span class="wa-conversation__body">
+          <span class="wa-conversation__top">
+            <b>{{ conversation.name|default:conversation.phone }}</b>
+            <time>{{ conversation.last_message_at|date:"H:i" }}</time>
+          </span>
+          <span class="wa-conversation__preview">{{ conversation.last_message|default:"Conversa iniciada" }}</span>
+        </span>
+        {% if conversation.unread_count %}<span class="wa-unread">{{ conversation.unread_count }}</span>{% endif %}
+      </a>
+      {% empty %}
+      <div class="wa-sidebar-empty">Nenhuma conversa encontrada.</div>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <section class="wa-thread">
+    {% if selected_conversation or draft_contact %}
+    <header class="wa-thread__head">
+      <span class="wa-avatar wa-avatar--lg">{% if selected_conversation %}{{ selected_conversation.name|default:selected_conversation.phone|slice:":1"|upper }}{% else %}{{ draft_contact.initials }}{% endif %}</span>
+      <div>
+        <b>{% if selected_conversation %}{{ selected_conversation.name|default:selected_conversation.phone }}{% else %}{{ draft_contact.full_name }}{% endif %}</b>
+        <span>{% if selected_conversation %}{{ selected_conversation.phone }}{% else %}{{ draft_contact.phone }}{% endif %}</span>
+      </div>
+      {% if selected_conversation.contact %}<a class="icon-btn" href="{{ selected_conversation.contact.get_absolute_url }}" title="Abrir contato">{% include "core/_icon.html" with icon="users" %}</a>{% elif draft_contact %}<a class="icon-btn" href="{{ draft_contact.get_absolute_url }}" title="Abrir contato">{% include "core/_icon.html" with icon="users" %}</a>{% endif %}
+    </header>
+
+    <div class="wa-thread__messages" data-wa-thread>
+      {% for message in thread_messages %}
+      <article class="wa-message wa-message--{{ message.direction }}">
+        <div>
+          <p>{{ message.text|linebreaksbr }}</p>
+          <span>{{ message.sent_at|date:"H:i" }}{% if message.direction == "outgoing" %} · {% if message.status == "read" %}Lida{% elif message.status == "sent" %}Enviada{% else %}Entregue{% endif %}{% endif %}</span>
+        </div>
+      </article>
+      {% empty %}
+      <div class="wa-thread-empty">
+        {% include "core/_icon.html" with icon="note" %}
+        <b>Inicie a conversa</b>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if can_edit %}
+    <form class="wa-composer" method="post" action="{% url 'whatsapp_send' %}">
+      {% csrf_token %}
+      {% if selected_conversation %}<input type="hidden" name="conversation_id" value="{{ selected_conversation.pk }}">{% else %}<input type="hidden" name="contact_id" value="{{ draft_contact.pk }}">{% endif %}
+      <textarea name="message" rows="1" maxlength="4096" placeholder="Mensagem" required aria-label="Mensagem"></textarea>
+      <button class="icon-btn icon-btn--primary" type="submit" title="Enviar mensagem">{% include "core/_icon.html" with icon="send" %}</button>
+    </form>
+    {% else %}
+    <div class="wa-composer wa-composer--readonly">Acesso somente para leitura</div>
+    {% endif %}
+    {% else %}
+    <div class="wa-thread-placeholder">
+      {% include "core/_icon.html" with icon="phone" %}
+      <b>Selecione uma conversa</b>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endif %}
+
+{% if whatsapp_pairing %}
+<script>
+(function () {
+  var root = document.querySelector("[data-whatsapp-pairing]");
+  if (!root) return;
+  var image = root.querySelector("[data-whatsapp-qr]");
+  var loading = root.querySelector("[data-whatsapp-loading]");
+  var state = root.querySelector("[data-whatsapp-state]");
+  var passkey = root.querySelector("[data-whatsapp-passkey]");
+
+  function poll() {
+    fetch(root.dataset.statusUrl, {headers: {"Accept": "application/json"}})
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        if (data.connected) {
+          state.textContent = "Conectado. Abrindo as conversas...";
+          window.location.reload();
+          return;
+        }
+        if (data.qr) {
+          image.src = data.qr;
+          image.hidden = false;
+          loading.hidden = true;
+          state.textContent = "Aguardando leitura do QR Code.";
+        } else if (data.error) {
+          state.textContent = data.error;
+        }
+        if (data.passkey_url) {
+          passkey.href = data.passkey_url;
+          passkey.hidden = false;
+        }
+        window.setTimeout(poll, 4000);
+      })
+      .catch(function () {
+        state.textContent = "Tentando conectar novamente...";
+        window.setTimeout(poll, 5000);
+      });
+  }
+  poll();
+})();
+</script>
+{% endif %}
+
+{% if whatsapp_connected %}
+<script>
+(function () {
+  var thread = document.querySelector("[data-wa-thread]");
+  if (thread) thread.scrollTop = thread.scrollHeight;
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -5,14 +5,21 @@ These run inside a single disposable tenant schema (`TenantTestCase` creates the
 in an isolated workspace schema. Cross-tenant isolation itself is proved
 separately in ``core.tests.SchemaIsolationTests``.
 """
+import json
+
 from django.db import IntegrityError, transaction
+from django.test import RequestFactory
 from django_tenants.test.cases import TenantTestCase
 
 from core.events import _condition_matches
-from core.models import CustomField, Event
+from core.models import CustomField, Event, IntegrationConnection
 from core.tenancy import clear_current_workspace, set_current_workspace
+from core.views import whatsapp_webhook
+from core.whatsapp_inbox import normalize_whatsapp_phone
 
-from .models import Company, Deal, Pipeline, Tag
+from .models import (
+    Company, Contact, Deal, Pipeline, Tag, WhatsAppConversation, WhatsAppMessage,
+)
 
 
 class TenantTestBase(TenantTestCase):
@@ -21,6 +28,130 @@ class TenantTestBase(TenantTestCase):
     @classmethod
     def setup_tenant(cls, tenant):
         tenant.name = "Tenant de Teste"
+
+
+class WhatsAppInboxTests(TenantTestBase):
+    def setUp(self):
+        self.connection = IntegrationConnection.objects.create(
+            workspace=self.tenant,
+            provider="whatsapp",
+            name="WhatsApp",
+            status="disconnected",
+            config={
+                "instance_id": "INSTANCE-1",
+                "instance_token": "instance-token",
+                "webhook_secret": "webhook-secret",
+            },
+        )
+        self.factory = RequestFactory()
+
+    def _send_webhook(self, payload, secret="webhook-secret"):
+        request = self.factory.post(
+            f"/webhooks/whatsapp/{secret}/",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        return whatsapp_webhook(request, secret)
+
+    def test_form_contact_is_reused_and_webhook_is_idempotent(self):
+        contact = Contact.objects.create(
+            workspace=self.tenant,
+            first_name="Lead",
+            last_name="Formulario",
+            phone="(11) 99999-1234",
+            stage="lead",
+        )
+        payload = {
+            "event": "Message",
+            "instanceId": "INSTANCE-1",
+            "instanceToken": "instance-token",
+            "data": {
+                "Info": {
+                    "ID": "MESSAGE-1",
+                    "Chat": "5511999991234@s.whatsapp.net",
+                    "Sender": "5511999991234@s.whatsapp.net",
+                    "PushName": "Lead Meta",
+                    "IsFromMe": False,
+                    "Timestamp": "2026-07-22T15:30:00-03:00",
+                },
+                "Message": {"conversation": "Quero saber mais"},
+            },
+        }
+
+        first = self._send_webhook(payload)
+        second = self._send_webhook(payload)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        conversation = WhatsAppConversation.objects.get()
+        self.assertEqual(conversation.contact_id, contact.pk)
+        self.assertEqual(conversation.unread_count, 1)
+        self.assertEqual(conversation.last_message, "Quero saber mais")
+        self.assertEqual(WhatsAppMessage.objects.count(), 1)
+        self.assertEqual(Contact.objects.count(), 1)
+
+    def test_unknown_inbound_number_creates_a_lead_and_bad_token_is_rejected(self):
+        payload = {
+            "event": "Message",
+            "instanceId": "INSTANCE-1",
+            "instanceToken": "wrong-token",
+            "data": {
+                "Info": {
+                    "ID": "MESSAGE-2",
+                    "Chat": "5511888887777@s.whatsapp.net",
+                    "PushName": "Pessoa Nova",
+                    "IsFromMe": False,
+                },
+                "Message": {"extendedTextMessage": {"text": "Olá"}},
+            },
+        }
+        denied = self._send_webhook(payload)
+        self.assertEqual(denied.status_code, 403)
+        self.assertFalse(Contact.objects.exists())
+
+        payload["instanceToken"] = "instance-token"
+        accepted = self._send_webhook(payload)
+        self.assertEqual(accepted.status_code, 200)
+        contact = Contact.objects.get()
+        self.assertEqual(contact.full_name, "Pessoa Nova")
+        self.assertEqual(contact.phone, "+5511888887777")
+        self.assertEqual(contact.stage, "lead")
+        self.assertEqual(normalize_whatsapp_phone(contact.phone), "5511888887777")
+
+    def test_history_sync_imports_recent_messages_without_marking_them_unread(self):
+        payload = {
+            "event": "HistorySync",
+            "instanceId": "INSTANCE-1",
+            "instanceToken": "instance-token",
+            "data": {
+                "Data": {
+                    "Conversations": [{
+                        "ID": "5511777776666@s.whatsapp.net",
+                        "Messages": [{
+                            "Message": {
+                                "Key": {
+                                    "ID": "HISTORY-1",
+                                    "RemoteJID": "5511777776666@s.whatsapp.net",
+                                    "FromMe": False,
+                                },
+                                "PushName": "Lead Antigo",
+                                "MessageTimestamp": "1784752200",
+                                "Message": {"conversation": "Mensagem anterior"},
+                            },
+                        }],
+                    }],
+                },
+            },
+        }
+
+        response = self._send_webhook(payload)
+
+        self.assertEqual(response.status_code, 200)
+        conversation = WhatsAppConversation.objects.get()
+        self.assertEqual(conversation.last_message, "Mensagem anterior")
+        self.assertEqual(conversation.unread_count, 0)
+        self.assertEqual(conversation.contact.full_name, "Lead Antigo")
+        self.assertEqual(WhatsAppMessage.objects.get().provider_message_id, "HISTORY-1")
 
 
 class PipelineStageTests(TenantTestBase):

@@ -179,3 +179,9 @@ FACEBOOK_APP_SECRET = env("FACEBOOK_APP_SECRET", "")
 FACEBOOK_GRAPH_VERSION = env("FACEBOOK_GRAPH_VERSION", "v19.0")
 # Verify token you also type in the Meta app's Webhooks config (leadgen).
 FACEBOOK_VERIFY_TOKEN = env("FACEBOOK_VERIFY_TOKEN", "nucleo-leadgen")
+
+# EvoGo / WhatsApp. Keep the global key in the Núcleo service environment;
+# each workspace receives its own instance token after connecting.
+EVOGO_API_URL = env("EVOGO_API_URL", "")
+EVOGO_GLOBAL_API_KEY = env("EVOGO_GLOBAL_API_KEY", env("GLOBAL_API_KEY", ""))
+NUCLEO_PUBLIC_URL = env("NUCLEO_PUBLIC_URL", "")

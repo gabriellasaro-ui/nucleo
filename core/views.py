@@ -1,5 +1,5 @@
 import json
-import json
+import hmac
 import re
 
 from django.conf import settings
@@ -19,7 +19,9 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django_tenants.utils import get_public_schema_name, schema_context, tenant_context
 
-from modules.crm.models import Company, Contact, Deal, Pipeline
+from modules.crm.models import (
+    Company, Contact, Deal, Pipeline, WhatsAppConversation,
+)
 
 from core.events import run_automation_for_event, CONDITION_OPERATORS
 from core.tenancy import clear_current_workspace, set_current_workspace
@@ -27,6 +29,22 @@ from core.tenancy import clear_current_workspace, set_current_workspace
 from .forms import WorkspaceForm
 from .models import EVENT_CHOICES, Automation, AutomationRun, CustomField, Domain, Event, IntegrationConnection, Membership
 from .rbac import require_role
+from .whatsapp_inbox import (
+    conversation_for_contact,
+    ingest_whatsapp_event,
+    normalize_whatsapp_phone,
+    record_outgoing_message,
+)
+from .whatsapp_service import (
+    EvoGoError,
+    connect_instance,
+    create_instance,
+    evogo_is_configured,
+    get_instance_qr,
+    get_instance_status,
+    logout_instance,
+    send_text,
+)
 
 
 # Categorical palette for the contacts donut (validated: dataviz validator,
@@ -74,7 +92,7 @@ _INTEGRATION_CATALOG = [
         "name": "WhatsApp",
         "summary": "Canal de atendimento para receber conversas e acionar fluxos.",
         "icon": "phone",
-        "available": False,
+        "available": True,
     },
 ]
 _AUTOMATION_IDEAS = [
@@ -1266,42 +1284,304 @@ def _rule_summary(rule, data):
 
 @login_required
 def whatsapp(request):
-    connection = IntegrationConnection.objects.filter(workspace=request.workspace, provider="whatsapp").first()
-    if request.method == "POST":
-        membership = getattr(request, "membership", None)
-        if not (membership and membership.can("admin")):
-            messages.error(request, "Voce nao tem permissao para configurar o WhatsApp.")
-            return redirect("whatsapp")
-        display_name = request.POST.get("display_name", "").strip()
-        phone_number = request.POST.get("phone_number", "").strip()
-        default_owner = request.POST.get("default_owner", "").strip()
-        connection, _ = IntegrationConnection.objects.get_or_create(
-            workspace=request.workspace,
-            provider="whatsapp",
-            defaults={"name": "WhatsApp"},
-        )
-        connection.name = "WhatsApp"
-        connection.status = "connected" if phone_number or display_name else "disconnected"
-        connection.config = {
-            **(connection.config or {}),
-            "display_name": display_name,
-            "phone_number": phone_number,
-            "default_owner": default_owner,
-            "source": "whatsapp_tab",
-            "updated_by": request.user.get_username(),
-        }
-        connection.save(update_fields=["name", "status", "config", "updated_at"])
-        messages.success(request, "Canal do WhatsApp salvo.")
-        return redirect("whatsapp")
-
+    ws = request.workspace
+    connection = IntegrationConnection.objects.filter(
+        workspace=ws, provider="whatsapp",
+    ).first()
     config = connection.config if connection else {}
+    status = {}
+    api_error = ""
+    if config.get("instance_token"):
+        try:
+            status = get_instance_status(config["instance_token"])
+        except EvoGoError as exc:
+            api_error = str(exc)
+
+    logged_in = bool(status.get("LoggedIn") or status.get("loggedIn"))
+    if connection and logged_in and connection.status != "connected":
+        connection.status = "connected"
+        connection.save(update_fields=["status", "updated_at"])
+    elif connection and status and not logged_in and connection.status != "disconnected":
+        connection.status = "disconnected"
+        connection.save(update_fields=["status", "updated_at"])
+
+    search = request.GET.get("q", "").strip()
+    conversations = WhatsAppConversation.objects.filter(workspace=ws).select_related("contact")
+    if search:
+        conversation_query = (
+            Q(name__icontains=search)
+            | Q(contact__first_name__icontains=search)
+            | Q(contact__last_name__icontains=search)
+        )
+        search_phone = normalize_whatsapp_phone(search)
+        if search_phone:
+            conversation_query |= Q(phone__icontains=search_phone)
+        conversations = conversations.filter(conversation_query)
+    conversations = list(conversations[:100])
+
+    selected = None
+    selected_id = request.GET.get("conversation", "").strip()
+    if selected_id.isdigit():
+        selected = next(
+            (item for item in conversations if item.pk == int(selected_id)), None,
+        )
+        if not selected:
+            selected = WhatsAppConversation.objects.filter(
+                workspace=ws, pk=int(selected_id),
+            ).select_related("contact").first()
+
+    draft_contact = None
+    contact_id = request.GET.get("contact", "").strip()
+    if contact_id.isdigit():
+        draft_contact = Contact.objects.filter(
+            workspace=ws, pk=int(contact_id),
+        ).first()
+        if draft_contact:
+            existing = WhatsAppConversation.objects.filter(
+                workspace=ws,
+                instance_id=config.get("instance_id", ""),
+                contact=draft_contact,
+            ).first()
+            if existing:
+                selected = existing
+                draft_contact = None
+
+    if not selected and not draft_contact and conversations:
+        selected = conversations[0]
+    if selected and selected.unread_count:
+        selected.unread_count = 0
+        selected.save(update_fields=["unread_count", "updated_at"])
+
+    thread_messages = []
+    if selected:
+        thread_messages = list(selected.messages.order_by("-sent_at", "-id")[:300])
+        thread_messages.reverse()
+    contact_options = Contact.objects.filter(
+        workspace=ws,
+    ).exclude(phone="").order_by("first_name", "last_name")[:200]
+
     return render(request, "core/whatsapp.html", {
         "page_title": "WhatsApp",
         "breadcrumb": ["CRM", "WhatsApp"],
         "connection": connection,
         "whatsapp_config": config,
-        "whatsapp_connected": bool(connection and connection.status == "connected"),
+        "whatsapp_available": evogo_is_configured(),
+        "whatsapp_connected": logged_in,
+        "whatsapp_pairing": bool(config.get("instance_token") and not logged_in),
+        "whatsapp_status": status,
+        "whatsapp_error": api_error,
+        "conversations": conversations,
+        "selected_conversation": selected,
+        "draft_contact": draft_contact,
+        "thread_messages": thread_messages,
+        "contact_options": contact_options,
+        "conversation_search": search,
     })
+
+
+def _whatsapp_public_webhook_url(request, secret):
+    path = reverse("whatsapp_webhook", args=[secret])
+    if settings.NUCLEO_PUBLIC_URL:
+        return settings.NUCLEO_PUBLIC_URL.rstrip("/") + path
+    return request.build_absolute_uri(path)
+
+
+@login_required
+@require_role("admin")
+@require_POST
+def whatsapp_connect(request):
+    if not evogo_is_configured():
+        messages.error(request, "Configure EVOGO_API_URL e EVOGO_GLOBAL_API_KEY no ambiente do Núcleo.")
+        return redirect("whatsapp")
+
+    ws = request.workspace
+    connection, _ = IntegrationConnection.objects.get_or_create(
+        workspace=ws,
+        provider="whatsapp",
+        defaults={"name": "WhatsApp", "status": "disconnected"},
+    )
+    config = dict(connection.config or {})
+    secret = config.get("webhook_secret") or get_random_string(48)
+    webhook_url = _whatsapp_public_webhook_url(request, secret)
+
+    try:
+        if not config.get("instance_token"):
+            instance_name = (
+                f"nucleo-{ws.pk}-{slugify(ws.name)[:35]}-{get_random_string(6).lower()}"
+            )[:80]
+            instance, instance_token = create_instance(instance_name)
+            config.update({
+                "instance_id": str(instance["id"]),
+                "instance_name": instance_name,
+                "instance_token": instance_token,
+                "webhook_secret": secret,
+            })
+            connection.config = config
+            connection.save(update_fields=["config", "updated_at"])
+        connect_instance(config["instance_token"], webhook_url)
+    except EvoGoError as exc:
+        messages.error(request, f"Não foi possível iniciar o WhatsApp: {exc}")
+        return redirect("whatsapp")
+
+    connection.name = "WhatsApp"
+    connection.status = "disconnected"
+    connection.config = {
+        **config,
+        "webhook_secret": secret,
+        "webhook_url": webhook_url,
+        "connected_by": request.user.get_username(),
+    }
+    connection.save(update_fields=["name", "status", "config", "updated_at"])
+    messages.success(request, "Instância preparada. Escaneie o QR Code para conectar o número.")
+    return redirect("whatsapp")
+
+
+@login_required
+def whatsapp_status(request):
+    connection = IntegrationConnection.objects.filter(
+        workspace=request.workspace, provider="whatsapp",
+    ).first()
+    config = connection.config if connection else {}
+    token = config.get("instance_token")
+    if not token:
+        return JsonResponse({"connected": False, "configured": False})
+    try:
+        status = get_instance_status(token)
+        connected = bool(status.get("LoggedIn") or status.get("loggedIn"))
+        qr = {} if connected else get_instance_qr(token)
+    except EvoGoError as exc:
+        return JsonResponse({"connected": False, "error": str(exc)}, status=502)
+
+    if connection.status != ("connected" if connected else "disconnected"):
+        connection.status = "connected" if connected else "disconnected"
+        connection.save(update_fields=["status", "updated_at"])
+    return JsonResponse({
+        "configured": True,
+        "connected": connected,
+        "name": status.get("Name") or status.get("name") or "",
+        "qr": qr.get("qrcode", ""),
+        "pairing_code": qr.get("code", ""),
+        "passkey_stage": qr.get("passkeyStage", ""),
+        "passkey_url": qr.get("passkeyOpenUrl", ""),
+    })
+
+
+@login_required
+@require_role("admin")
+@require_POST
+def whatsapp_disconnect(request):
+    connection = IntegrationConnection.objects.filter(
+        workspace=request.workspace, provider="whatsapp",
+    ).first()
+    token = (connection.config or {}).get("instance_token") if connection else ""
+    if not token:
+        messages.info(request, "Nenhum número do WhatsApp está conectado.")
+        return redirect("whatsapp")
+    try:
+        logout_instance(token)
+    except EvoGoError as exc:
+        messages.error(request, f"Não foi possível desconectar o número: {exc}")
+        return redirect("whatsapp")
+    connection.status = "disconnected"
+    connection.save(update_fields=["status", "updated_at"])
+    messages.success(request, "Número desconectado. As conversas permaneceram salvas no CRM.")
+    return redirect("whatsapp")
+
+
+@login_required
+@require_role("member")
+@require_POST
+def whatsapp_send(request):
+    ws = request.workspace
+    connection = IntegrationConnection.objects.filter(
+        workspace=ws, provider="whatsapp", status="connected",
+    ).first()
+    config = connection.config if connection else {}
+    if not config.get("instance_token"):
+        messages.error(request, "Conecte um número do WhatsApp antes de enviar mensagens.")
+        return redirect("whatsapp")
+
+    text = request.POST.get("message", "").strip()
+    if not text:
+        messages.error(request, "Digite uma mensagem para enviar.")
+        return redirect("whatsapp")
+    if len(text) > 4096:
+        messages.error(request, "A mensagem deve ter no máximo 4096 caracteres.")
+        return redirect("whatsapp")
+
+    conversation = None
+    conversation_id = request.POST.get("conversation_id", "").strip()
+    contact_id = request.POST.get("contact_id", "").strip()
+    if conversation_id.isdigit():
+        conversation = WhatsAppConversation.objects.filter(
+            workspace=ws,
+            instance_id=config.get("instance_id", ""),
+            pk=int(conversation_id),
+        ).first()
+    elif contact_id.isdigit():
+        contact = Contact.objects.filter(workspace=ws, pk=int(contact_id)).first()
+        if contact:
+            conversation = conversation_for_contact(
+                ws, config.get("instance_id", ""), contact,
+            )
+    if not conversation:
+        messages.error(request, "Escolha um contato com telefone válido.")
+        return redirect("whatsapp")
+
+    try:
+        result = send_text(config["instance_token"], conversation.phone, text)
+    except EvoGoError as exc:
+        messages.error(request, f"Mensagem não enviada: {exc}")
+        return redirect(f"{reverse('whatsapp')}?conversation={conversation.pk}")
+
+    response_data = result.get("data") or {}
+    response_info = response_data.get("Info") or response_data.get("info") or {}
+    provider_id = str(
+        response_info.get("ID") or response_info.get("id")
+        or f"local-{get_random_string(32)}"
+    )
+    record_outgoing_message(
+        ws,
+        conversation,
+        provider_id,
+        text,
+        raw={"event": "SendText", "provider_id": provider_id},
+    )
+    return redirect(f"{reverse('whatsapp')}?conversation={conversation.pk}")
+
+
+@csrf_exempt
+@require_POST
+def whatsapp_webhook(request, secret):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({"received": False, "error": "invalid_json"}, status=400)
+
+    connection = IntegrationConnection.objects.filter(
+        provider="whatsapp",
+        config__webhook_secret=secret,
+    ).select_related("workspace").first()
+    if not connection:
+        return JsonResponse({"received": False}, status=404)
+    config = connection.config or {}
+    received_token = str(payload.get("instanceToken") or "")
+    received_instance = str(payload.get("instanceId") or "")
+    if not received_token or not hmac.compare_digest(
+        received_token, str(config.get("instance_token") or ""),
+    ):
+        return JsonResponse({"received": False}, status=403)
+    if received_instance != str(config.get("instance_id") or ""):
+        return JsonResponse({"received": False}, status=403)
+
+    ws = connection.workspace
+    with tenant_context(ws):
+        set_current_workspace(ws)
+        try:
+            ingest_whatsapp_event(ws, connection, payload)
+        finally:
+            clear_current_workspace()
+    return JsonResponse({"received": True})
 
 
 @login_required
@@ -1334,6 +1614,8 @@ def integration_connect(request):
     if not item:
         messages.error(request, "Integração inválida.")
         return redirect("integrations")
+    if provider == "whatsapp":
+        return redirect("whatsapp")
     if not item.get("available"):
         messages.info(request, "Integração preparada, mas ainda não disponível para conectar.")
         return redirect("integrations")
@@ -1359,6 +1641,9 @@ def integration_connect(request):
 @require_POST
 def integration_disconnect(request):
     provider = request.POST.get("provider", "").strip()
+    if provider == "whatsapp":
+        messages.info(request, "Desconecte o número pela tela do WhatsApp.")
+        return redirect("whatsapp")
     connection = IntegrationConnection.objects.filter(workspace=request.workspace, provider=provider).first()
     if connection:
         connection.status = "disconnected"

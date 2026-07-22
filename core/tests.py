@@ -6,6 +6,7 @@ promise of the schema-per-tenant design.
 """
 import json
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from django.db import connection
 from django.http import HttpResponse
@@ -18,6 +19,7 @@ from modules.crm.models import Company, Contact, Deal
 from .events import _coerce_custom_value, _create_contact, _norm_key, run_automation_for_event
 from .models import Automation, CustomField, Domain, Event, IntegrationConnection, Membership, Workspace
 from .rbac import can_edit, require_role
+from .whatsapp_service import connect_instance, create_instance
 from .views import (
     _automation_pipelines,
     _automation_trigger_data,
@@ -89,6 +91,89 @@ class RbacHelperTests(SimpleTestCase):
         self.assertEqual(allowed.status_code, 200)
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(missing.status_code, 403)
+
+
+class EvoGoClientTests(SimpleTestCase):
+    @override_settings(
+        EVOGO_API_URL="https://evogo.example.test",
+        EVOGO_GLOBAL_API_KEY="global-secret",
+    )
+    @patch("core.whatsapp_service.urllib.request.urlopen")
+    def test_instance_uses_admin_key_then_workspace_token(self, urlopen):
+        create_response = MagicMock()
+        create_response.read.return_value = json.dumps({
+            "message": "success",
+            "data": {"id": "INSTANCE-1", "name": "nucleo-1"},
+        }).encode()
+        connect_response = MagicMock()
+        connect_response.read.return_value = json.dumps({
+            "message": "success", "data": {},
+        }).encode()
+        urlopen.return_value.__enter__.side_effect = [
+            create_response,
+            connect_response,
+        ]
+
+        instance, token = create_instance("nucleo-1")
+        connect_instance(token, "https://crm.example.test/webhooks/whatsapp/secret/")
+
+        create_request = urlopen.call_args_list[0].args[0]
+        connect_request = urlopen.call_args_list[1].args[0]
+        create_payload = json.loads(create_request.data)
+        connect_payload = json.loads(connect_request.data)
+        self.assertEqual(instance["id"], "INSTANCE-1")
+        self.assertNotEqual(token, "global-secret")
+        self.assertEqual(create_request.get_header("Apikey"), "global-secret")
+        self.assertEqual(connect_request.get_header("Apikey"), token)
+        self.assertFalse(create_payload["advancedSettings"]["readMessages"])
+        self.assertTrue(create_payload["advancedSettings"]["ignoreGroups"])
+        self.assertIn("MESSAGE", connect_payload["subscribe"])
+        self.assertIn("HISTORY_SYNC", connect_payload["subscribe"])
+
+
+class WhatsAppTemplateTests(SimpleTestCase):
+    @override_settings(STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    })
+    def test_connected_inbox_renders_conversation_and_composer(self):
+        conversation = SimpleNamespace(
+            pk=7,
+            name="Lead do formulário",
+            phone="5511999991234",
+            last_message="Tenho interesse",
+            last_message_at=None,
+            unread_count=1,
+            contact=None,
+        )
+        message = SimpleNamespace(
+            direction="incoming",
+            text="Tenho interesse",
+            sent_at=None,
+            status="received",
+        )
+        html = render_to_string("core/whatsapp.html", {
+            "whatsapp_available": True,
+            "whatsapp_connected": True,
+            "whatsapp_pairing": False,
+            "whatsapp_status": {"Name": "Comercial"},
+            "whatsapp_config": {"instance_token": "hidden"},
+            "whatsapp_error": "",
+            "conversations": [conversation],
+            "selected_conversation": conversation,
+            "draft_contact": None,
+            "thread_messages": [message],
+            "contact_options": [],
+            "conversation_search": "",
+            "can_admin": True,
+            "can_edit": True,
+        })
+
+        self.assertIn("Lead do formulário", html)
+        self.assertIn("Tenho interesse", html)
+        self.assertIn('action="/whatsapp/send/"', html)
+        self.assertIn("Desconectar", html)
+        self.assertNotIn("instance_token", html)
 
 
 class SchemaIsolationTests(TransactionTestCase):
