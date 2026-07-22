@@ -7,7 +7,7 @@
   <div class="page-head">
     <div>
       <h1>{{ form_name }}</h1>
-      <p>Defina os registros criados pelo lead e ligue cada pergunta ao campo certo do CRM.</p>
+      <p>Ligue cada pergunta ao campo certo e escolha onde o negócio entra no CRM.</p>
     </div>
   </div>
 
@@ -29,79 +29,14 @@
     </div>
 
     <section class="fb-map-section">
-      <div class="fb-section-head">
-        <span class="fb-step">1</span>
-        <div>
-          <h2>Registros que o lead cria</h2>
-          <p>Contato e negócio ficam ativos no padrão B2C. Empresa entra só quando o formulário for B2B.</p>
-        </div>
-      </div>
-
-      <div class="fb-record-grid">
-        <label class="fb-record" data-record-option="contact">
-          <input type="checkbox" name="create_contact" data-record-checkbox="contact" {% if dest.create_contact %}checked{% endif %}>
-          <span class="fb-record__icon fb-record__icon--contact">{% include "core/_icon.html" with icon="users" %}</span>
-          <span class="fb-record__body">
-            <b>Contato</b>
-            <small>Nome, e-mail, telefone e dados da pessoa.</small>
-            <small class="fb-record__forced">Mapeado aqui</small>
-          </span>
-        </label>
-
-        <label class="fb-record" data-record-option="deal">
-          <input type="checkbox" name="create_deal" data-record-checkbox="deal" {% if dest.create_deal %}checked{% endif %}>
-          <span class="fb-record__icon fb-record__icon--deal">{% include "core/_icon.html" with icon="pipeline" %}</span>
-          <span class="fb-record__body">
-            <b>Negócio</b>
-            <small>Oportunidade que aparece no kanban.</small>
-            <small class="fb-record__forced">Mapeado aqui</small>
-          </span>
-        </label>
-
-        <label class="fb-record" data-record-option="company">
-          <input type="checkbox" name="create_company" data-record-checkbox="company" {% if dest.create_company %}checked{% endif %}>
-          <span class="fb-record__icon fb-record__icon--company">{% include "core/_icon.html" with icon="building" %}</span>
-          <span class="fb-record__body">
-            <b>Empresa</b>
-            <small>Use quando o lead informar uma empresa.</small>
-            <small class="fb-record__forced">Mapeado aqui</small>
-          </span>
-        </label>
-
-        <div class="fb-deal-config" data-deal-config>
-          <div>
-            <label>Pipeline</label>
-            <select name="pipeline" class="role-select">
-              {% for pipeline in pipelines %}
-              <option value="{{ pipeline.pk }}" {% if dest.pipeline == pipeline.pk|stringformat:'s' %}selected{% endif %}>{{ pipeline.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div>
-            <label>Etapa</label>
-            <select name="deal_stage" class="role-select">
-              {% for pipeline in pipelines %}
-              <optgroup label="{{ pipeline.name }}">
-                {% for stage in pipeline.stages.all %}
-                <option value="{{ stage.key }}" data-pipeline="{{ pipeline.pk }}" {% if dest.stage == stage.key %}selected{% endif %}>{{ stage.name }}</option>
-                {% endfor %}
-              </optgroup>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="fb-map-section">
       <div class="fb-section-head fb-section-head--split">
-        <span class="fb-step">2</span>
+        <span class="fb-step">1</span>
         <div>
           <h2>Campos das perguntas</h2>
           {% if has_custom_fields %}
-          <p>Use os campos existentes do CRM. Pergunta sem destino fica em “Não usar”.</p>
+          <p>Perguntas personalizadas são obrigatórias e devem usar um campo existente do CRM.</p>
           {% else %}
-          <p>Sem campos personalizados cadastrados; perguntas extras podem criar o primeiro campo.</p>
+          <p>Perguntas personalizadas são obrigatórias. Ao salvar, o primeiro campo correspondente será criado.</p>
           {% endif %}
         </div>
         {% if has_custom_fields %}
@@ -116,13 +51,19 @@
           </thead>
           <tbody>
             {% for row in rows %}
-            <tr>
+            <tr{% if row.invalid_mapping %} class="has-error"{% endif %}>
               <td>
-                <b>{{ row.label }}</b>
+                <div class="fb-map-question">
+                  <b>{{ row.label }}</b>
+                  {% if row.required_mapping %}<span class="fb-map-required">Obrigatório</span>{% endif %}
+                </div>
                 <div class="cell-sub">{{ row.key }}</div>
               </td>
               <td>
-                <select name="map_{{ row.key }}" class="role-select" data-fb-map-select>
+                <select name="map_{{ row.key }}" class="role-select" data-fb-map-select {% if row.required_mapping %}required{% endif %}>
+                  {% if row.required_mapping %}
+                  <option value="" disabled {% if not row.current %}selected{% endif %}>Selecione onde salvar</option>
+                  {% endif %}
                   {% for group in catalog %}
                   <optgroup label="{{ group.label }}">
                     {% for token, label in group.options %}
@@ -137,15 +78,83 @@
                     <option value="new:company" {% if row.current == "new:company" %}selected{% endif %}>Novo campo na Empresa</option>
                   </optgroup>
                   {% endif %}
+                  {% if not row.required_mapping %}
                   <optgroup label=" ">
                     <option value="ignore" {% if row.current == "ignore" %}selected{% endif %}>Não usar</option>
                   </optgroup>
+                  {% endif %}
                 </select>
+                {% if row.invalid_mapping %}<div class="fb-map-field-error">Escolha um campo para esta resposta.</div>{% endif %}
               </td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="fb-map-section">
+      <div class="fb-section-head">
+        <span class="fb-step">2</span>
+        <div>
+          <h2>Registros e destino do negócio</h2>
+          <p>Escolha o que será criado. Para o negócio, defina a pipeline e a etapa de entrada.</p>
+        </div>
+      </div>
+
+      <div class="fb-record-grid">
+        <label class="fb-record" data-record-option="contact">
+          <input type="checkbox" name="create_contact" data-record-checkbox="contact" {% if dest.create_contact %}checked{% endif %}>
+          <span class="fb-record__icon fb-record__icon--contact">{% include "core/_icon.html" with icon="users" %}</span>
+          <span class="fb-record__body">
+            <b>Contato</b>
+            <small>Nome, e-mail, telefone e dados da pessoa.</small>
+            <small class="fb-record__forced">Exigido pelos campos</small>
+          </span>
+        </label>
+
+        <label class="fb-record" data-record-option="deal">
+          <input type="checkbox" name="create_deal" data-record-checkbox="deal" {% if dest.create_deal %}checked{% endif %}>
+          <span class="fb-record__icon fb-record__icon--deal">{% include "core/_icon.html" with icon="pipeline" %}</span>
+          <span class="fb-record__body">
+            <b>Negócio</b>
+            <small>Oportunidade que aparece no kanban.</small>
+            <small class="fb-record__forced">Exigido pelos campos</small>
+          </span>
+        </label>
+
+        <label class="fb-record" data-record-option="company">
+          <input type="checkbox" name="create_company" data-record-checkbox="company" {% if dest.create_company %}checked{% endif %}>
+          <span class="fb-record__icon fb-record__icon--company">{% include "core/_icon.html" with icon="building" %}</span>
+          <span class="fb-record__body">
+            <b>Empresa</b>
+            <small>Use quando o lead informar uma empresa.</small>
+            <small class="fb-record__forced">Exigido pelos campos</small>
+          </span>
+        </label>
+
+        <div class="fb-deal-config" data-deal-config>
+          <div>
+            <label for="fb-pipeline">Pipeline</label>
+            <select id="fb-pipeline" name="pipeline" class="role-select" data-fb-pipeline>
+              {% for pipeline in pipelines %}
+              <option value="{{ pipeline.pk }}" {% if dest.pipeline == pipeline.pk|stringformat:'s' %}selected{% endif %}>{{ pipeline.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label for="fb-deal-stage">Etapa de entrada</label>
+            <select id="fb-deal-stage" name="deal_stage" class="role-select" data-fb-stage>
+              {% for pipeline in pipelines %}
+              <optgroup label="{{ pipeline.name }}" data-pipeline="{{ pipeline.pk }}">
+                {% for stage in pipeline.stages.all %}
+                <option value="{{ stage.key }}" data-pipeline="{{ pipeline.pk }}" {% if dest.pipeline == pipeline.pk|stringformat:'s' and dest.stage == stage.key %}selected{% endif %}>{{ stage.name }}</option>
+                {% endfor %}
+              </optgroup>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -163,6 +172,8 @@
 
       var out = form.querySelector("[data-fb-summary]");
       var dealConfig = form.querySelector("[data-deal-config]");
+      var pipelineSelect = form.querySelector("[data-fb-pipeline]");
+      var stageSelect = form.querySelector("[data-fb-stage]");
       var mapSelects = Array.prototype.slice.call(form.querySelectorAll("[data-fb-map-select]"));
       var recordBoxes = {
         contact: form.querySelector('[data-record-checkbox="contact"]'),
@@ -171,54 +182,79 @@
       };
 
       function optText(name) {
-        var s = form.querySelector('[name="' + name + '"]');
-        return s && s.options && s.selectedIndex >= 0 ? s.options[s.selectedIndex].text : "";
+        var select = form.querySelector('[name="' + name + '"]');
+        return select && select.options && select.selectedIndex >= 0 ? select.options[select.selectedIndex].text : "";
       }
 
       function isOn(name) {
-        var c = form.querySelector('[name="' + name + '"]');
-        return !!(c && c.checked);
+        var checkbox = form.querySelector('[name="' + name + '"]');
+        return !!(checkbox && checkbox.checked);
       }
 
       function objectFromToken(token) {
         if (!token || token === "ignore") return "";
         var parts = token.split(":");
         if (parts[0] === "custom" && parts.length > 1) return parts[1];
+        if (parts[0] === "new" && parts.length > 1) return parts[1];
         return parts[0] || "";
       }
 
       function syncMappedObjects() {
         var needed = { contact: false, deal: false, company: false };
         mapSelects.forEach(function (select) {
-          var obj = objectFromToken(select.value);
-          if (Object.prototype.hasOwnProperty.call(needed, obj)) needed[obj] = true;
+          var objectType = objectFromToken(select.value);
+          if (Object.prototype.hasOwnProperty.call(needed, objectType)) needed[objectType] = true;
         });
 
-        Object.keys(needed).forEach(function (obj) {
-          var box = recordBoxes[obj];
-          var card = form.querySelector('[data-record-option="' + obj + '"]');
-          if (needed[obj] && box) box.checked = true;
-          if (card) card.classList.toggle("is-forced", needed[obj]);
+        Object.keys(needed).forEach(function (objectType) {
+          var checkbox = recordBoxes[objectType];
+          var card = form.querySelector('[data-record-option="' + objectType + '"]');
+          if (checkbox) {
+            if (needed[objectType]) checkbox.checked = true;
+            checkbox.disabled = needed[objectType];
+          }
+          if (card) card.classList.toggle("is-forced", needed[objectType]);
         });
       }
 
+      function syncStages() {
+        if (!pipelineSelect || !stageSelect) return;
+        var pipelineId = pipelineSelect.value;
+        var firstAvailable = null;
+        var selectedIsAvailable = false;
+
+        Array.prototype.forEach.call(stageSelect.querySelectorAll("optgroup"), function (group) {
+          var groupIsAvailable = group.dataset.pipeline === pipelineId;
+          group.hidden = !groupIsAvailable;
+          Array.prototype.forEach.call(group.querySelectorAll("option"), function (option) {
+            option.disabled = !groupIsAvailable;
+            if (groupIsAvailable && !firstAvailable) firstAvailable = option;
+            if (groupIsAvailable && option.selected) selectedIsAvailable = true;
+          });
+        });
+
+        if (!selectedIsAvailable && firstAvailable) firstAvailable.selected = true;
+      }
+
       function syncRecordUi() {
-        Object.keys(recordBoxes).forEach(function (obj) {
-          var box = recordBoxes[obj];
-          var card = form.querySelector('[data-record-option="' + obj + '"]');
-          if (card) card.classList.toggle("is-active", !!(box && box.checked));
+        Object.keys(recordBoxes).forEach(function (objectType) {
+          var checkbox = recordBoxes[objectType];
+          var card = form.querySelector('[data-record-option="' + objectType + '"]');
+          if (card) card.classList.toggle("is-active", !!(checkbox && checkbox.checked));
         });
         if (dealConfig) {
           var dealOn = isOn("create_deal");
           dealConfig.hidden = !dealOn;
           dealConfig.querySelectorAll("select").forEach(function (select) {
             select.disabled = !dealOn;
+            select.required = dealOn;
           });
         }
       }
 
       function refresh() {
         syncMappedObjects();
+        syncStages();
         syncRecordUi();
         var parts = [];
         if (isOn("create_contact")) parts.push("Contato");

@@ -197,6 +197,7 @@ class Event(models.Model):
     """
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="events")
     event_type = models.CharField(max_length=40, choices=EVENT_CHOICES)
+    source_key = models.CharField(max_length=180, blank=True, default="", db_index=True)
     object_repr = models.CharField(max_length=200, blank=True)
     payload = models.JSONField(default=dict, blank=True)
     processed = models.BooleanField(default=False)
@@ -206,6 +207,13 @@ class Event(models.Model):
         ordering = ["-created_at"]
         verbose_name = "Evento"
         verbose_name_plural = "Eventos"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "event_type", "source_key"],
+                condition=~models.Q(source_key=""),
+                name="unique_event_source_key",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.get_event_type_display()} · {self.object_repr}"

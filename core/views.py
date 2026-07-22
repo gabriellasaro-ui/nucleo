@@ -1697,6 +1697,15 @@ def _facebook_suggest_target(question, ws, allow_new_fields=None):
     return "new:deal" if allow_new_fields else "ignore"
 
 
+def _facebook_question_requires_mapping(question):
+    """Native custom questions carry business data and cannot be discarded."""
+    from core.events import _norm_key
+
+    question_type = str(question.get("type") or "").strip().upper()
+    norm = _norm_key(question.get("key") or question.get("label") or "")
+    return question_type == "CUSTOM" or bool(norm and norm not in _FB_SUGGEST)
+
+
 def _facebook_body_key_for_token(token):
     """Resolve a mapping token to the body key the create actions read from."""
     if not token or token == "ignore":
@@ -1826,6 +1835,8 @@ def _facebook_destino_needs(mapping):
         if token.startswith("custom:"):
             parts = token.split(":", 2)
             obj = parts[1] if len(parts) == 3 else ""
+        elif token.startswith("new:"):
+            obj = token.split(":", 1)[1]
         elif ":" in token:
             obj = token.split(":", 1)[0]
         if obj in needs:
@@ -1922,44 +1933,97 @@ def facebook_form_map(request, form_id):
     )
     has_custom_fields = _facebook_has_custom_fields(ws)
     allow_new_fields = not has_custom_fields
+    questions = _facebook_form_questions(conn, form_id)
+    pipelines = _automation_pipelines(ws)
+    submitted_map = None
+    invalid_mapping_keys = set()
+    submitted_dest = None
     if request.method == "POST":
         raw = {}
         for key in request.POST:
             match = re.match(r"map_(.+)$", key)
             if match:
                 raw[match.group(1)] = request.POST.get(key, "ignore").strip()
-        # Resolve legacy/new tokens before validating the saved map.
-        raw = _facebook_resolve_new_fields(ws, raw, allow_new_fields=allow_new_fields)
-        valid = _facebook_valid_targets(ws)  # includes any fields just created
-        new_map = {qkey: (token if token in valid else "ignore") for qkey, token in raw.items()}
-        # If a field was mapped to an object, force that object on so its answer
-        # is not lost.
-        needs = _facebook_destino_needs(new_map)
-        destino = {
+        valid_input = _facebook_valid_targets(ws)
+        if allow_new_fields:
+            valid_input.update({"new:contact", "new:company", "new:deal"})
+        candidate_map = {
+            question["key"]: (
+                raw.get(question["key"], "ignore")
+                if raw.get(question["key"], "ignore") in valid_input
+                else "ignore"
+            )
+            for question in questions
+        }
+
+        required_questions = [
+            question for question in questions
+            if _facebook_question_requires_mapping(question)
+        ]
+        invalid_mapping_keys = {
+            question["key"] for question in required_questions
+            if candidate_map.get(question["key"]) in {None, "", "ignore"}
+        }
+
+        # A mapped object is always created; the checkbox cannot discard data.
+        needs = _facebook_destino_needs(candidate_map)
+        submitted_dest = {
             "create_contact": bool(request.POST.get("create_contact")) or needs["contact"],
             "create_company": bool(request.POST.get("create_company")) or needs["company"],
             "create_deal": bool(request.POST.get("create_deal")) or needs["deal"],
             "pipeline": request.POST.get("pipeline", "").strip(),
             "stage": request.POST.get("deal_stage", "").strip(),
         }
-        form_maps = dict(cfg.get("form_maps") or {})
-        form_maps[form_id] = new_map
-        form_dest = dict(cfg.get("form_dest") or {})
-        form_dest[form_id] = destino
-        conn.config = {**cfg, "form_maps": form_maps, "form_dest": form_dest}
-        conn.save(update_fields=["config", "updated_at"])
-        auto = _facebook_build_automation(ws, conn, form_id, form_name, destino)
-        if auto.active:
-            messages.success(request, f"Formulário “{form_name}” configurado — leads viram registros automaticamente.")
-        else:
-            messages.warning(request, "Mapeamento salvo, mas nenhum registro foi marcado para criar — o fluxo ficou pausado.")
-        return redirect("facebook_forms")
 
-    saved = (cfg.get("form_maps") or {}).get(form_id, {})
-    questions = _facebook_form_questions(conn, form_id)
+        errors = []
+        if invalid_mapping_keys:
+            errors.append("Escolha onde salvar todas as perguntas personalizadas do formulário.")
+
+        if submitted_dest["create_deal"]:
+            selected_pipeline = next(
+                (pipeline for pipeline in pipelines if str(pipeline.pk) == submitted_dest["pipeline"]),
+                None,
+            )
+            selected_stage = (
+                selected_pipeline.stages.filter(key=submitted_dest["stage"]).first()
+                if selected_pipeline else None
+            )
+            if selected_pipeline is None:
+                errors.append("Escolha uma pipeline válida para o negócio.")
+            elif selected_stage is None:
+                errors.append("Escolha uma etapa que pertença à pipeline selecionada.")
+        else:
+            submitted_dest["pipeline"] = ""
+            submitted_dest["stage"] = ""
+
+        if errors:
+            for error in errors:
+                messages.error(request, error)
+            submitted_map = candidate_map
+        else:
+            # New-field tokens are resolved only after every validation passes.
+            new_map = _facebook_resolve_new_fields(
+                ws, candidate_map, allow_new_fields=allow_new_fields
+            )
+            destino = submitted_dest
+            form_maps = dict(cfg.get("form_maps") or {})
+            form_maps[form_id] = new_map
+            form_dest = dict(cfg.get("form_dest") or {})
+            form_dest[form_id] = destino
+            conn.config = {**cfg, "form_maps": form_maps, "form_dest": form_dest}
+            conn.save(update_fields=["config", "updated_at"])
+            auto = _facebook_build_automation(ws, conn, form_id, form_name, destino)
+            if auto.active:
+                messages.success(request, f"Formulário “{form_name}” configurado — leads viram registros automaticamente.")
+            else:
+                messages.warning(request, "Mapeamento salvo, mas nenhum registro foi marcado para criar — o fluxo ficou pausado.")
+            return redirect("facebook_forms")
+
+    saved = submitted_map if submitted_map is not None else (cfg.get("form_maps") or {}).get(form_id, {})
     valid_targets = _facebook_valid_targets(ws)
     rows = []
     for question in questions:
+        required_mapping = _facebook_question_requires_mapping(question)
         current = saved.get(question["key"]) or _facebook_suggest_target(
             question, ws, allow_new_fields=allow_new_fields
         )
@@ -1967,15 +2031,18 @@ def facebook_form_map(request, form_id):
             current = "ignore"
         elif current not in valid_targets and not (allow_new_fields and current.startswith("new:")):
             current = "ignore"
+        if required_mapping and current == "ignore":
+            current = ""
         rows.append({
             "key": question["key"],
             "label": question["label"],
             "type": question.get("type", ""),
             "current": current,
+            "required_mapping": required_mapping,
+            "invalid_mapping": question["key"] in invalid_mapping_keys,
         })
     # Destino state: last saved for this form, else sensible defaults.
-    dest = (cfg.get("form_dest") or {}).get(form_id) or {"create_contact": True, "create_deal": True}
-    pipelines = _automation_pipelines(ws)
+    dest = submitted_dest or (cfg.get("form_dest") or {}).get(form_id) or {"create_contact": True, "create_deal": True}
     return render(request, "core/facebook_form_map.html", {
         "page_title": "Configurar formulário",
         "breadcrumb": ["Configurações", "Integrações", "Facebook", "Configurar"],
@@ -2140,28 +2207,54 @@ def facebook_leadgen(request):
             with tenant_context(ws):
                 set_current_workspace(ws)
                 try:
+                    source_key = f"facebook:{page_id}:{leadgen_id}"[:180]
+                    if Event.objects.filter(
+                        workspace=ws,
+                        event_type="facebook_lead",
+                        source_key=source_key,
+                    ).exists():
+                        continue
                     data = _facebook_fetch_lead(leadgen_id, ws)
                     if data:
                         # Apply the form's field mapping (if the gestor configured one)
                         # so answers land on the exact CRM fields they chose.
                         data = _facebook_apply_form_map(conn, form_id, data)
-                        event = Event.objects.create(
-                            workspace=ws,
-                            event_type="facebook_lead",
-                            object_repr=f"Lead do Facebook — {form_name}" if form_name else "Lead do Facebook",
-                            payload={"body": data, "source": "facebook", "page_id": page_id,
-                                     "form_id": form_id, "form_name": form_name},
-                        )
-                        # One trigger per form: run only automations whose trigger form
-                        # matches this lead's form (empty = any form).
-                        for auto in Automation.objects.filter(workspace=ws, active=True, trigger="facebook_lead"):
-                            trigger_form = str(_automation_trigger_data(auto).get("trigger_form_id") or "")
-                            if trigger_form and trigger_form != form_id:
+                        with transaction.atomic():
+                            event, event_created = Event.objects.get_or_create(
+                                workspace=ws,
+                                event_type="facebook_lead",
+                                source_key=source_key,
+                                defaults={
+                                    "object_repr": (
+                                        f"Lead do Facebook — {form_name}"
+                                        if form_name else "Lead do Facebook"
+                                    ),
+                                    "payload": {
+                                        "body": data,
+                                        "source": "facebook",
+                                        "page_id": page_id,
+                                        "form_id": form_id,
+                                        "form_name": form_name,
+                                        "leadgen_id": str(leadgen_id),
+                                    },
+                                },
+                            )
+                            if not event_created:
                                 continue
-                            run_automation_for_event(auto, event, None)
-                        event.processed = True
-                        event.save(update_fields=["processed"])
-                        processed += 1
+                            # One trigger per form: run only automations whose trigger
+                            # form matches this lead's form (empty = any form).
+                            for auto in Automation.objects.filter(
+                                workspace=ws, active=True, trigger="facebook_lead"
+                            ):
+                                trigger_form = str(
+                                    _automation_trigger_data(auto).get("trigger_form_id") or ""
+                                )
+                                if trigger_form and trigger_form != form_id:
+                                    continue
+                                run_automation_for_event(auto, event, None)
+                            event.processed = True
+                            event.save(update_fields=["processed"])
+                            processed += 1
                 finally:
                     clear_current_workspace()
     return JsonResponse({"received": True, "processed": processed})

@@ -1366,6 +1366,8 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
   margin: 2px 0 0;
   accent-color: var(--blue-600);
 }
+.fb-record input:disabled { cursor: not-allowed; }
+.fb-record.is-forced { cursor: default; }
 .fb-record.is-active {
   border-color: var(--blue-200);
   background: var(--blue-50);
@@ -1443,6 +1445,32 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .fb-map-table .tbl tbody td:last-child {
   width: 320px;
   text-align: left;
+}
+.fb-map-question {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fb-map-required {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid #fed7aa;
+  border-radius: var(--r-full);
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 700;
+}
+.fb-map-table tr.has-error td { background: #fffafa; }
+.fb-map-table tr.has-error select { border-color: #dc2626; }
+.fb-map-field-error {
+  margin-top: 5px;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 600;
 }
 .fb-map-actions {
   display: flex;

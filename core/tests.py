@@ -25,6 +25,7 @@ from .views import (
     _facebook_body_key_for_token,
     _facebook_build_automation,
     _facebook_destino_needs,
+    _facebook_question_requires_mapping,
     _facebook_resolve_new_fields,
     _facebook_suggest_target,
     _facebook_target_catalog,
@@ -283,6 +284,17 @@ class FacebookMappingLogicTests(SimpleTestCase):
         ]})
         self.assertEqual(_automation_trigger_data(auto).get("trigger_form_id"), "F1")
 
+    def test_native_custom_questions_require_a_destination(self):
+        self.assertTrue(_facebook_question_requires_mapping({
+            "key": "qual_orcamento", "label": "Qual o orçamento?", "type": "CUSTOM",
+        }))
+        self.assertTrue(_facebook_question_requires_mapping({
+            "key": "qual_produto", "label": "Qual produto?", "type": "",
+        }))
+        self.assertFalse(_facebook_question_requires_mapping({
+            "key": "email", "label": "Email", "type": "EMAIL",
+        }))
+
 
 class FacebookMappingCatalogTests(TransactionTestCase):
     """Suggestions and the target catalog resolve the workspace's custom fields."""
@@ -362,6 +374,10 @@ class FacebookDestinoNeedsTests(SimpleTestCase):
         self.assertTrue(needs["contact"])
         self.assertFalse(needs["deal"])
         self.assertFalse(needs["company"])
+
+    def test_pending_new_field_already_forces_its_object(self):
+        needs = _facebook_destino_needs({"q1": "new:deal"})
+        self.assertTrue(needs["deal"])
 
 
 class EditorTriggerChoicesTests(SimpleTestCase):
@@ -445,6 +461,25 @@ class FacebookFlowGeneratorTests(TransactionTestCase):
         auto2 = _facebook_build_automation(self.ws, self.conn, "F1", "Forms Qualify-01 (novo nome)", destino)
         self.assertEqual(auto1.pk, auto2.pk)
         self.assertEqual(Automation.objects.filter(workspace=self.ws).count(), 1)
+
+    def test_facebook_source_key_is_idempotent(self):
+        with tenant_context(self.ws):
+            first, first_created = Event.objects.get_or_create(
+                workspace=self.ws,
+                event_type="facebook_lead",
+                source_key="facebook:P1:L1",
+                defaults={"object_repr": "Lead 1"},
+            )
+            second, second_created = Event.objects.get_or_create(
+                workspace=self.ws,
+                event_type="facebook_lead",
+                source_key="facebook:P1:L1",
+                defaults={"object_repr": "Lead duplicado"},
+            )
+
+        self.assertTrue(first_created)
+        self.assertFalse(second_created)
+        self.assertEqual(first.pk, second.pk)
 
     def test_generated_canvas_survives_a_parse_roundtrip(self):
         destino, _ = self._destino()
