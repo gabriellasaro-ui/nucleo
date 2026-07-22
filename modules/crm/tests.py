@@ -15,7 +15,10 @@ from core.events import _condition_matches
 from core.models import CustomField, Event, IntegrationConnection
 from core.tenancy import clear_current_workspace, set_current_workspace
 from core.views import whatsapp_webhook
-from core.whatsapp_inbox import normalize_whatsapp_phone
+from core.whatsapp_inbox import (
+    normalize_whatsapp_phone,
+    sync_whatsapp_contact_directory,
+)
 
 from .models import (
     Company, Contact, Deal, Pipeline, Tag, WhatsAppConversation, WhatsAppMessage,
@@ -150,8 +153,34 @@ class WhatsAppInboxTests(TenantTestBase):
         conversation = WhatsAppConversation.objects.get()
         self.assertEqual(conversation.last_message, "Mensagem anterior")
         self.assertEqual(conversation.unread_count, 0)
-        self.assertEqual(conversation.contact.full_name, "Lead Antigo")
+        self.assertIsNone(conversation.contact)
+        self.assertFalse(Contact.objects.exists())
         self.assertEqual(WhatsAppMessage.objects.get().provider_message_id, "HISTORY-1")
+
+    def test_contact_directory_names_conversations_without_importing_the_phonebook(self):
+        conversation = WhatsAppConversation.objects.create(
+            workspace=self.tenant,
+            instance_id="INSTANCE-1",
+            remote_jid="5511777776666@s.whatsapp.net",
+            phone="5511777776666",
+            name="",
+        )
+
+        result = sync_whatsapp_contact_directory(
+            self.tenant,
+            "INSTANCE-1",
+            [{
+                "Jid": "5511777776666@s.whatsapp.net",
+                "FullName": "",
+                "BusinessName": "",
+                "PushName": "Cliente Conhecido",
+            }],
+        )
+
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.name, "Cliente Conhecido")
+        self.assertEqual(result["conversation_updates"], 1)
+        self.assertFalse(Contact.objects.exists())
 
 
 class PipelineStageTests(TenantTestBase):

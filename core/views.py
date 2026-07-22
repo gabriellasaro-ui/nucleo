@@ -34,12 +34,14 @@ from .whatsapp_inbox import (
     ingest_whatsapp_event,
     normalize_whatsapp_phone,
     record_outgoing_message,
+    sync_whatsapp_contact_directory,
 )
 from .whatsapp_service import (
     EvoGoError,
     connect_instance,
     create_instance,
     evogo_is_configured,
+    get_contacts,
     get_instance_qr,
     get_instance_status,
     logout_instance,
@@ -1305,8 +1307,34 @@ def whatsapp(request):
         connection.status = "disconnected"
         connection.save(update_fields=["status", "updated_at"])
 
+    if (
+        connection
+        and logged_in
+        and config.get("contact_directory_synced_for") != config.get("instance_id")
+    ):
+        try:
+            directory = get_contacts(config["instance_token"])
+            sync_result = sync_whatsapp_contact_directory(
+                ws, config.get("instance_id", ""), directory,
+            )
+            config = {
+                **config,
+                "contact_directory_synced_for": config.get("instance_id", ""),
+                "contact_directory_count": sync_result["directory_count"],
+            }
+            connection.config = config
+            connection.save(update_fields=["config", "updated_at"])
+        except EvoGoError as exc:
+            api_error = api_error or str(exc)
+
     search = request.GET.get("q", "").strip()
-    conversations = WhatsAppConversation.objects.filter(workspace=ws).select_related("contact")
+    inbox_section = request.GET.get("view", "conversations").strip()
+    if inbox_section not in {"conversations", "contacts"}:
+        inbox_section = "conversations"
+
+    conversation_base = WhatsAppConversation.objects.filter(workspace=ws)
+    conversation_count = conversation_base.count()
+    conversations = conversation_base.select_related("contact")
     if search:
         conversation_query = (
             Q(name__icontains=search)
@@ -1318,6 +1346,28 @@ def whatsapp(request):
             conversation_query |= Q(phone__icontains=search_phone)
         conversations = conversations.filter(conversation_query)
     conversations = list(conversations[:100])
+
+    contacts = Contact.objects.filter(workspace=ws).exclude(phone="")
+    contact_count = contacts.count()
+    if inbox_section == "contacts" and search:
+        contacts = contacts.filter(
+            Q(first_name__icontains=search)
+            | Q(last_name__icontains=search)
+            | Q(email__icontains=search)
+            | Q(phone__icontains=search)
+        )
+    contact_options = list(contacts.order_by("first_name", "last_name")[:200])
+    conversations_by_contact = {
+        conversation.contact_id: conversation.pk
+        for conversation in WhatsAppConversation.objects.filter(
+            workspace=ws,
+            instance_id=config.get("instance_id", ""),
+            contact_id__in=[contact.pk for contact in contact_options],
+        )
+        if conversation.contact_id
+    }
+    for contact in contact_options:
+        contact.whatsapp_conversation_id = conversations_by_contact.get(contact.pk)
 
     selected = None
     selected_id = request.GET.get("conversation", "").strip()
@@ -1333,6 +1383,7 @@ def whatsapp(request):
     draft_contact = None
     contact_id = request.GET.get("contact", "").strip()
     if contact_id.isdigit():
+        inbox_section = "contacts"
         draft_contact = Contact.objects.filter(
             workspace=ws, pk=int(contact_id),
         ).first()
@@ -1346,7 +1397,12 @@ def whatsapp(request):
                 selected = existing
                 draft_contact = None
 
-    if not selected and not draft_contact and conversations:
+    if (
+        inbox_section == "conversations"
+        and not selected
+        and not draft_contact
+        and conversations
+    ):
         selected = conversations[0]
     if selected and selected.unread_count:
         selected.unread_count = 0
@@ -1356,9 +1412,12 @@ def whatsapp(request):
     if selected:
         thread_messages = list(selected.messages.order_by("-sent_at", "-id")[:300])
         thread_messages.reverse()
-    contact_options = Contact.objects.filter(
-        workspace=ws,
-    ).exclude(phone="").order_by("first_name", "last_name")[:200]
+    inbox_version = (
+        WhatsAppConversation.objects.filter(workspace=ws)
+        .order_by("-updated_at")
+        .values_list("updated_at", flat=True)
+        .first()
+    )
 
     return render(request, "core/whatsapp.html", {
         "page_title": "WhatsApp",
@@ -1375,7 +1434,11 @@ def whatsapp(request):
         "draft_contact": draft_contact,
         "thread_messages": thread_messages,
         "contact_options": contact_options,
+        "contact_count": contact_count,
+        "conversation_count": conversation_count,
         "conversation_search": search,
+        "inbox_section": inbox_section,
+        "whatsapp_inbox_version": inbox_version,
     })
 
 
@@ -1455,6 +1518,12 @@ def whatsapp_status(request):
     if connection.status != ("connected" if connected else "disconnected"):
         connection.status = "connected" if connected else "disconnected"
         connection.save(update_fields=["status", "updated_at"])
+    latest_conversation = (
+        WhatsAppConversation.objects.filter(workspace=request.workspace)
+        .order_by("-updated_at")
+        .values_list("updated_at", flat=True)
+        .first()
+    )
     return JsonResponse({
         "configured": True,
         "connected": connected,
@@ -1463,7 +1532,51 @@ def whatsapp_status(request):
         "pairing_code": qr.get("code", ""),
         "passkey_stage": qr.get("passkeyStage", ""),
         "passkey_url": qr.get("passkeyOpenUrl", ""),
+        "conversation_count": WhatsAppConversation.objects.filter(
+            workspace=request.workspace,
+        ).count(),
+        "contact_count": Contact.objects.filter(
+            workspace=request.workspace,
+        ).exclude(phone="").count(),
+        "inbox_version": latest_conversation.isoformat() if latest_conversation else "",
     })
+
+
+@login_required
+@require_role("admin")
+@require_POST
+def whatsapp_sync_contacts(request):
+    connection = IntegrationConnection.objects.filter(
+        workspace=request.workspace,
+        provider="whatsapp",
+        status="connected",
+    ).first()
+    config = connection.config if connection else {}
+    if not config.get("instance_token"):
+        messages.error(request, "Conecte o WhatsApp antes de sincronizar os contatos.")
+        return redirect("whatsapp")
+    try:
+        directory = get_contacts(config["instance_token"])
+        result = sync_whatsapp_contact_directory(
+            request.workspace,
+            config.get("instance_id", ""),
+            directory,
+        )
+    except EvoGoError as exc:
+        messages.error(request, f"Não foi possível sincronizar os contatos: {exc}")
+        return redirect("whatsapp")
+
+    connection.config = {
+        **config,
+        "contact_directory_synced_for": config.get("instance_id", ""),
+        "contact_directory_count": result["directory_count"],
+    }
+    connection.save(update_fields=["config", "updated_at"])
+    messages.success(
+        request,
+        f"Contatos sincronizados. {result['conversation_updates']} conversa(s) atualizada(s).",
+    )
+    return redirect("whatsapp")
 
 
 @login_required

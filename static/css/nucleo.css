@@ -2415,8 +2415,9 @@ kbd {
 .wa-inline-error { color: var(--red-600); font-size: 13px; }
 .wa-inbox {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-  height: clamp(560px, calc(100vh - 190px), 820px);
+  grid-template-columns: minmax(320px, 370px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  height: clamp(540px, calc(100vh - 175px), 780px);
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2430,21 +2431,38 @@ kbd {
   border-right: 1px solid var(--border);
   background: var(--surface);
 }
-.wa-sidebar-head { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid var(--border); }
-.wa-sidebar-head > div { display: flex; align-items: center; justify-content: space-between; color: var(--ink); }
-.wa-sidebar-head > div span { color: var(--ink-3); font-size: 12px; }
-.wa-new-chat { display: grid; grid-template-columns: minmax(0, 1fr) 32px; gap: 6px; }
-.wa-new-chat select {
-  width: 100%;
-  min-width: 0;
-  height: 34px;
-  padding: 0 8px;
+.wa-sidebar-head { display: grid; gap: 12px; padding: 14px; border-bottom: 1px solid var(--border); }
+.wa-sidebar-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wa-sidebar-title > div { min-width: 0; display: grid; gap: 2px; }
+.wa-sidebar-title form { margin: 0; }
+.wa-sidebar-title b { color: var(--ink); font-size: 15px; }
+.wa-sidebar-title span { color: var(--ink-3); font-size: 11.5px; }
+.wa-sidebar-title .icon-btn { width: 30px; height: 30px; }
+.wa-inbox-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink-2);
-  font-size: 12.5px;
+  border-radius: 7px;
+  background: var(--surface-2);
 }
+.wa-inbox-tabs a {
+  min-width: 0;
+  height: 31px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 5px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+.wa-inbox-tabs a:hover { color: var(--ink); }
+.wa-inbox-tabs a.is-active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
+.wa-inbox-tabs a span { min-width: 18px; padding: 1px 5px; border-radius: 8px; background: #e7ebf0; color: var(--ink-2); font-size: 10px; text-align: center; }
+.wa-inbox-tabs a.is-active span { background: var(--blue-50); color: var(--blue-700); }
 .wa-search {
   height: 34px;
   display: flex;
@@ -2500,8 +2518,25 @@ kbd {
   font-size: 10px;
   font-weight: 700;
 }
-.wa-sidebar-empty { padding: 28px 16px; text-align: center; color: var(--ink-3); font-size: 13px; }
-.wa-thread { min-width: 0; min-height: 0; display: grid; grid-template-rows: 64px minmax(0, 1fr) auto; background: #f4f6f8; }
+.wa-contact-action { width: 26px; height: 26px; display: grid; place-items: center; color: var(--ink-3); }
+.wa-contact-action svg { width: 15px; height: 15px; }
+.wa-conversation:hover .wa-contact-action, .wa-conversation.is-active .wa-contact-action { color: var(--blue-600); }
+.wa-sidebar-empty {
+  min-height: 230px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  padding: 28px 22px;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.wa-sidebar-empty > svg { width: 24px; height: 24px; margin-bottom: 3px; color: var(--ink-3); }
+.wa-sidebar-empty b { color: var(--ink-2); font-size: 13px; }
+.wa-sidebar-empty span { max-width: 260px; line-height: 1.45; }
+.wa-sidebar-empty a { margin-top: 4px; color: var(--blue-700); font-weight: 600; }
+.wa-thread { min-width: 0; min-height: 0; display: grid; grid-template-rows: 64px minmax(0, 1fr) auto; overflow: hidden; background: #f7f8fa; }
 .wa-thread__head {
   display: flex;
   align-items: center;
@@ -2538,6 +2573,8 @@ kbd {
   font-size: 13px;
 }
 .wa-thread-empty svg, .wa-thread-placeholder svg { width: 28px; height: 28px; }
+.wa-thread-placeholder b { color: var(--ink-2); font-size: 14px; }
+.wa-thread-placeholder span { max-width: 360px; padding: 0 18px; text-align: center; line-height: 1.45; }
 .wa-composer {
   min-height: 62px;
   display: grid;
@@ -2569,13 +2606,13 @@ kbd {
 .icon-btn--primary:hover { background: #087b50; color: #fff; }
 .record__actions { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 760px) {
-  .wa-page-head { align-items: flex-start; }
+  .wa-page-head { flex-direction: column; align-items: flex-start; gap: 10px; }
   .wa-page-head .page-actions { width: 100%; justify-content: flex-start; }
   .wa-setup-panel { align-items: flex-start; flex-wrap: wrap; }
   .wa-setup-panel--connect form { width: 100%; margin-left: 60px; }
   .wa-pairing { grid-template-columns: 1fr; width: 100%; gap: 24px; padding: 18px; }
   .wa-pairing__qr { width: min(100%, 300px); margin: auto; }
-  .wa-inbox { grid-template-columns: 1fr; height: auto; min-height: 760px; }
+  .wa-inbox { grid-template-columns: 1fr; grid-template-rows: auto auto; height: auto; min-height: 760px; }
   .wa-inbox__sidebar { max-height: 300px; border-right: 0; border-bottom: 1px solid var(--border); }
   .wa-thread { min-height: 520px; }
   .wa-message > div { max-width: 88%; }

@@ -54,6 +54,54 @@ def _split_contact_name(name, phone):
     return parts[0][:120], " ".join(parts[1:])[:120]
 
 
+@transaction.atomic
+def sync_whatsapp_contact_directory(workspace, instance_id, rows):
+    names_by_phone = {}
+    for row in rows:
+        jid = str(_value(row, "Jid", "jid", default="") or "")
+        if any(suffix in jid for suffix in ("@g.us", "@broadcast", "@newsletter")):
+            continue
+        phone = normalize_whatsapp_phone(jid)
+        name = ""
+        for field in ("FullName", "BusinessName", "PushName", "FirstName"):
+            candidate = str(_value(row, field, default="") or "").strip()
+            if candidate:
+                name = candidate
+                break
+        if phone and name:
+            names_by_phone[phone] = name
+
+    conversation_updates = 0
+    contact_updates = 0
+    conversations = WhatsAppConversation.objects.filter(
+        workspace=workspace,
+        instance_id=instance_id,
+    ).select_related("contact")
+    for conversation in conversations:
+        name = names_by_phone.get(normalize_whatsapp_phone(conversation.phone))
+        if not name:
+            continue
+        if conversation.name != name:
+            conversation.name = name[:160]
+            conversation.save(update_fields=["name", "updated_at"])
+            conversation_updates += 1
+
+        contact = conversation.contact
+        if not contact or contact.last_name or not contact.first_name.startswith("WhatsApp "):
+            continue
+        first_name, last_name = _split_contact_name(name, conversation.phone)
+        contact.first_name = first_name
+        contact.last_name = last_name
+        contact.save(update_fields=["first_name", "last_name", "updated_at"])
+        contact_updates += 1
+
+    return {
+        "directory_count": len(names_by_phone),
+        "conversation_updates": conversation_updates,
+        "contact_updates": contact_updates,
+    }
+
+
 def _message_content(message):
     if not isinstance(message, dict):
         return "Mensagem", "unknown", ""
@@ -259,7 +307,7 @@ def ingest_whatsapp_event(workspace, connection, payload):
     contact = conversation.contact if conversation and conversation.contact_id else None
     if not contact:
         contact = find_contact_by_phone(phone)
-    if not contact and direction == "incoming":
+    if not contact and direction == "incoming" and not payload.get("_history_sync"):
         first_name, last_name = _split_contact_name(push_name, phone)
         contact = Contact.objects.create(
             workspace=workspace,

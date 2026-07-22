@@ -4,7 +4,7 @@
 <div class="page-head wa-page-head">
   <div>
     <h1>WhatsApp</h1>
-    <p>{% if whatsapp_connected %}{{ whatsapp_status.Name|default:"Atendimento conectado" }}{% else %}Atendimento comercial e conversas dos leads.{% endif %}</p>
+    <p>{% if whatsapp_connected %}{{ conversation_count }} conversa{{ conversation_count|pluralize }} · {{ contact_count }} contato{{ contact_count|pluralize }} com telefone{% else %}Atendimento comercial e conversas dos leads.{% endif %}</p>
   </div>
   <div class="page-actions">
     {% if whatsapp_connected %}
@@ -65,29 +65,57 @@
   </div>
 </section>
 {% else %}
-<div class="wa-inbox">
+<div class="wa-inbox" data-wa-inbox data-status-url="{% url 'whatsapp_status' %}" data-inbox-version="{{ whatsapp_inbox_version|date:'c' }}">
   <aside class="wa-inbox__sidebar">
     <div class="wa-sidebar-head">
-      <div>
-        <b>Conversas</b>
-        <span>{{ conversations|length }}</span>
+      <div class="wa-sidebar-title">
+        <div>
+          <b>Atendimento</b>
+          <span>WhatsApp conectado</span>
+        </div>
+        {% if can_admin %}
+        <form method="post" action="{% url 'whatsapp_sync_contacts' %}">
+          {% csrf_token %}
+          <button class="icon-btn" type="submit" title="Sincronizar nomes dos contatos">{% include "core/_icon.html" with icon="loop" %}</button>
+        </form>
+        {% endif %}
       </div>
-      <form method="get" class="wa-new-chat">
-        <label class="sr-only" for="id_wa_contact">Nova conversa</label>
-        <select id="id_wa_contact" name="contact" required>
-          <option value="">Nova conversa...</option>
-          {% for contact in contact_options %}
-          <option value="{{ contact.pk }}"{% if draft_contact.pk == contact.pk %} selected{% endif %}>{{ contact.full_name }} · {{ contact.phone }}</option>
-          {% endfor %}
-        </select>
-        <button class="icon-btn" type="submit" title="Iniciar conversa">{% include "core/_icon.html" with icon="plus" %}</button>
-      </form>
+      <nav class="wa-inbox-tabs" aria-label="Conteúdo do atendimento">
+        <a class="{% if inbox_section == 'conversations' %}is-active{% endif %}" href="{% url 'whatsapp' %}?view=conversations">
+          Conversas <span>{{ conversation_count }}</span>
+        </a>
+        <a class="{% if inbox_section == 'contacts' %}is-active{% endif %}" href="{% url 'whatsapp' %}?view=contacts">
+          Contatos CRM <span>{{ contact_count }}</span>
+        </a>
+      </nav>
       <form method="get" class="wa-search">
+        <input type="hidden" name="view" value="{{ inbox_section }}">
         <span>{% include "core/_icon.html" with icon="search" %}</span>
-        <input type="search" name="q" value="{{ conversation_search }}" placeholder="Buscar conversa" aria-label="Buscar conversa">
+        <input type="search" name="q" value="{{ conversation_search }}" placeholder="{% if inbox_section == 'contacts' %}Buscar contato{% else %}Buscar conversa{% endif %}" aria-label="Buscar">
       </form>
     </div>
 
+    {% if inbox_section == "contacts" %}
+    <nav class="wa-conversation-list" aria-label="Contatos do CRM">
+      {% for contact in contact_options %}
+      <a class="wa-conversation{% if draft_contact.pk == contact.pk or selected_conversation.contact_id == contact.pk %} is-active{% endif %}" href="{% url 'whatsapp' %}?{% if contact.whatsapp_conversation_id %}conversation={{ contact.whatsapp_conversation_id }}{% else %}view=contacts&amp;contact={{ contact.pk }}{% endif %}">
+        <span class="wa-avatar">{{ contact.initials }}</span>
+        <span class="wa-conversation__body">
+          <span class="wa-conversation__top"><b>{{ contact.full_name }}</b></span>
+          <span class="wa-conversation__preview">{{ contact.phone }}</span>
+        </span>
+        <span class="wa-contact-action" title="{% if contact.whatsapp_conversation_id %}Abrir conversa{% else %}Iniciar conversa{% endif %}">{% include "core/_icon.html" with icon="send" %}</span>
+      </a>
+      {% empty %}
+      <div class="wa-sidebar-empty">
+        {% include "core/_icon.html" with icon="users" %}
+        <b>Nenhum contato com telefone</b>
+        <span>Os leads dos formulários aparecerão aqui quando tiverem telefone.</span>
+        <a href="{% url 'crm:contact_list' %}">Abrir contatos do CRM</a>
+      </div>
+      {% endfor %}
+    </nav>
+    {% else %}
     <nav class="wa-conversation-list" aria-label="Conversas do WhatsApp">
       {% for conversation in conversations %}
       <a class="wa-conversation{% if selected_conversation.pk == conversation.pk %} is-active{% endif %}" href="{% url 'whatsapp' %}?conversation={{ conversation.pk }}{% if conversation_search %}&q={{ conversation_search|urlencode }}{% endif %}">
@@ -102,9 +130,15 @@
         {% if conversation.unread_count %}<span class="wa-unread">{{ conversation.unread_count }}</span>{% endif %}
       </a>
       {% empty %}
-      <div class="wa-sidebar-empty">Nenhuma conversa encontrada.</div>
+      <div class="wa-sidebar-empty">
+        {% include "core/_icon.html" with icon="loop" %}
+        <b>{% if conversation_search %}Nenhuma conversa encontrada{% else %}Aguardando conversas{% endif %}</b>
+        <span>{% if conversation_search %}Tente buscar por outro nome ou telefone.{% else %}O histórico está sendo sincronizado. Você também pode iniciar pelo contato do CRM.{% endif %}</span>
+        {% if not conversation_search %}<a href="{% url 'whatsapp' %}?view=contacts">Ver contatos do CRM</a>{% endif %}
+      </div>
       {% endfor %}
     </nav>
+    {% endif %}
   </aside>
 
   <section class="wa-thread">
@@ -146,12 +180,35 @@
     {% endif %}
     {% else %}
     <div class="wa-thread-placeholder">
-      {% include "core/_icon.html" with icon="phone" %}
-      <b>Selecione uma conversa</b>
+      {% include "core/_icon.html" with icon="note" %}
+      <b>{% if inbox_section == "contacts" %}Escolha um contato{% else %}Selecione uma conversa{% endif %}</b>
+      <span>{% if inbox_section == "contacts" %}Clique em um contato do CRM para enviar a primeira mensagem.{% else %}As mensagens do atendimento aparecerão aqui.{% endif %}</span>
     </div>
     {% endif %}
   </section>
 </div>
+{% endif %}
+
+{% if whatsapp_connected %}
+<script>
+(function () {
+  var inbox = document.querySelector("[data-wa-inbox]");
+  if (!inbox) return;
+  var initialVersion = inbox.dataset.inboxVersion || "";
+  window.setInterval(function () {
+    var draft = inbox.querySelector("textarea[name='message']");
+    if (draft && draft.value.trim()) return;
+    fetch(inbox.dataset.statusUrl, {headers: {"X-Requested-With": "XMLHttpRequest"}})
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (data) {
+        if (data && data.connected && (data.inbox_version || "") !== initialVersion) {
+          window.location.reload();
+        }
+      })
+      .catch(function () {});
+  }, 6000);
+})();
+</script>
 {% endif %}
 
 {% if whatsapp_pairing %}

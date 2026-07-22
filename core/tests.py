@@ -95,7 +95,7 @@ class RbacHelperTests(SimpleTestCase):
 
 class EvoGoClientTests(SimpleTestCase):
     @override_settings(
-        EVOGO_API_URL="https://evogo.example.test",
+        EVOGO_API_URL="https://evogo.example.test/manager",
         EVOGO_GLOBAL_API_KEY="global-secret",
     )
     @patch("core.whatsapp_service.urllib.request.urlopen")
@@ -125,6 +125,14 @@ class EvoGoClientTests(SimpleTestCase):
         self.assertNotEqual(token, "global-secret")
         self.assertEqual(create_request.get_header("Apikey"), "global-secret")
         self.assertEqual(connect_request.get_header("Apikey"), token)
+        self.assertEqual(
+            create_request.full_url,
+            "https://evogo.example.test/instance/create",
+        )
+        self.assertEqual(
+            connect_request.full_url,
+            "https://evogo.example.test/instance/connect",
+        )
         self.assertFalse(create_payload["advancedSettings"]["readMessages"])
         self.assertTrue(create_payload["advancedSettings"]["ignoreGroups"])
         self.assertIn("MESSAGE", connect_payload["subscribe"])

@@ -2,7 +2,7 @@ import json
 import secrets
 import urllib.error
 import urllib.request
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from django.conf import settings
 
@@ -15,10 +15,25 @@ def evogo_is_configured():
     return bool(settings.EVOGO_API_URL and settings.EVOGO_GLOBAL_API_KEY)
 
 
+def _evogo_base_url():
+    raw_url = settings.EVOGO_API_URL.strip()
+    parts = urlsplit(raw_url)
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        raise EvoGoError("A URL da EvoGo nao esta configurada corretamente.")
+
+    path = parts.path.rstrip("/")
+    for manager_suffix in ("/manager/login", "/manager"):
+        if path.lower().endswith(manager_suffix):
+            path = path[:-len(manager_suffix)]
+            break
+
+    path = f"{path.rstrip('/')}/" if path else "/"
+    return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
+
+
 def _evogo_request(path, *, api_key, method="GET", payload=None, timeout=15):
-    base_url = settings.EVOGO_API_URL.rstrip("/") + "/"
-    if not base_url.startswith(("http://", "https://")):
-        raise EvoGoError("A URL da EvoGo não está configurada corretamente.")
+    base_url = _evogo_base_url()
+    endpoint = f"/{path.lstrip('/')}"
 
     data = None
     headers = {"apikey": api_key, "Accept": "application/json"}
@@ -27,7 +42,7 @@ def _evogo_request(path, *, api_key, method="GET", payload=None, timeout=15):
         headers["Content-Type"] = "application/json"
 
     request = urllib.request.Request(
-        urljoin(base_url, path.lstrip("/")),
+        urljoin(base_url, endpoint.lstrip("/")),
         data=data,
         headers=headers,
         method=method,
@@ -42,7 +57,9 @@ def _evogo_request(path, *, api_key, method="GET", payload=None, timeout=15):
             detail = body.get("error") or body.get("message")
         except (json.JSONDecodeError, AttributeError):
             detail = None
-        raise EvoGoError(detail or f"EvoGo respondeu com HTTP {exc.code}.") from exc
+        raise EvoGoError(
+            detail or f"EvoGo respondeu com HTTP {exc.code} em {endpoint}."
+        ) from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         raise EvoGoError("Não foi possível acessar o servidor do WhatsApp.") from exc
 
@@ -115,6 +132,12 @@ def get_instance_qr(instance_token):
         "/instance/qr", api_key=instance_token, timeout=20,
     )
     return result.get("data") or {}
+
+
+def get_contacts(instance_token):
+    result = _evogo_request("/user/contacts", api_key=instance_token, timeout=30)
+    contacts = result.get("data") or []
+    return contacts if isinstance(contacts, list) else []
 
 
 def send_text(instance_token, phone, text):
