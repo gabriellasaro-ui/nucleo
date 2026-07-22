@@ -1878,17 +1878,21 @@ def facebook_forms(request):
     cfg = conn.config or {}
     maps = cfg.get("form_maps") or {}
     flows = cfg.get("form_flows") or {}
+    enabled_forms = cfg.get("form_enabled") or {}
     flow_autos = {a.pk: a for a in Automation.objects.filter(workspace=ws, pk__in=[v for v in flows.values() if v])}
     items = []
     for form in (cfg.get("forms") or []):
         fid = str(form.get("id"))
         auto = flow_autos.get(flows.get(fid))
+        mapped = fid in maps
+        enabled = enabled_forms.get(fid, bool(auto and auto.active))
         items.append({
             "id": fid,
             "name": form.get("name") or "Formulário",
             "status": form.get("status", ""),
-            "mapped": bool(maps.get(fid)),
-            "flow_active": bool(auto and auto.active),
+            "mapped": mapped,
+            "flow_active": bool(mapped and enabled and auto and auto.active),
+            "can_toggle": bool(mapped and auto and auto.actions),
         })
     return render(request, "core/facebook_forms.html", {
         "page_title": "Formulários do Facebook",
@@ -1896,6 +1900,88 @@ def facebook_forms(request):
         "page_name": cfg.get("page_name", ""),
         "forms": items,
     })
+
+
+def _facebook_form_accepts_leads(config, form_id):
+    """A missing flag keeps existing configured forms backward compatible."""
+    enabled_forms = (config or {}).get("form_enabled") or {}
+    return enabled_forms.get(str(form_id), True) is not False
+
+
+def _facebook_set_form_enabled(ws, conn, form_id, enabled):
+    """Pause or resume one Meta form without discarding its configuration."""
+    form_id = str(form_id)
+    with transaction.atomic():
+        locked_conn = IntegrationConnection.objects.select_for_update().get(
+            pk=conn.pk,
+            workspace=ws,
+            provider="facebook",
+        )
+        cfg = locked_conn.config or {}
+        known_forms = {
+            str(form.get("id")): form
+            for form in (cfg.get("forms") or [])
+        }
+        if form_id not in known_forms:
+            raise ValidationError("Este formulário não foi encontrado na página conectada.")
+        if form_id not in (cfg.get("form_maps") or {}):
+            raise ValidationError("Configure o formulário antes de ativá-lo ou desativá-lo.")
+
+        flow_pk = (cfg.get("form_flows") or {}).get(form_id)
+        auto = (
+            Automation.objects.select_for_update()
+            .filter(pk=flow_pk, workspace=ws, trigger="facebook_lead")
+            .first()
+            if flow_pk else None
+        )
+        if not auto:
+            raise ValidationError("A automação deste formulário não foi encontrada.")
+        if enabled and not auto.actions:
+            raise ValidationError("Configure quais registros criar antes de ativar o formulário.")
+
+        enabled_forms = dict(cfg.get("form_enabled") or {})
+        enabled_forms[form_id] = bool(enabled)
+        locked_conn.config = {**cfg, "form_enabled": enabled_forms}
+        locked_conn.save(update_fields=["config", "updated_at"])
+        auto.active = bool(enabled)
+        auto.save(update_fields=["active"])
+
+    return auto, known_forms[form_id].get("name") or "Formulário"
+
+
+@login_required
+@require_role("admin")
+@require_POST
+def facebook_form_toggle(request, form_id):
+    desired = request.POST.get("active")
+    if desired not in {"0", "1"}:
+        messages.error(request, "Ação inválida para o formulário.")
+        return redirect("facebook_forms")
+
+    conn = _facebook_active_connection(request.workspace)
+    if not conn:
+        messages.error(request, "Conecte uma página do Facebook primeiro.")
+        return redirect("integrations")
+
+    enabled = desired == "1"
+    try:
+        _auto, form_name = _facebook_set_form_enabled(
+            request.workspace, conn, form_id, enabled,
+        )
+    except ValidationError as exc:
+        messages.error(request, exc.messages[0])
+    else:
+        if enabled:
+            messages.success(
+                request,
+                f"Formulário “{form_name}” ativado. Novos leads voltarão a criar registros.",
+            )
+        else:
+            messages.success(
+                request,
+                f"Formulário “{form_name}” desativado. Mapeamento e histórico foram preservados.",
+            )
+    return redirect("facebook_forms")
 
 
 def _facebook_resolve_new_fields(
@@ -2013,7 +2099,13 @@ def _facebook_build_automation(ws, conn, form_id, form_name, destino):
     else:
         auto = Automation.objects.create(workspace=ws, **fields)
     flows[form_id] = auto.pk
-    conn.config = {**cfg, "form_flows": flows}
+    enabled_forms = dict(cfg.get("form_enabled") or {})
+    enabled_forms[form_id] = bool(ordered)
+    conn.config = {
+        **cfg,
+        "form_flows": flows,
+        "form_enabled": enabled_forms,
+    }
     conn.save(update_fields=["config", "updated_at"])
     return auto
 
@@ -2200,6 +2292,11 @@ def facebook_form_map(request, form_id):
         })
     # Destino state: last saved for this form, else sensible defaults.
     dest = submitted_dest or (cfg.get("form_dest") or {}).get(form_id) or {"create_contact": True, "create_deal": True}
+    flow_pk = (cfg.get("form_flows") or {}).get(form_id)
+    flow_auto = (
+        Automation.objects.filter(pk=flow_pk, workspace=ws).first()
+        if flow_pk else None
+    )
     return render(request, "core/facebook_form_map.html", {
         "page_title": "Configurar formulário",
         "breadcrumb": ["Configurações", "Integrações", "Facebook", "Configurar"],
@@ -2212,7 +2309,17 @@ def facebook_form_map(request, form_id):
         "dest": dest,
         "has_custom_fields": has_custom_fields,
         "allow_new_fields": allow_new_fields,
-        "flow_pk": (cfg.get("form_flows") or {}).get(form_id),
+        "flow_pk": flow_pk,
+        "form_can_toggle": bool(
+            form_id in (cfg.get("form_maps") or {})
+            and flow_auto
+            and flow_auto.actions
+        ),
+        "form_flow_active": bool(
+            flow_auto
+            and flow_auto.active
+            and _facebook_form_accepts_leads(cfg, form_id)
+        ),
     })
 
 
@@ -2386,6 +2493,8 @@ def facebook_leadgen(request):
                 .select_related("workspace").first()
             )
             if not conn:
+                continue
+            if not _facebook_form_accepts_leads(conn.config, form_id):
                 continue
             ws = conn.workspace
             form_name = next(

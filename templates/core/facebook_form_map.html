@@ -9,6 +9,21 @@
       <h1>{{ form_name }}</h1>
       <p>Confira onde cada resposta será salva e escolha a entrada do negócio na pipeline.</p>
     </div>
+    {% if form_can_toggle %}
+      {% if form_flow_active %}
+      <form method="post" action="{% url 'facebook_form_toggle' form_id %}" data-confirm="Desativar o formulário &quot;{{ form_name|escapejs }}&quot;? Novos leads deixarão de criar registros no CRM.">
+        {% csrf_token %}
+        <input type="hidden" name="active" value="0">
+        <button class="btn btn--danger btn--sm" type="submit">{% include "core/_icon.html" with icon="pause" %} Desativar formulário</button>
+      </form>
+      {% else %}
+      <form method="post" action="{% url 'facebook_form_toggle' form_id %}">
+        {% csrf_token %}
+        <input type="hidden" name="active" value="1">
+        <button class="btn btn--primary btn--sm" type="submit">{% include "core/_icon.html" with icon="play" %} Ativar formulário</button>
+      </form>
+      {% endif %}
+    {% endif %}
   </div>
 
   {% if not has_questions %}

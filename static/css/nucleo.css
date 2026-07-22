@@ -1267,6 +1267,14 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .cell-primary b { color: var(--ink); font-weight: 600; }
 .cell-sub { color: var(--ink-3); font-size: 12.5px; }
 
+.fb-form-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.fb-form-row-actions form { margin: 0; }
+
 /* Facebook form mapping: compact review flow ----------------------------- */
 .fb-map-page { max-width: 900px; }
 .fb-map-page__head { margin-bottom: 24px; }

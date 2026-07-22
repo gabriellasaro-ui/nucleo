@@ -30,8 +30,10 @@ from .views import (
     _facebook_candidate_map,
     _facebook_destino_needs,
     _facebook_ensure_attribution_fields,
+    _facebook_form_accepts_leads,
     _facebook_question_requires_mapping,
     _facebook_resolve_new_fields,
+    _facebook_set_form_enabled,
     _facebook_suggest_target,
     _facebook_target_catalog,
     _normalize_facebook_leadgen,
@@ -412,6 +414,8 @@ class FacebookMappingLogicTests(SimpleTestCase):
             "has_custom_fields": True,
             "allow_new_fields": True,
             "flow_pk": 1,
+            "form_can_toggle": True,
+            "form_flow_active": True,
         })
 
         self.assertIn("Contato / Nome completo", html)
@@ -424,6 +428,41 @@ class FacebookMappingLogicTests(SimpleTestCase):
         self.assertNotIn("Usar outro campo do CRM", html)
         self.assertNotIn("data-reuse-field", html)
         self.assertNotIn("fb-map-section__action", html)
+        self.assertIn("Desativar formulário", html)
+
+    def test_form_enabled_flag_is_backward_compatible_and_explicit(self):
+        self.assertTrue(_facebook_form_accepts_leads({}, "F1"))
+        self.assertTrue(_facebook_form_accepts_leads({"form_enabled": {"F1": True}}, "F1"))
+        self.assertFalse(_facebook_form_accepts_leads({"form_enabled": {"F1": False}}, "F1"))
+
+    @override_settings(STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    })
+    def test_forms_template_shows_the_correct_toggle_action(self):
+        html = render_to_string("core/facebook_forms.html", {
+            "page_name": "Pagina teste",
+            "forms": [
+                {
+                    "id": "ACTIVE", "name": "Formulario ativo", "mapped": True,
+                    "flow_active": True, "can_toggle": True,
+                },
+                {
+                    "id": "PAUSED", "name": "Formulario pausado", "mapped": True,
+                    "flow_active": False, "can_toggle": True,
+                },
+                {
+                    "id": "NEW", "name": "Formulario novo", "mapped": False,
+                    "flow_active": False, "can_toggle": False,
+                },
+            ],
+        })
+
+        self.assertIn('name="active" value="0"', html)
+        self.assertIn('name="active" value="1"', html)
+        self.assertIn("Desativar", html)
+        self.assertIn("Ativar", html)
+        self.assertEqual(html.count("facebook/forms/NEW/toggle/"), 0)
 
 
 class FacebookMappingCatalogTests(TransactionTestCase):
@@ -574,6 +613,43 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         )
         self.assertEqual(resolved["tipo de veículo"], "ignore")
         self.assertEqual(resolved["email"], "contact:email")
+
+    def test_disabling_a_form_preserves_its_mapping_and_can_be_reversed(self):
+        auto = Automation.objects.create(
+            workspace=self.ws,
+            name="Facebook - Form A",
+            trigger="facebook_lead",
+            action="create_deal",
+            actions=[{"type": "create_deal"}],
+            active=True,
+        )
+        conn = IntegrationConnection.objects.create(
+            workspace=self.ws,
+            provider="facebook",
+            name="Facebook",
+            status="connected",
+            config={
+                "forms": [{"id": "FORM-A", "name": "Form A"}],
+                "form_maps": {"FORM-A": {"email": "contact:email"}},
+                "form_dest": {"FORM-A": {"create_contact": True, "create_deal": True}},
+                "form_flows": {"FORM-A": auto.pk},
+            },
+        )
+
+        _facebook_set_form_enabled(self.ws, conn, "FORM-A", False)
+        conn.refresh_from_db()
+        auto.refresh_from_db()
+        self.assertFalse(conn.config["form_enabled"]["FORM-A"])
+        self.assertFalse(auto.active)
+        self.assertEqual(conn.config["form_maps"]["FORM-A"]["email"], "contact:email")
+        self.assertTrue(conn.config["form_dest"]["FORM-A"]["create_deal"])
+
+        _facebook_set_form_enabled(self.ws, conn, "FORM-A", True)
+        conn.refresh_from_db()
+        auto.refresh_from_db()
+        self.assertTrue(conn.config["form_enabled"]["FORM-A"])
+        self.assertTrue(auto.active)
+        self.assertEqual(Automation.objects.filter(workspace=self.ws).count(), 1)
 
 
 class FacebookDestinoNeedsTests(SimpleTestCase):

@@ -32,6 +32,7 @@ urlpatterns = [
     path("settings/integrations/facebook/forms/", views.facebook_forms, name="facebook_forms"),
     path("settings/integrations/facebook/forms/sync/", views.facebook_sync_forms, name="facebook_sync_forms"),
     path("settings/integrations/facebook/forms/<str:form_id>/map/", views.facebook_form_map, name="facebook_form_map"),
+    path("settings/integrations/facebook/forms/<str:form_id>/toggle/", views.facebook_form_toggle, name="facebook_form_toggle"),
     path("webhooks/automation/<str:key>/", views.automation_webhook, name="automation_webhook"),
     path("webhooks/facebook/leadgen/", views.facebook_leadgen, name="facebook_leadgen"),
     path("settings/appearance/", views.appearance, name="appearance"),

@@ -38,7 +38,24 @@
           {% endif %}
         </td>
         <td class="cell-actions">
-          <a class="btn btn--ghost btn--sm" href="{% url 'facebook_form_map' f.id %}">{% if f.mapped %}Editar{% else %}Configurar{% endif %}</a>
+          <div class="fb-form-row-actions">
+            <a class="btn btn--ghost btn--sm" href="{% url 'facebook_form_map' f.id %}">{% if f.mapped %}Editar{% else %}Configurar{% endif %}</a>
+            {% if f.can_toggle %}
+              {% if f.flow_active %}
+              <form method="post" action="{% url 'facebook_form_toggle' f.id %}" data-confirm="Desativar o formulário &quot;{{ f.name|escapejs }}&quot;? Novos leads deixarão de criar registros no CRM.">
+                {% csrf_token %}
+                <input type="hidden" name="active" value="0">
+                <button class="btn btn--danger btn--sm" type="submit">{% include "core/_icon.html" with icon="pause" %} Desativar</button>
+              </form>
+              {% else %}
+              <form method="post" action="{% url 'facebook_form_toggle' f.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="active" value="1">
+                <button class="btn btn--primary btn--sm" type="submit">{% include "core/_icon.html" with icon="play" %} Ativar</button>
+              </form>
+              {% endif %}
+            {% endif %}
+          </div>
         </td>
       </tr>
       {% empty %}
