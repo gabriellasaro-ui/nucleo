@@ -581,22 +581,39 @@ def _condition_field_catalog(ws):
 
 
 def _editor_trigger_choices(selected_trigger=None):
-    """Triggers offered in the canvas. "Lead do Facebook" is owned by the
-    Formulários screen (one flow per form, created there) — hide it here so nobody
-    builds a parallel FB flow that would double-create. Keep it only when editing a
-    flow that already uses it, so its trigger still renders."""
-    return [c for c in EVENT_CHOICES if c[0] != "facebook_lead" or c[0] == selected_trigger]
+    """Triggers offered in the generic canvas.
+
+    Facebook lead flows are implementation details owned by each form's mapping
+    screen and must never be exposed as editable generic automations.
+    """
+    return [choice for choice in EVENT_CHOICES if choice[0] != "facebook_lead"]
+
+
+def _editable_automations(ws):
+    """Automations managed by the generic automation screens."""
+    return ws.automations.exclude(trigger="facebook_lead")
+
+
+def _redirect_facebook_automation(request, automation):
+    """Send integration-owned flows back to their Facebook form setup."""
+    messages.info(
+        request,
+        "Este fluxo é configurado diretamente no formulário do Facebook.",
+    )
+    form_id = str(_automation_trigger_data(automation).get("trigger_form_id") or "")
+    if form_id:
+        return redirect("facebook_form_map", form_id=form_id)
+    return redirect("facebook_forms")
 
 
 def _automation_editor_context(request, selected_automation=None, **extra):
     ws = request.workspace
-    fb_conn = IntegrationConnection.objects.filter(workspace=ws, provider="facebook", status="connected").first()
     selected_trigger = selected_automation.trigger if selected_automation else None
     trigger_choices = _editor_trigger_choices(selected_trigger)
     context = {
         "page_title": selected_automation.name if selected_automation else "Nova automação",
         "breadcrumb": ["Configurações", "Automações", "Canvas"],
-        "automations": ws.automations.all(),
+        "automations": _editable_automations(ws),
         "selected_automation": selected_automation,
         "automation_name": selected_automation.name if selected_automation else "",
         "automation_icon": selected_automation.icon if selected_automation else "bolt",
@@ -610,7 +627,6 @@ def _automation_editor_context(request, selected_automation=None, **extra):
         "automation_custom_fields": _automation_custom_fields(ws),
         "condition_fields": _condition_field_catalog(ws),
         "condition_operators": CONDITION_OPERATORS,
-        "facebook_forms": (fb_conn.config or {}).get("forms", []) if fb_conn else [],
     }
     context.update(extra)
     return context
@@ -623,8 +639,10 @@ def automations(request):
     return render(request, "core/automations.html", {
         "page_title": "Automações",
         "breadcrumb": ["Configurações", "Automações"],
-        "automations": ws.automations.all(),
-        "recent_runs": AutomationRun.objects.filter(workspace=ws).select_related("automation")[:8],
+        "automations": _editable_automations(ws),
+        "recent_runs": AutomationRun.objects.filter(workspace=ws).exclude(
+            automation__trigger="facebook_lead",
+        ).select_related("automation")[:8],
     })
 
 
@@ -635,6 +653,8 @@ def automation_editor(request, pk=None):
     selected_automation = None
     if pk is not None:
         selected_automation = get_object_or_404(Automation, pk=pk, workspace=ws)
+        if selected_automation.trigger == "facebook_lead":
+            return _redirect_facebook_automation(request, selected_automation)
     return render(request, "core/automation_editor.html", _automation_editor_context(request, selected_automation))
 
 
@@ -648,6 +668,8 @@ def automation_add(request):
         trigger = request.POST.get("trigger")
         automation_id = request.POST.get("automation_id", "").strip()
         existing = ws.automations.filter(pk=int(automation_id)).first() if automation_id.isdigit() else None
+        if existing and existing.trigger == "facebook_lead":
+            return _redirect_facebook_automation(request, existing)
         canvas = _parse_automation_canvas(request)
         canvas = _ensure_trigger_config(canvas, trigger)
         condition_stage = _automation_condition_stage(request, trigger, canvas)
@@ -669,9 +691,8 @@ def automation_add(request):
             messages.error(request, "Informe o nome da automação.")
         elif trigger not in dict(EVENT_CHOICES):
             messages.error(request, "Gatilho inválido.")
-        elif trigger == "facebook_lead" and not (existing and existing.trigger == "facebook_lead"):
-            # FB flows are born in Integrações → Formulários (one per form). The
-            # canvas only edits an already-generated one — never creates a parallel.
+        elif trigger == "facebook_lead":
+            # FB flows are born in Integrações → Formulários (one per form).
             messages.error(request, "Fluxos do Facebook são criados em Integrações → Facebook → Formulários.")
         elif not actions:
             messages.error(request, "Configure pelo menos uma ação no fluxo.")
@@ -3318,6 +3339,8 @@ def _automation_trigger_data(auto):
 def automation_toggle(request, pk):
     if request.method == "POST":
         auto = get_object_or_404(Automation, pk=pk, workspace=request.workspace)
+        if auto.trigger == "facebook_lead":
+            return _redirect_facebook_automation(request, auto)
         auto.active = not auto.active
         auto.save(update_fields=["active"])
         messages.success(request, f"Automação {'ativada' if auto.active else 'pausada'}.")
@@ -3328,7 +3351,10 @@ def automation_toggle(request, pk):
 @require_role("admin")
 def automation_delete(request, pk):
     if request.method == "POST":
-        get_object_or_404(Automation, pk=pk, workspace=request.workspace).delete()
+        auto = get_object_or_404(Automation, pk=pk, workspace=request.workspace)
+        if auto.trigger == "facebook_lead":
+            return _redirect_facebook_automation(request, auto)
+        auto.delete()
         messages.success(request, "Automação removida.")
     return redirect("automations")
 

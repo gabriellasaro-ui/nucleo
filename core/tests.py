@@ -23,6 +23,7 @@ from .whatsapp_service import connect_instance, create_instance, get_avatar
 from .views import (
     _automation_pipelines,
     _automation_trigger_data,
+    _editable_automations,
     _editor_trigger_choices,
     _fixed_custom_fields,
     _facebook_apply_form_map,
@@ -631,6 +632,23 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         self.assertIn("deal:title", tokens)
         self.assertIn("custom:deal:orcamento", tokens)
 
+    def test_facebook_flows_are_hidden_from_generic_automation_catalog(self):
+        visible = Automation.objects.create(
+            workspace=self.ws,
+            name="Contato criado",
+            trigger="contact_created",
+        )
+        Automation.objects.create(
+            workspace=self.ws,
+            name="Formulário Meta",
+            trigger="facebook_lead",
+        )
+
+        self.assertEqual(
+            list(_editable_automations(self.ws).values_list("pk", flat=True)),
+            [visible.pk],
+        )
+
     def test_catalog_can_be_scoped_to_the_current_form(self):
         unlinked = _facebook_target_catalog(self.ws, custom_tokens=set())
         deal_group = next(group for group in unlinked if group["object"] == "deal")
@@ -796,8 +814,7 @@ class FacebookDestinoNeedsTests(SimpleTestCase):
 
 
 class EditorTriggerChoicesTests(SimpleTestCase):
-    """The canvas hides 'Lead do Facebook' (owned by the Formulários screen) unless
-    you're editing a flow that already uses it."""
+    """The canvas always hides 'Lead do Facebook', owned by the form screen."""
 
     def test_facebook_hidden_for_new_automations(self):
         values = [value for value, _label in _editor_trigger_choices(None)]
@@ -805,9 +822,9 @@ class EditorTriggerChoicesTests(SimpleTestCase):
         self.assertIn("contact_created", values)
         self.assertIn("webhook_received", values)
 
-    def test_facebook_kept_when_editing_a_facebook_flow(self):
+    def test_facebook_hidden_even_when_an_old_flow_is_selected(self):
         values = [value for value, _label in _editor_trigger_choices("facebook_lead")]
-        self.assertIn("facebook_lead", values)
+        self.assertNotIn("facebook_lead", values)
 
     def test_editing_other_trigger_still_hides_facebook(self):
         values = [value for value, _label in _editor_trigger_choices("contact_created")]

@@ -1221,14 +1221,12 @@
         var unit = node.querySelector("[data-trigger-unit]");
         var interval = node.querySelector("[data-trigger-interval]");
         var webhook = node.querySelector("[data-trigger-webhook-key]");
-        var fbForm = node.querySelector("[data-trigger-form]");
         return {
           trigger: select ? select.value : "",
           trigger_interval_amount: amount && !amount.disabled ? amount.value : "1",
           trigger_interval_unit: unit && !unit.disabled ? unit.value : "hours",
           trigger_interval_minutes: interval ? interval.value : "60",
-          webhook_key: webhook ? webhook.value : "",
-          trigger_form_id: fbForm && !fbForm.disabled ? fbForm.value : ""
+          webhook_key: webhook ? webhook.value : ""
         };
       }
       if (node.dataset.nodeKind === "filter" || node.dataset.nodeKind === "condition" || node.dataset.nodeKind === "switch") {
@@ -1402,7 +1400,6 @@
         setValue(node, "[data-trigger-unit]", item.data ? (item.data.trigger_interval_unit || "hours") : "hours");
         setValue(node, "[data-trigger-interval]", item.data ? (item.data.trigger_interval_minutes || "60") : "60");
         setValue(node, "[data-trigger-webhook-key]", item.data ? item.data.webhook_key : "");
-        setValue(node, "[data-trigger-form]", item.data ? (item.data.trigger_form_id || "") : "");
         syncTriggerExtras();
       }
       if (item.type === "filter" || item.type === "condition" || item.type === "switch") {

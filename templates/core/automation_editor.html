@@ -112,14 +112,6 @@
               <input type="hidden" name="webhook_key" data-trigger-webhook-key>
               <input type="text" data-trigger-webhook-url readonly>
             </div>
-            <div class="node-fields node-fields--trigger" data-trigger-extra="facebook_lead" hidden>
-              <label>Formulário</label>
-              <select name="trigger_form_id" data-trigger-form>
-                <option value="">Qualquer formulário</option>
-                {% for f in facebook_forms %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}
-              </select>
-              {% if not facebook_forms %}<p class="node-help">Nenhum formulário sincronizado. Vá em <a href="{% url 'facebook_forms' %}">Integrações → Formulários</a> para sincronizar.</p>{% endif %}
-            </div>
           </div>
           <span class="node-port node-port--out" data-port="out"></span>
         </section>
