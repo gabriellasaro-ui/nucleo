@@ -25,6 +25,7 @@ urlpatterns = [
     path("deals/stats/", views.deal_stats, name="deal_stats"),
     path("deals/new/", views.deal_form, name="deal_create"),
     path("deals/<int:pk>/", views.deal_detail, name="deal_detail"),
+    path("deals/<int:pk>/workspace/", views.deal_workspace, name="deal_workspace"),
     path("deals/<int:pk>/edit/", views.deal_form, name="deal_edit"),
     path("deals/<int:pk>/delete/", views.deal_delete, name="deal_delete"),
     path("deals/<int:pk>/move/", views.deal_move, name="deal_move"),

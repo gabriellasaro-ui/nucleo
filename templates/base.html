@@ -18,7 +18,8 @@
 <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
       x-data="shell()"
       @keydown.window="onKey($event)"
-      @nucleo-close-modal.window="modal = false">
+      @nucleo-close-modal.window="modal = false"
+      @nucleo-open-modal.window="modal = true">
 
   {{ command_palette|json_script:"cmdk-data" }}
 

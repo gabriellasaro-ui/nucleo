@@ -160,26 +160,41 @@
       </div>
       <div class="wa-crm-actions">
         {% if selected_conversation.contact %}
-        <a class="btn btn--ghost btn--sm" href="{{ selected_conversation.contact.get_absolute_url }}">{% include "core/_icon.html" with icon="users" %} Contato</a>
+        <button class="btn btn--ghost btn--sm" type="button"
+                hx-get="{% url 'crm:contact_edit' selected_conversation.contact.pk %}"
+                hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+          {% include "core/_icon.html" with icon="users" %} Contato
+        </button>
         {% if selected_deal %}
-        <a class="btn btn--ghost btn--sm" href="{{ selected_deal.get_absolute_url }}">{% include "core/_icon.html" with icon="pipeline" %} Negócio</a>
+        <button class="btn btn--ghost btn--sm" type="button"
+                hx-get="{% url 'crm:deal_workspace' selected_deal.pk %}"
+                hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+          {% include "core/_icon.html" with icon="pipeline" %} Negócio
+        </button>
         {% elif can_edit %}
-        <form method="post" action="{% url 'whatsapp_promote' %}">
-          {% csrf_token %}<input type="hidden" name="conversation_id" value="{{ selected_conversation.pk }}"><input type="hidden" name="action" value="contact_deal">
-          <button class="btn btn--ghost btn--sm" type="submit">{% include "core/_icon.html" with icon="pipeline" %} Criar negócio</button>
-        </form>
+        <button class="btn btn--ghost btn--sm" type="button"
+                hx-get="{% url 'whatsapp_promote_drawer' selected_conversation.pk %}?mode=contact_deal"
+                hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+          {% include "core/_icon.html" with icon="pipeline" %} Criar negócio
+        </button>
         {% endif %}
         {% elif selected_conversation and can_edit %}
-        <form method="post" action="{% url 'whatsapp_promote' %}">
-          {% csrf_token %}<input type="hidden" name="conversation_id" value="{{ selected_conversation.pk }}"><input type="hidden" name="action" value="contact">
-          <button class="btn btn--ghost btn--sm" type="submit">{% include "core/_icon.html" with icon="users" %} Criar contato</button>
-        </form>
-        <form method="post" action="{% url 'whatsapp_promote' %}">
-          {% csrf_token %}<input type="hidden" name="conversation_id" value="{{ selected_conversation.pk }}"><input type="hidden" name="action" value="contact_deal">
-          <button class="btn btn--primary btn--sm" type="submit">{% include "core/_icon.html" with icon="pipeline" %} Contato + negócio</button>
-        </form>
+        <button class="btn btn--ghost btn--sm" type="button"
+                hx-get="{% url 'whatsapp_promote_drawer' selected_conversation.pk %}?mode=contact"
+                hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+          {% include "core/_icon.html" with icon="users" %} Criar contato
+        </button>
+        <button class="btn btn--primary btn--sm" type="button"
+                hx-get="{% url 'whatsapp_promote_drawer' selected_conversation.pk %}?mode=contact_deal"
+                hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+          {% include "core/_icon.html" with icon="pipeline" %} Contato + negócio
+        </button>
         {% elif draft_contact %}
-        <a class="btn btn--ghost btn--sm" href="{{ draft_contact.get_absolute_url }}">{% include "core/_icon.html" with icon="users" %} Contato</a>
+        <button class="btn btn--ghost btn--sm" type="button"
+                hx-get="{% url 'crm:contact_edit' draft_contact.pk %}"
+                hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+          {% include "core/_icon.html" with icon="users" %} Contato
+        </button>
         {% endif %}
       </div>
     </header>
@@ -226,6 +241,9 @@
 (function () {
   var inbox = document.querySelector("[data-wa-inbox]");
   if (!inbox) return;
+  document.body.addEventListener("nucleo:whatsappChanged", function () {
+    window.location.reload();
+  });
   var avatarQueue = [];
   var avatarActive = 0;
   var avatarSeen = new WeakSet();

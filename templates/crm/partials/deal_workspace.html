@@ -1,0 +1,144 @@
+{% load humanize %}
+<div class="modal modal--drawer deal-workspace">
+  <div class="modal__head deal-workspace__head">
+    <div>
+      <span class="deal-workspace__eyebrow">Negócio</span>
+      <h2>{{ deal.title }}</h2>
+      <p class="modal__subtitle">{{ deal.pipeline.name|default:"Sem pipeline" }} · {{ deal.stage_display }}</p>
+    </div>
+    <div class="deal-workspace__head-actions">
+      <a class="icon-btn" href="{{ deal.get_absolute_url }}" title="Abrir página completa">{% include "core/_icon.html" with icon="pipeline" %}</a>
+      <button type="button" class="icon-btn" @click="modal = false" title="Fechar">{% include "core/_icon.html" with icon="close" %}</button>
+    </div>
+  </div>
+
+  <div class="deal-workspace__body">
+    <form class="deal-workspace__form" hx-post="{% url 'crm:deal_workspace' deal.pk %}" hx-target="#modal-content" hx-swap="innerHTML" data-pipeline-stage-form>
+      {% csrf_token %}
+      <div class="deal-workspace__form-scroll">
+        <section class="drawer-section">
+          <div class="drawer-section__head">
+            <span>{% include "core/_icon.html" with icon="pipeline" %}</span>
+            <div><b>Informações do negócio</b><small>Dados comerciais e posicionamento</small></div>
+          </div>
+          <div class="field">
+            <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
+            {{ form.title }}
+            {% if form.title.errors %}<div class="errors">{{ form.title.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="{{ form.value.id_for_label }}">{{ form.value.label }}</label>
+              {{ form.value }}
+            </div>
+            <div class="field">
+              <label for="{{ form.expected_close.id_for_label }}">{{ form.expected_close.label }}</label>
+              {{ form.expected_close }}
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="deal_workspace_pipeline">Pipeline</label>
+              <select name="pipeline" id="deal_workspace_pipeline" data-pipeline-select required>
+                {% for item in pipelines %}
+                <option value="{{ item.pk }}" {% if item.pk|stringformat:"s" == selected_pipeline_id %}selected{% endif %}>{{ item.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label for="deal_workspace_stage">Etapa</label>
+              <select name="stage" id="deal_workspace_stage" data-pipeline-stage-select required>
+                {% for item in pipelines %}
+                  {% for stage in item.stages.all %}
+                  <option value="{{ stage.key }}" data-pipeline="{{ item.pk }}" {% if item.pk|stringformat:"s" == selected_pipeline_id and stage.key == selected_stage_key %}selected{% endif %}>{{ stage.name }}</option>
+                  {% endfor %}
+                {% endfor %}
+              </select>
+              {% if form.stage.errors %}<div class="errors">{{ form.stage.errors|striptags }}</div>{% endif %}
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="{{ form.contact.id_for_label }}">{{ form.contact.label }}</label>
+              {{ form.contact }}
+            </div>
+            <div class="field">
+              <label for="{{ form.company.id_for_label }}">{{ form.company.label }}</label>
+              {{ form.company }}
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label>
+              {{ form.owner }}
+            </div>
+            <div class="field">
+              <label for="deal_workspace_tags">Etiquetas</label>
+              <input type="text" name="tags_text" id="deal_workspace_tags" value="{{ tags_text }}" placeholder="Separadas por vírgula">
+            </div>
+          </div>
+        </section>
+
+        {% for group in stage_custom_field_groups %}
+        <section class="drawer-section" data-pipeline-stage-fields="{{ group.pipeline.pk }}:{{ group.stage.key }}" {% if group.pipeline.pk|stringformat:"s" != selected_pipeline_id or group.stage.key != selected_stage_key %}hidden{% endif %}>
+          <div class="drawer-section__head">
+            <span>{% include "core/_icon.html" with icon="sliders" %}</span>
+            <div><b>Campos de {{ group.stage.name }}</b><small>{{ group.pipeline.name }}</small></div>
+          </div>
+          {% if group.fields %}
+            {% include "crm/partials/custom_fields_form.html" with custom_fields=group.fields %}
+          {% else %}
+            <div class="drawer-section__empty">Nenhum campo adicional nesta etapa.</div>
+          {% endif %}
+        </section>
+        {% endfor %}
+      </div>
+      <div class="deal-workspace__form-foot">
+        <span class="deal-workspace__value">R$ {{ deal.value|floatformat:2|intcomma }}</span>
+        <button type="submit" class="btn btn--primary" {% if not can_edit %}disabled{% endif %}>Salvar negócio</button>
+      </div>
+    </form>
+
+    <section class="deal-chat">
+      <header class="deal-chat__head">
+        {% if conversation %}
+        <span class="wa-avatar">
+          {{ conversation.name|default:conversation.phone|slice:":1"|upper }}
+          <img src="{% url 'whatsapp_avatar' conversation.pk %}" alt="">
+        </span>
+        <div>
+          <b>{{ conversation.name|default:conversation.phone }}</b>
+          <span>{{ conversation.phone }}</span>
+        </div>
+        <a class="icon-btn" href="{% url 'whatsapp' %}?conversation={{ conversation.pk }}" title="Abrir no WhatsApp">{% include "core/_icon.html" with icon="phone" %}</a>
+        {% elif deal.contact %}
+        <span class="wa-avatar">{{ deal.contact.initials }}</span>
+        <div><b>{{ deal.contact.full_name }}</b><span>{{ deal.contact.phone|default:"Sem telefone" }}</span></div>
+        {% else %}
+        <span class="wa-avatar">?</span>
+        <div><b>Conversa</b><span>Negócio sem contato vinculado</span></div>
+        {% endif %}
+      </header>
+
+      <div class="deal-chat__messages" id="deal-chat-thread" data-deal-chat-thread>
+        {% if conversation %}
+          {% include "crm/partials/deal_chat_messages.html" %}
+        {% else %}
+        <div class="deal-chat__empty">
+          {% include "core/_icon.html" with icon="phone" %}
+          <b>{% if deal.contact %}Nenhuma conversa vinculada{% else %}Selecione um contato no negócio{% endif %}</b>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if conversation and can_edit %}
+      <form class="deal-chat__composer" hx-post="{% url 'whatsapp_send' %}" hx-target="#deal-chat-thread" hx-swap="innerHTML">
+        {% csrf_token %}
+        <input type="hidden" name="conversation_id" value="{{ conversation.pk }}">
+        <textarea name="message" rows="1" maxlength="4096" placeholder="Mensagem" required aria-label="Mensagem"></textarea>
+        <button class="icon-btn icon-btn--primary" type="submit" title="Enviar mensagem">{% include "core/_icon.html" with icon="send" %}</button>
+      </form>
+      {% endif %}
+    </section>
+  </div>
+</div>

@@ -18,7 +18,10 @@ from core.rbac import can_edit
 from django.shortcuts import redirect
 
 from .forms import ActivityForm, CompanyForm, ContactForm, DealForm
-from .models import Activity, Attachment, Company, Contact, Deal, Pipeline, Stage, Tag
+from .models import (
+    Activity, Attachment, Company, Contact, Deal, Pipeline, Stage, Tag,
+    WhatsAppConversation,
+)
 
 
 CARD_FIELD_CHOICES = [
@@ -660,6 +663,134 @@ def deal_form(request, pk=None):
         "assignee_ids": _assignee_ids(instance),
     }
     return render(request, "crm/partials/deal_form.html", context)
+
+
+def _deal_workspace_pipelines(workspace):
+    pipelines = list(Pipeline.objects.filter(workspace=workspace).order_by("order", "id"))
+    for pipeline in pipelines:
+        pipeline.ensure_stages()
+    return pipelines
+
+
+def _deal_workspace_context(request, deal, form, pipeline, pipelines):
+    selected_pipeline_id = str(
+        request.POST.get("pipeline") or deal.pipeline_id or pipeline.pk
+    )
+    selected_stage_key = str(request.POST.get("stage") or deal.stage or "")
+    stage_groups = []
+    for item in pipelines:
+        for stage in item.stages.all():
+            stage_groups.append({
+                "pipeline": item,
+                "stage": stage,
+                "fields": with_values(
+                    _stage_custom_fields(request.workspace, item, stage.key),
+                    deal,
+                ),
+            })
+    conversation = None
+    thread_messages = []
+    if deal.contact_id:
+        conversation = (
+            WhatsAppConversation.objects.filter(
+                workspace=request.workspace,
+                contact=deal.contact,
+                is_history_import=False,
+            )
+            .exclude(remote_jid__endswith="@lid")
+            .order_by("-last_message_at", "-updated_at")
+            .first()
+        )
+        if conversation:
+            thread_messages = list(conversation.messages.order_by("-sent_at", "-id")[:150])
+            thread_messages.reverse()
+    return {
+        "deal": deal,
+        "form": form,
+        "pipeline": pipeline,
+        "pipelines": pipelines,
+        "selected_pipeline_id": selected_pipeline_id,
+        "selected_stage_key": selected_stage_key,
+        "stage_custom_field_groups": stage_groups,
+        "tags_text": _tags_text(deal),
+        "conversation": conversation,
+        "thread_messages": thread_messages,
+    }
+
+
+@login_required
+def deal_workspace(request, pk):
+    deal = get_object_or_404(
+        Deal.objects.select_related("company", "contact", "owner", "pipeline"),
+        pk=pk,
+        workspace=request.workspace,
+    )
+    pipelines = _deal_workspace_pipelines(request.workspace)
+    if not pipelines:
+        pipelines = [_default_pipeline(request)]
+    pipeline = deal.pipeline or pipelines[0]
+    posted_pipeline = request.POST.get("pipeline") if request.method == "POST" else None
+    if posted_pipeline:
+        pipeline = get_object_or_404(
+            Pipeline,
+            pk=posted_pipeline,
+            workspace=request.workspace,
+        )
+    old_stage = deal.stage
+    old_pipeline_id = deal.pipeline_id
+
+    if request.method == "POST":
+        if not can_edit(request):
+            return _forbidden()
+        form = DealForm(request.POST, instance=deal)
+        _scope_deal_fields(form, request)
+        _scope_owner_field(form, request)
+        _scope_deal_stage_field(form, pipeline)
+        if form.is_valid():
+            deal = form.save(commit=False)
+            deal.workspace = request.workspace
+            deal.pipeline = pipeline
+            deal.sync_stage_kind()
+            fields = _stage_custom_fields(request.workspace, pipeline, deal.stage)
+            deal.custom = {
+                **(deal.custom or {}),
+                **read_from_post(request.POST, fields),
+            }
+            deal.save()
+            _apply_tags(request, deal)
+            if deal.stage != old_stage or deal.pipeline_id != old_pipeline_id:
+                emit(
+                    request.workspace,
+                    "deal_stage_changed",
+                    deal,
+                    {"stage": deal.stage, "old_stage": old_stage},
+                )
+            form = DealForm(instance=deal)
+            _scope_deal_fields(form, request)
+            _scope_owner_field(form, request)
+            _scope_deal_stage_field(form, pipeline)
+            response = render(
+                request,
+                "crm/partials/deal_workspace.html",
+                _deal_workspace_context(request, deal, form, pipeline, pipelines),
+            )
+            response["HX-Trigger"] = _trigger_header({
+                "nucleo:dealsBoard": True,
+                "nucleo:dealsStats": True,
+                "nucleo:toast": {"text": "Negócio atualizado.", "kind": "success"},
+            })
+            return response
+    else:
+        form = DealForm(instance=deal)
+        _scope_deal_fields(form, request)
+        _scope_owner_field(form, request)
+        _scope_deal_stage_field(form, pipeline)
+
+    return render(
+        request,
+        "crm/partials/deal_workspace.html",
+        _deal_workspace_context(request, deal, form, pipeline, pipelines),
+    )
 
 
 @login_required

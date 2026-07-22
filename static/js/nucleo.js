@@ -101,6 +101,50 @@
     });
   }
 
+  function syncPipelineStageForm(form) {
+    var pipeline = form.querySelector("[data-pipeline-select]");
+    var stage = form.querySelector("[data-pipeline-stage-select]");
+    if (!pipeline || !stage) return;
+    var pipelineId = String(pipeline.value || "");
+    var visible = [];
+    Array.prototype.forEach.call(stage.options, function (option) {
+      var active = String(option.dataset.pipeline || "") === pipelineId;
+      option.hidden = !active;
+      option.disabled = !active;
+      if (active) visible.push(option);
+    });
+    if (!visible.some(function (option) { return option.selected; }) && visible.length) {
+      visible[0].selected = true;
+    }
+    var stageKey = String(stage.value || "");
+    Array.prototype.forEach.call(form.querySelectorAll("[data-pipeline-stage-fields]"), function (group) {
+      var active = group.dataset.pipelineStageFields === pipelineId + ":" + stageKey;
+      group.hidden = !active;
+      Array.prototype.forEach.call(group.querySelectorAll("input, select, textarea"), function (field) {
+        field.disabled = !active;
+      });
+    });
+  }
+
+  function initPipelineStageForms() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-pipeline-stage-form]"), function (form) {
+      if (form.dataset.pipelineStageReady !== "true") {
+        form.dataset.pipelineStageReady = "true";
+        var pipeline = form.querySelector("[data-pipeline-select]");
+        var stage = form.querySelector("[data-pipeline-stage-select]");
+        if (pipeline) pipeline.addEventListener("change", function () { syncPipelineStageForm(form); });
+        if (stage) stage.addEventListener("change", function () { syncPipelineStageForm(form); });
+      }
+      syncPipelineStageForm(form);
+    });
+  }
+
+  function initDealChats() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-deal-chat-thread]"), function (thread) {
+      thread.scrollTop = thread.scrollHeight;
+    });
+  }
+
   var confirmDialog = document.getElementById("confirm-dialog");
   var confirmMessage = document.getElementById("confirm-message");
   var confirmOk = confirmDialog && confirmDialog.querySelector("[data-confirm-ok]");
@@ -1908,16 +1952,30 @@
     document.addEventListener("DOMContentLoaded", function () {
       initToasts();
       initDealStageFields();
+      initPipelineStageForms();
+      initDealChats();
       initAutomationCanvases();
     });
   } else {
     initToasts();
     initDealStageFields();
+    initPipelineStageForms();
+    initDealChats();
     initAutomationCanvases();
   }
   document.body.addEventListener("htmx:afterSwap", function () {
     initToasts();
     initDealStageFields();
+    initPipelineStageForms();
+    initDealChats();
     initAutomationCanvases();
+  });
+  document.body.addEventListener("htmx:afterRequest", function (event) {
+    var form = event.detail && event.detail.elt;
+    var xhr = event.detail && event.detail.xhr;
+    if (form && form.matches && form.matches(".deal-chat__composer") &&
+        xhr && xhr.getResponseHeader("X-Nucleo-Message-Sent") === "1") {
+      form.reset();
+    }
   });
 })();

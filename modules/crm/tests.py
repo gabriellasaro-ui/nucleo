@@ -7,14 +7,16 @@ separately in ``core.tests.SchemaIsolationTests``.
 """
 import json
 
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.test import RequestFactory
 from django_tenants.test.cases import TenantTestCase
 
 from core.events import _condition_matches
-from core.models import CustomField, Event, IntegrationConnection
+from core.forms import WhatsAppPromotionForm
+from core.models import CustomField, Event, IntegrationConnection, Membership
 from core.tenancy import clear_current_workspace, set_current_workspace
-from core.views import whatsapp_webhook
+from core.views import whatsapp_promote_drawer, whatsapp_webhook
 from core.whatsapp_inbox import (
     normalize_whatsapp_phone,
     promote_whatsapp_conversation,
@@ -24,6 +26,7 @@ from core.whatsapp_inbox import (
 from .models import (
     Company, Contact, Deal, Pipeline, Tag, WhatsAppConversation, WhatsAppMessage,
 )
+from .views import deal_workspace
 
 
 class TenantTestBase(TenantTestCase):
@@ -112,6 +115,7 @@ class WhatsAppInboxTests(TenantTestBase):
         denied = self._send_webhook(payload)
         self.assertEqual(denied.status_code, 403)
         self.assertFalse(Contact.objects.exists())
+
 
         payload["instanceToken"] = "instance-token"
         accepted = self._send_webhook(payload)
@@ -252,6 +256,145 @@ class WhatsAppInboxTests(TenantTestBase):
         self.assertEqual(conversation.name, "Cliente Conhecido")
         self.assertEqual(result["conversation_updates"], 1)
         self.assertFalse(Contact.objects.exists())
+
+
+class WhatsAppPromotionTests(TenantTestBase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="whatsapp-promotion-test",
+            password="test-password",
+        )
+        self.membership = Membership.objects.create(
+            user=self.user,
+            workspace=self.tenant,
+            role=Membership.ROLE_MEMBER,
+        )
+        IntegrationConnection.objects.create(
+            workspace=self.tenant,
+            provider="whatsapp",
+            name="WhatsApp",
+            status="connected",
+            config={"instance_id": "INSTANCE-CRM"},
+        )
+        self.pipeline = Pipeline.objects.create(
+            workspace=self.tenant,
+            name="Comercial",
+            is_default=True,
+        )
+        self.pipeline.stages.create(
+            key="entrada",
+            name="Entrada",
+            kind="open",
+            order=0,
+        )
+        self.other_pipeline = Pipeline.objects.create(
+            workspace=self.tenant,
+            name="Renovação",
+        )
+        self.other_pipeline.stages.create(
+            key="renovacao",
+            name="Renovação",
+            kind="open",
+            order=0,
+        )
+        self.conversation = WhatsAppConversation.objects.create(
+            workspace=self.tenant,
+            instance_id="INSTANCE-CRM",
+            remote_jid="5511999990000@s.whatsapp.net",
+            phone="5511999990000",
+            name="Lead WhatsApp",
+        )
+        self.factory = RequestFactory()
+
+    def _request(self, method="get", data=None, htmx=False):
+        request = getattr(self.factory, method)(
+            "/whatsapp/conversations/1/crm/",
+            data=data or {},
+            **({"HTTP_HX_REQUEST": "true"} if htmx else {}),
+        )
+        request.user = self.user
+        request.workspace = self.tenant
+        request.membership = self.membership
+        return request
+
+    def test_form_rejects_stage_from_another_pipeline(self):
+        form = WhatsAppPromotionForm(
+            data={
+                "first_name": "Lead",
+                "phone": "+5511999990000",
+                "deal_title": "Venda pelo WhatsApp",
+                "pipeline": self.pipeline.pk,
+                "stage": "renovacao",
+            },
+            workspace=self.tenant,
+            mode="contact_deal",
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("stage", form.errors)
+
+    def test_promotion_creates_contact_and_deal_with_commercial_data(self):
+        response = whatsapp_promote_drawer(
+            self._request("post", {
+                "mode": "contact_deal",
+                "first_name": "Lead",
+                "last_name": "Qualificado",
+                "phone": "+5511999990000",
+                "email": "lead@example.test",
+                "deal_title": "Projeto via WhatsApp",
+                "value": "12500.50",
+                "pipeline": self.pipeline.pk,
+                "stage": "entrada",
+                "owner": self.user.pk,
+            }, htmx=True),
+            self.conversation.pk,
+        )
+
+        self.assertEqual(response.status_code, 204)
+        contact = Contact.objects.get()
+        deal = Deal.objects.get()
+        self.conversation.refresh_from_db()
+        self.assertEqual(self.conversation.contact_id, contact.pk)
+        self.assertEqual(deal.contact_id, contact.pk)
+        self.assertEqual(deal.pipeline_id, self.pipeline.pk)
+        self.assertEqual(deal.stage, "entrada")
+        self.assertEqual(str(deal.value), "12500.50")
+
+    def test_deal_workspace_shows_chat_and_rejects_wrong_pipeline_stage(self):
+        contact = Contact.objects.create(
+            workspace=self.tenant,
+            first_name="Lead",
+            phone="+5511999990000",
+        )
+        self.conversation.contact = contact
+        self.conversation.save(update_fields=["contact"])
+        deal = Deal.objects.create(
+            workspace=self.tenant,
+            title="Negócio aberto",
+            value=100,
+            pipeline=self.pipeline,
+            stage="entrada",
+            contact=contact,
+            owner=self.user,
+        )
+
+        get_response = deal_workspace(self._request(), deal.pk)
+        self.assertEqual(get_response.status_code, 200)
+        self.assertContains(get_response, "Lead WhatsApp")
+        self.assertContains(get_response, "Informações do negócio")
+
+        post_response = deal_workspace(self._request("post", {
+            "title": "Não deve salvar",
+            "value": "500",
+            "pipeline": self.other_pipeline.pk,
+            "stage": "entrada",
+            "contact": contact.pk,
+            "owner": self.user.pk,
+        }, htmx=True), deal.pk)
+        self.assertEqual(post_response.status_code, 200)
+        deal.refresh_from_db()
+        self.assertEqual(deal.title, "Negócio aberto")
+        self.assertEqual(deal.pipeline_id, self.pipeline.pk)
 
 
 class PipelineStageTests(TenantTestBase):

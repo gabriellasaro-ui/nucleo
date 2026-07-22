@@ -15,7 +15,10 @@
     </div>
     <div class="kanban__cards" data-stage="{{ col.key }}">
       {% for deal in col.deals %}
-      <div class="kanban-card" data-id="{{ deal.pk }}" data-href="{% url 'crm:deal_detail' deal.pk %}" style="--stage-color: {{ col.color }};">
+      <div class="kanban-card" data-id="{{ deal.pk }}" role="button" tabindex="0"
+           aria-label="Abrir negócio {{ deal.title }}"
+           hx-get="{% url 'crm:deal_workspace' deal.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+           @click="modal = true" style="--stage-color: {{ col.color }};">
         <div class="kanban-card__title">{{ deal.title }}</div>
         {% if deal.card_rows %}
         <div class="kanban-card__fields">

@@ -1,0 +1,113 @@
+<div class="modal modal--drawer wa-crm-drawer">
+  <div class="modal__head wa-crm-drawer__head">
+    <div class="wa-crm-drawer__person">
+      <span class="wa-avatar wa-avatar--lg">
+        {{ conversation.name|default:conversation.phone|slice:":1"|upper }}
+        <img src="{% url 'whatsapp_avatar' conversation.pk %}" alt="">
+      </span>
+      <div>
+        <h2>{% if mode == "contact_deal" %}Contato e negócio{% else %}Salvar contato{% endif %}</h2>
+        <p class="modal__subtitle">{{ conversation.name|default:conversation.phone }} · {{ conversation.phone }}</p>
+      </div>
+    </div>
+    <button type="button" class="icon-btn" @click="modal = false" title="Fechar">{% include "core/_icon.html" with icon="close" %}</button>
+  </div>
+
+  <form hx-post="{% url 'whatsapp_promote_drawer' conversation.pk %}" hx-target="#modal-content" hx-swap="innerHTML" data-pipeline-stage-form>
+    {% csrf_token %}
+    <input type="hidden" name="mode" value="{{ mode }}">
+    <div class="modal__body wa-crm-drawer__body">
+      <section class="drawer-section">
+        <div class="drawer-section__head">
+          <span>{% include "core/_icon.html" with icon="users" %}</span>
+          <div><b>Contato</b><small>Dados da pessoa no CRM</small></div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.first_name.id_for_label }}">{{ form.first_name.label }}</label>
+            {{ form.first_name }}
+            {% if form.first_name.errors %}<div class="errors">{{ form.first_name.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.last_name.id_for_label }}">{{ form.last_name.label }}</label>
+            {{ form.last_name }}
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>
+            {{ form.phone }}
+            {% if form.phone.errors %}<div class="errors">{{ form.phone.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+            {{ form.email }}
+            {% if form.email.errors %}<div class="errors">{{ form.email.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+      </section>
+
+      {% if mode == "contact_deal" %}
+      <section class="drawer-section">
+        <div class="drawer-section__head">
+          <span>{% include "core/_icon.html" with icon="pipeline" %}</span>
+          <div><b>Negócio</b><small>Entrada na pipeline comercial</small></div>
+        </div>
+        <div class="field">
+          <label for="{{ form.deal_title.id_for_label }}">{{ form.deal_title.label }}</label>
+          {{ form.deal_title }}
+          {% if form.deal_title.errors %}<div class="errors">{{ form.deal_title.errors|striptags }}</div>{% endif %}
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.value.id_for_label }}">{{ form.value.label }}</label>
+            {{ form.value }}
+            {% if form.value.errors %}<div class="errors">{{ form.value.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.expected_close.id_for_label }}">{{ form.expected_close.label }}</label>
+            {{ form.expected_close }}
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="id_pipeline">Pipeline</label>
+            <select name="pipeline" id="id_pipeline" data-pipeline-select required>
+              {% for pipeline in pipelines %}
+              <option value="{{ pipeline.pk }}" {% if pipeline.pk|stringformat:"s" == selected_pipeline_id %}selected{% endif %}>{{ pipeline.name }}</option>
+              {% endfor %}
+            </select>
+            {% if form.pipeline.errors %}<div class="errors">{{ form.pipeline.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="id_stage">Etapa</label>
+            <select name="stage" id="id_stage" data-pipeline-stage-select required>
+              {% for pipeline in pipelines %}
+                {% for stage in pipeline.stages.all %}
+                <option value="{{ stage.key }}" data-pipeline="{{ pipeline.pk }}" {% if pipeline.pk|stringformat:"s" == selected_pipeline_id and stage.key == selected_stage_key %}selected{% endif %}>{{ stage.name }}</option>
+                {% endfor %}
+              {% endfor %}
+            </select>
+            {% if form.stage.errors %}<div class="errors">{{ form.stage.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="{{ form.company.id_for_label }}">{{ form.company.label }}</label>
+            {{ form.company }}
+          </div>
+          <div class="field">
+            <label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label>
+            {{ form.owner }}
+          </div>
+        </div>
+      </section>
+      {% endif %}
+    </div>
+    <div class="modal__foot">
+      <button type="button" class="btn btn--ghost" @click="modal = false">Cancelar</button>
+      <div class="modal__spacer"></div>
+      <button type="submit" class="btn btn--primary">{% if mode == "contact_deal" %}Criar contato e negócio{% else %}Criar contato{% endif %}</button>
+    </div>
+  </form>
+</div>

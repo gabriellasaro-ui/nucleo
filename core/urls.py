@@ -8,6 +8,7 @@ urlpatterns = [
     path("whatsapp/connect/", views.whatsapp_connect, name="whatsapp_connect"),
     path("whatsapp/status/", views.whatsapp_status, name="whatsapp_status"),
     path("whatsapp/avatar/<int:conversation_id>/", views.whatsapp_avatar, name="whatsapp_avatar"),
+    path("whatsapp/conversations/<int:conversation_id>/crm/", views.whatsapp_promote_drawer, name="whatsapp_promote_drawer"),
     path("whatsapp/promote/", views.whatsapp_promote, name="whatsapp_promote"),
     path("whatsapp/sync-contacts/", views.whatsapp_sync_contacts, name="whatsapp_sync_contacts"),
     path("whatsapp/disconnect/", views.whatsapp_disconnect, name="whatsapp_disconnect"),

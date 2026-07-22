@@ -23,10 +23,10 @@ from modules.crm.models import (
     Company, Contact, Deal, Pipeline, WhatsAppConversation,
 )
 
-from core.events import run_automation_for_event, CONDITION_OPERATORS
+from core.events import emit, run_automation_for_event, CONDITION_OPERATORS
 from core.tenancy import clear_current_workspace, set_current_workspace
 
-from .forms import WorkspaceForm
+from .forms import WhatsAppPromotionForm, WorkspaceForm
 from .models import EVENT_CHOICES, Automation, AutomationRun, CustomField, Domain, Event, IntegrationConnection, Membership
 from .rbac import require_role
 from .whatsapp_inbox import (
@@ -1606,6 +1606,160 @@ def _whatsapp_default_pipeline(workspace):
     return pipeline
 
 
+def _whatsapp_pipeline_options(workspace):
+    pipelines = list(Pipeline.objects.filter(workspace=workspace).order_by("order", "id"))
+    if not pipelines:
+        pipelines = [_whatsapp_default_pipeline(workspace)]
+    for pipeline in pipelines:
+        pipeline.ensure_stages()
+    return pipelines
+
+
+def _whatsapp_promotion_initial(request, conversation, mode, pipelines):
+    contact = conversation.contact
+    name = contact.full_name if contact else conversation.name
+    parts = str(name or "").strip().split(maxsplit=1)
+    pipeline = next((item for item in pipelines if item.is_default), pipelines[0])
+    stage = pipeline.stages.filter(kind="open").order_by("order", "id").first()
+    initial = {
+        "first_name": contact.first_name if contact else (parts[0] if parts else "WhatsApp"),
+        "last_name": contact.last_name if contact else (parts[1] if len(parts) > 1 else ""),
+        "phone": contact.phone if contact else "+" + conversation.phone,
+        "email": contact.email if contact else "",
+        "company": contact.company_id if contact else None,
+        "owner": contact.owner_id if contact and contact.owner_id else request.user.pk,
+        "pipeline": pipeline.pk,
+        "stage": stage.key if stage else "novo",
+        "deal_title": f"{name or conversation.phone} - WhatsApp",
+        "value": 0,
+    }
+    if mode == "contact_deal" and contact:
+        deal = Deal.objects.filter(
+            workspace=request.workspace,
+            contact=contact,
+            stage_kind="open",
+        ).order_by("-updated_at").first()
+        if deal:
+            initial.update({
+                "deal_title": deal.title,
+                "value": deal.value,
+                "pipeline": deal.pipeline_id or pipeline.pk,
+                "stage": deal.stage,
+                "expected_close": deal.expected_close,
+                "owner": deal.owner_id or initial["owner"],
+                "company": deal.company_id or initial["company"],
+            })
+    return initial
+
+
+@login_required
+@require_role("member")
+def whatsapp_promote_drawer(request, conversation_id):
+    mode = request.POST.get("mode") or request.GET.get("mode") or "contact"
+    mode = mode if mode in {"contact", "contact_deal"} else "contact"
+    connection = IntegrationConnection.objects.filter(
+        workspace=request.workspace,
+        provider="whatsapp",
+    ).first()
+    config = connection.config if connection else {}
+    conversation = get_object_or_404(
+        WhatsAppConversation.objects.exclude(remote_jid__endswith="@lid"),
+        workspace=request.workspace,
+        instance_id=config.get("instance_id", ""),
+        is_history_import=False,
+        pk=conversation_id,
+    )
+    pipelines = _whatsapp_pipeline_options(request.workspace)
+    initial = _whatsapp_promotion_initial(request, conversation, mode, pipelines)
+    form = WhatsAppPromotionForm(
+        request.POST or None,
+        workspace=request.workspace,
+        mode=mode,
+        initial=initial,
+    )
+
+    if request.method == "POST" and form.is_valid():
+        with transaction.atomic():
+            contact, contact_created = promote_whatsapp_conversation(
+                request.workspace, conversation,
+            )
+            contact.first_name = form.cleaned_data["first_name"]
+            contact.last_name = form.cleaned_data["last_name"]
+            contact.phone = form.cleaned_data["phone"]
+            contact.email = form.cleaned_data["email"]
+            if mode == "contact_deal" or contact_created:
+                contact.company = form.cleaned_data["company"]
+            if contact_created and not contact.owner_id:
+                contact.owner = form.cleaned_data["owner"] or request.user
+            contact.save()
+            WhatsAppConversation.objects.filter(
+                workspace=request.workspace,
+                instance_id=conversation.instance_id,
+                phone=conversation.phone,
+            ).update(name=contact.full_name)
+            if contact_created:
+                emit(request.workspace, "contact_created", contact, {"stage": contact.stage})
+
+            deal = None
+            deal_created = False
+            if mode == "contact_deal":
+                deal = Deal.objects.filter(
+                    workspace=request.workspace,
+                    contact=contact,
+                    stage_kind="open",
+                ).order_by("-updated_at").first()
+                deal_created = deal is None
+                if deal is None:
+                    deal = Deal(workspace=request.workspace, contact=contact)
+                old_stage = deal.stage if deal.pk else None
+                deal.title = form.cleaned_data["deal_title"]
+                deal.value = form.cleaned_data["value"] or 0
+                deal.pipeline = form.cleaned_data["pipeline"]
+                deal.stage = form.cleaned_data["stage"]
+                deal.expected_close = form.cleaned_data["expected_close"]
+                deal.company = form.cleaned_data["company"]
+                deal.owner = form.cleaned_data["owner"] or request.user
+                deal.sync_stage_kind()
+                deal.save()
+                if deal_created:
+                    emit(request.workspace, "deal_created", deal, {"stage": deal.stage})
+                elif deal.stage != old_stage:
+                    emit(
+                        request.workspace,
+                        "deal_stage_changed",
+                        deal,
+                        {"stage": deal.stage, "old_stage": old_stage},
+                    )
+
+        if request.headers.get("HX-Request"):
+            response = HttpResponse(status=204)
+            response["HX-Trigger"] = json.dumps({
+                "nucleo:closeModal": True,
+                "nucleo:whatsappChanged": True,
+                "nucleo:dealsBoard": True,
+                "nucleo:dealsStats": True,
+                "nucleo:toast": {
+                    "text": "Contato e negócio salvos." if mode == "contact_deal" else "Contato salvo no CRM.",
+                    "kind": "success",
+                },
+            })
+            return response
+        return redirect(f"{reverse('whatsapp')}?conversation={conversation.pk}")
+
+    selected_pipeline_id = str(
+        form["pipeline"].value() or initial.get("pipeline") or pipelines[0].pk
+    )
+    selected_stage_key = str(form["stage"].value() or initial.get("stage") or "")
+    return render(request, "core/partials/whatsapp_crm_drawer.html", {
+        "form": form,
+        "mode": mode,
+        "conversation": conversation,
+        "pipelines": pipelines,
+        "selected_pipeline_id": selected_pipeline_id,
+        "selected_stage_key": selected_stage_key,
+    })
+
+
 @login_required
 @require_role("member")
 @require_POST
@@ -1731,22 +1885,29 @@ def whatsapp_disconnect(request):
 @require_role("member")
 @require_POST
 def whatsapp_send(request):
+    def fail(message, redirect_to="whatsapp"):
+        if request.headers.get("HX-Request"):
+            response = HttpResponse(status=204)
+            response["HX-Trigger"] = json.dumps({
+                "nucleo:toast": {"text": message, "kind": "error"},
+            })
+            return response
+        messages.error(request, message)
+        return redirect(redirect_to)
+
     ws = request.workspace
     connection = IntegrationConnection.objects.filter(
         workspace=ws, provider="whatsapp", status="connected",
     ).first()
     config = connection.config if connection else {}
     if not config.get("instance_token"):
-        messages.error(request, "Conecte um número do WhatsApp antes de enviar mensagens.")
-        return redirect("whatsapp")
+        return fail("Conecte um número do WhatsApp antes de enviar mensagens.")
 
     text = request.POST.get("message", "").strip()
     if not text:
-        messages.error(request, "Digite uma mensagem para enviar.")
-        return redirect("whatsapp")
+        return fail("Digite uma mensagem para enviar.")
     if len(text) > 4096:
-        messages.error(request, "A mensagem deve ter no máximo 4096 caracteres.")
-        return redirect("whatsapp")
+        return fail("A mensagem deve ter no máximo 4096 caracteres.")
 
     conversation = None
     conversation_id = request.POST.get("conversation_id", "").strip()
@@ -1764,14 +1925,25 @@ def whatsapp_send(request):
                 ws, config.get("instance_id", ""), contact,
             )
     if not conversation:
-        messages.error(request, "Escolha um contato com telefone válido.")
-        return redirect("whatsapp")
+        return fail("Escolha um contato com telefone válido.")
 
     try:
         result = send_text(config["instance_token"], conversation.phone, text)
     except EvoGoError as exc:
-        messages.error(request, f"Mensagem não enviada: {exc}")
-        return redirect(f"{reverse('whatsapp')}?conversation={conversation.pk}")
+        if request.headers.get("HX-Request"):
+            thread_messages = list(conversation.messages.order_by("-sent_at", "-id")[:150])
+            thread_messages.reverse()
+            response = render(request, "crm/partials/deal_chat_messages.html", {
+                "thread_messages": thread_messages,
+            })
+            response["HX-Trigger"] = json.dumps({
+                "nucleo:toast": {"text": f"Mensagem não enviada: {exc}", "kind": "error"},
+            })
+            return response
+        return fail(
+            f"Mensagem não enviada: {exc}",
+            f"{reverse('whatsapp')}?conversation={conversation.pk}",
+        )
 
     response_data = result.get("data") or {}
     response_info = response_data.get("Info") or response_data.get("info") or {}
@@ -1786,6 +1958,17 @@ def whatsapp_send(request):
         text,
         raw={"event": "SendText", "provider_id": provider_id},
     )
+    if request.headers.get("HX-Request"):
+        thread_messages = list(conversation.messages.order_by("-sent_at", "-id")[:150])
+        thread_messages.reverse()
+        response = render(request, "crm/partials/deal_chat_messages.html", {
+            "thread_messages": thread_messages,
+        })
+        response["HX-Trigger"] = json.dumps({
+            "nucleo:toast": {"text": "Mensagem enviada.", "kind": "success"},
+        })
+        response["X-Nucleo-Message-Sent"] = "1"
+        return response
     return redirect(f"{reverse('whatsapp')}?conversation={conversation.pk}")
 
 

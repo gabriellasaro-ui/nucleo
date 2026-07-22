@@ -181,6 +181,13 @@
     }
   });
 
+  document.addEventListener("keydown", function (e) {
+    var card = e.target.closest(".kanban-card[role='button']");
+    if (!card || (e.key !== "Enter" && e.key !== " ")) return;
+    e.preventDefault();
+    card.click();
+  });
+
   function initKanbanWheelScroll() {
     document.querySelectorAll(".kanban-board").forEach(function (board) {
       if (board.dataset.wheelScroll) return;
