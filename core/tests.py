@@ -304,11 +304,16 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         except Exception:
             pass
 
-    def test_suggest_matches_a_custom_field_then_defaults_to_new_deal_field(self):
+    def test_suggest_matches_a_custom_field_then_defaults_to_ignore(self):
         self.assertEqual(_facebook_suggest_target({"key": "orcamento"}, self.ws), "custom:deal:orcamento")
         self.assertEqual(_facebook_suggest_target({"label": "Orçamento"}, self.ws), "custom:deal:orcamento")
-        # unmatched question -> captured as a new deal field (never silently dropped)
-        self.assertEqual(_facebook_suggest_target({"key": "pergunta_solta"}, self.ws), "new:deal")
+        self.assertEqual(_facebook_suggest_target({"key": "pergunta_solta"}, self.ws), "ignore")
+
+    def test_suggest_can_still_create_new_field_when_allowed(self):
+        self.assertEqual(
+            _facebook_suggest_target({"key": "pergunta_solta"}, self.ws, allow_new_fields=True),
+            "new:deal",
+        )
 
     def test_catalog_lists_the_custom_field_in_its_object_group(self):
         catalog = _facebook_target_catalog(self.ws)
@@ -329,10 +334,18 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         self.assertTrue(CustomField.objects.filter(
             workspace=self.ws, object_type="deal", key="tipo-de-veiculo").exists())
 
+    def test_new_field_token_is_ignored_when_creation_is_blocked(self):
+        resolved = _facebook_resolve_new_fields(
+            self.ws,
+            {"tipo de veículo": "new:deal", "email": "contact:email"},
+            allow_new_fields=False,
+        )
+        self.assertEqual(resolved["tipo de veículo"], "ignore")
+        self.assertEqual(resolved["email"], "contact:email")
+
 
 class FacebookDestinoNeedsTests(SimpleTestCase):
-    """A mapping that targets a Company/Deal field implies that object must be
-    created — pure logic, no DB."""
+    """A mapping that targets an object field implies that object must be created."""
 
     def test_deal_and_company_fields_force_their_objects(self):
         needs = _facebook_destino_needs({
@@ -340,11 +353,13 @@ class FacebookDestinoNeedsTests(SimpleTestCase):
             "q2": "custom:deal:orcamento",
             "q3": "company:name",
         })
+        self.assertTrue(needs["contact"])
         self.assertTrue(needs["deal"])
         self.assertTrue(needs["company"])
 
-    def test_contact_only_mapping_forces_nothing(self):
+    def test_contact_only_mapping_forces_contact(self):
         needs = _facebook_destino_needs({"q1": "contact:email", "q2": "ignore"})
+        self.assertTrue(needs["contact"])
         self.assertFalse(needs["deal"])
         self.assertFalse(needs["company"])
 

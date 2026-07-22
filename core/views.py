@@ -1655,13 +1655,18 @@ def _facebook_form_questions(conn, form_id):
 def _facebook_target_catalog(ws):
     """Grouped (token, label) options for the mapping <select>, incl. custom fields."""
     custom_by_obj = {"contact": [], "company": [], "deal": []}
-    for field in CustomField.objects.filter(workspace=ws):
+    custom_fields = list(CustomField.objects.filter(workspace=ws)) if ws is not None else []
+    for field in custom_fields:
         if field.object_type in custom_by_obj:
             custom_by_obj[field.object_type].append((f"custom:{field.object_type}:{field.key}", field.label))
     groups = []
     for obj, label, std in _FB_STANDARD_TARGETS:
         groups.append({"object": obj, "label": label, "options": list(std) + custom_by_obj.get(obj, [])})
     return groups
+
+
+def _facebook_has_custom_fields(ws):
+    return bool(ws) and CustomField.objects.filter(workspace=ws).exists()
 
 
 def _facebook_valid_targets(ws):
@@ -1672,19 +1677,24 @@ def _facebook_valid_targets(ws):
     return tokens
 
 
-def _facebook_suggest_target(question, ws):
+def _facebook_suggest_target(question, ws, allow_new_fields=None):
     """Best-guess destination token for a form question (matched by key/label)."""
     from core.events import _norm_key
 
     norm = _norm_key(question.get("key") or question.get("label") or "")
     if norm in _FB_SUGGEST:
         return _FB_SUGGEST[norm]
-    for field in CustomField.objects.filter(workspace=ws):
+    custom_fields = list(CustomField.objects.filter(workspace=ws)) if ws is not None else []
+    for field in custom_fields:
         if norm and norm in {_norm_key(field.key), _norm_key(field.label)}:
             return f"custom:{field.object_type}:{field.key}"
-    # No matching field yet: default to capturing it as a new deal field so the
-    # answer is never silently dropped (the gestor can switch to "Não usar").
-    return "new:deal"
+    # No matching field: use existing CRM fields unless this workspace is empty.
+    # Empty workspaces can still create the first field from here.
+    if allow_new_fields is None:
+        allow_new_fields = not custom_fields
+    # If CRM custom fields already exist, this screen should not invent another
+    # field. The user picks an existing field or discards that answer.
+    return "new:deal" if allow_new_fields else "ignore"
 
 
 def _facebook_body_key_for_token(token):
@@ -1784,13 +1794,16 @@ def facebook_forms(request):
     })
 
 
-def _facebook_resolve_new_fields(ws, raw):
+def _facebook_resolve_new_fields(ws, raw, allow_new_fields=True):
     """Resolve 'new:<obj>' mapping tokens by creating a text custom field on the
     fly (idempotent). Returns the mapping with those tokens turned into real
     'custom:<obj>:<key>' targets, so a form question is never silently dropped."""
     resolved = {}
     for qkey, token in raw.items():
         if token.startswith("new:"):
+            if not allow_new_fields:
+                resolved[qkey] = "ignore"
+                continue
             obj = token.split(":", 1)[1]
             if obj in {"contact", "company", "deal"}:
                 fkey = slugify(qkey)[:60] or "campo"
@@ -1806,10 +1819,8 @@ def _facebook_resolve_new_fields(ws, raw):
 
 
 def _facebook_destino_needs(mapping):
-    """Which objects the mapping implies must exist so no answer is lost.
-    A field mapped to a Company/Deal (native or custom) means that object has to
-    be created, otherwise its value would fall into the void."""
-    needs = {"company": False, "deal": False}
+    """Which objects the mapping implies must exist so no answer is lost."""
+    needs = {"contact": False, "company": False, "deal": False}
     for token in (mapping or {}).values():
         obj = ""
         if token.startswith("custom:"):
@@ -1909,22 +1920,23 @@ def facebook_form_map(request, form_id):
         (form.get("name") for form in (cfg.get("forms") or []) if str(form.get("id")) == form_id),
         form_id,
     )
+    has_custom_fields = _facebook_has_custom_fields(ws)
+    allow_new_fields = not has_custom_fields
     if request.method == "POST":
         raw = {}
         for key in request.POST:
             match = re.match(r"map_(.+)$", key)
             if match:
                 raw[match.group(1)] = request.POST.get(key, "ignore").strip()
-        # "new:<obj>" means "guardar como campo novo": create a custom field on the
-        # fly so a form question is never silently dropped for lack of a field.
-        raw = _facebook_resolve_new_fields(ws, raw)
+        # Resolve legacy/new tokens before validating the saved map.
+        raw = _facebook_resolve_new_fields(ws, raw, allow_new_fields=allow_new_fields)
         valid = _facebook_valid_targets(ws)  # includes any fields just created
         new_map = {qkey: (token if token in valid else "ignore") for qkey, token in raw.items()}
-        # Destino: what to create + where. Guard: if a Company/Deal field was
-        # mapped, force that object on so its answer isn't lost.
+        # If a field was mapped to an object, force that object on so its answer
+        # is not lost.
         needs = _facebook_destino_needs(new_map)
         destino = {
-            "create_contact": bool(request.POST.get("create_contact")),
+            "create_contact": bool(request.POST.get("create_contact")) or needs["contact"],
             "create_company": bool(request.POST.get("create_company")) or needs["company"],
             "create_deal": bool(request.POST.get("create_deal")) or needs["deal"],
             "pipeline": request.POST.get("pipeline", "").strip(),
@@ -1945,12 +1957,22 @@ def facebook_form_map(request, form_id):
 
     saved = (cfg.get("form_maps") or {}).get(form_id, {})
     questions = _facebook_form_questions(conn, form_id)
-    rows = [{
-        "key": question["key"],
-        "label": question["label"],
-        "type": question.get("type", ""),
-        "current": saved.get(question["key"]) or _facebook_suggest_target(question, ws),
-    } for question in questions]
+    valid_targets = _facebook_valid_targets(ws)
+    rows = []
+    for question in questions:
+        current = saved.get(question["key"]) or _facebook_suggest_target(
+            question, ws, allow_new_fields=allow_new_fields
+        )
+        if current.startswith("new:") and not allow_new_fields:
+            current = "ignore"
+        elif current not in valid_targets and not (allow_new_fields and current.startswith("new:")):
+            current = "ignore"
+        rows.append({
+            "key": question["key"],
+            "label": question["label"],
+            "type": question.get("type", ""),
+            "current": current,
+        })
     # Destino state: last saved for this form, else sensible defaults.
     dest = (cfg.get("form_dest") or {}).get(form_id) or {"create_contact": True, "create_deal": True}
     pipelines = _automation_pipelines(ws)
@@ -1964,7 +1986,8 @@ def facebook_form_map(request, form_id):
         "has_questions": bool(questions),
         "pipelines": pipelines,
         "dest": dest,
-        "has_custom_fields": CustomField.objects.filter(workspace=ws).exists(),
+        "has_custom_fields": has_custom_fields,
+        "allow_new_fields": allow_new_fields,
         "flow_pk": (cfg.get("form_flows") or {}).get(form_id),
     })
 
