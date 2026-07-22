@@ -145,6 +145,31 @@
     });
   }
 
+  function initWhatsAppUnread() {
+    var badge = document.querySelector("[data-whatsapp-unread]");
+    if (!badge || badge.dataset.unreadReady === "true") return;
+    badge.dataset.unreadReady = "true";
+
+    function render(count) {
+      count = Math.max(0, Number(count) || 0);
+      badge.hidden = count === 0;
+      badge.textContent = count > 99 ? "99+" : String(count);
+      badge.setAttribute("aria-label", count + (count === 1 ? " mensagem não lida" : " mensagens não lidas"));
+    }
+
+    function refresh() {
+      if (document.hidden) return;
+      fetch(badge.dataset.url, { credentials: "same-origin", cache: "no-store" })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (payload) { if (payload) render(payload.count); })
+        .catch(function () {});
+    }
+
+    window.setInterval(refresh, 12000);
+    document.addEventListener("visibilitychange", refresh);
+    document.body.addEventListener("nucleo:whatsappChanged", refresh);
+  }
+
   var confirmDialog = document.getElementById("confirm-dialog");
   var confirmMessage = document.getElementById("confirm-message");
   var confirmOk = confirmDialog && confirmDialog.querySelector("[data-confirm-ok]");
@@ -1954,6 +1979,7 @@
       initDealStageFields();
       initPipelineStageForms();
       initDealChats();
+      initWhatsAppUnread();
       initAutomationCanvases();
     });
   } else {
@@ -1961,6 +1987,7 @@
     initDealStageFields();
     initPipelineStageForms();
     initDealChats();
+    initWhatsAppUnread();
     initAutomationCanvases();
   }
   document.body.addEventListener("htmx:afterSwap", function () {
@@ -1968,6 +1995,7 @@
     initDealStageFields();
     initPipelineStageForms();
     initDealChats();
+    initWhatsAppUnread();
     initAutomationCanvases();
   });
   document.body.addEventListener("htmx:afterRequest", function (event) {

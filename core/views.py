@@ -36,6 +36,7 @@ from .whatsapp_inbox import (
     promote_whatsapp_conversation,
     record_outgoing_message,
     sync_whatsapp_contact_directory,
+    whatsapp_unread_count,
 )
 from .whatsapp_service import (
     EvoGoError,
@@ -1557,6 +1558,11 @@ def whatsapp_status(request):
         ).exclude(phone="").count(),
         "inbox_version": latest_conversation.isoformat() if latest_conversation else "",
     })
+
+
+@login_required
+def whatsapp_unread_count_view(request):
+    return JsonResponse({"count": whatsapp_unread_count(request.workspace)})
 
 
 @login_required

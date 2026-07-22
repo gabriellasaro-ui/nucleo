@@ -12,6 +12,7 @@ from django.db import IntegrityError, transaction
 from django.test import RequestFactory
 from django_tenants.test.cases import TenantTestCase
 
+from core.context_processors import navigation
 from core.events import _condition_matches
 from core.forms import WhatsAppPromotionForm
 from core.models import CustomField, Event, IntegrationConnection, Membership
@@ -21,6 +22,7 @@ from core.whatsapp_inbox import (
     normalize_whatsapp_phone,
     promote_whatsapp_conversation,
     sync_whatsapp_contact_directory,
+    whatsapp_unread_count,
 )
 
 from .models import (
@@ -256,6 +258,51 @@ class WhatsAppInboxTests(TenantTestBase):
         self.assertEqual(conversation.name, "Cliente Conhecido")
         self.assertEqual(result["conversation_updates"], 1)
         self.assertFalse(Contact.objects.exists())
+
+    def test_sidebar_notification_counts_only_the_active_whatsapp_inbox(self):
+        WhatsAppConversation.objects.create(
+            workspace=self.tenant,
+            instance_id="INSTANCE-1",
+            remote_jid="5511999990001@s.whatsapp.net",
+            phone="5511999990001",
+            unread_count=4,
+        )
+        WhatsAppConversation.objects.create(
+            workspace=self.tenant,
+            instance_id="INSTANCE-1",
+            remote_jid="5511999990002@s.whatsapp.net",
+            phone="5511999990002",
+            unread_count=20,
+            is_history_import=True,
+        )
+        WhatsAppConversation.objects.create(
+            workspace=self.tenant,
+            instance_id="OLD-INSTANCE",
+            remote_jid="5511999990003@s.whatsapp.net",
+            phone="5511999990003",
+            unread_count=30,
+        )
+        WhatsAppConversation.objects.create(
+            workspace=self.tenant,
+            instance_id="INSTANCE-1",
+            remote_jid="123456789@lid",
+            phone="123456789",
+            unread_count=40,
+        )
+
+        self.assertEqual(whatsapp_unread_count(self.tenant), 4)
+        request = self.factory.get("/")
+        request.workspace = self.tenant
+        request.membership = None
+        context = navigation(request)
+        whatsapp_item = next(
+            item
+            for section in context["nav_sections"]
+            for item in section["items"]
+            if item["label"] == "WhatsApp"
+        )
+        self.assertEqual(whatsapp_item["notification_count"], 4)
+        self.assertEqual(whatsapp_item["notification_label"], "4")
 
 
 class WhatsAppPromotionTests(TenantTestBase):

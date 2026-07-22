@@ -4,11 +4,36 @@ import re
 from datetime import datetime
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from modules.crm.models import Contact, WhatsAppConversation, WhatsAppMessage
+
+
+def whatsapp_unread_count(workspace):
+    if workspace is None:
+        return 0
+
+    from core.models import IntegrationConnection
+
+    connection = IntegrationConnection.objects.filter(
+        workspace=workspace,
+        provider="whatsapp",
+    ).first()
+    instance_id = (connection.config or {}).get("instance_id", "") if connection else ""
+    if not instance_id:
+        return 0
+    result = (
+        WhatsAppConversation.objects.filter(
+            workspace=workspace,
+            instance_id=instance_id,
+            is_history_import=False,
+        )
+        .exclude(remote_jid__endswith="@lid")
+        .aggregate(total=Sum("unread_count"))
+    )
+    return result["total"] or 0
 
 
 def _value(mapping, *names, default=None):

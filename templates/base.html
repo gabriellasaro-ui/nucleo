@@ -69,7 +69,11 @@
           <a href="{{ item.url }}" class="nav__item {% if request.path == item.url %}is-active{% endif %}">
             {% include "core/_icon.html" with icon=item.icon %}
             <span>{{ item.label }}</span>
-            {% if item.shortcut %}<kbd class="shortcut">{{ item.shortcut }}</kbd>{% endif %}
+            {% if item.notification_url %}
+            <span class="nav__notification" data-whatsapp-unread data-url="{{ item.notification_url }}"
+                  aria-label="{{ item.notification_count }} mensagens não lidas"
+                  {% if not item.notification_count %}hidden{% endif %}>{{ item.notification_label }}</span>
+            {% elif item.shortcut %}<kbd class="shortcut">{{ item.shortcut }}</kbd>{% endif %}
           </a>
           {% endfor %}
         </div>

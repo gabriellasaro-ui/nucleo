@@ -6,6 +6,7 @@ import re
 from django.urls import reverse
 
 from .rbac import can_edit as _can_edit
+from .whatsapp_inbox import whatsapp_unread_count
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -51,7 +52,7 @@ def branding(request):
     }
 
 
-def _nav_model(request):
+def _nav_model(request, whatsapp_unread=0):
     sections = [
         {
             "section": "Workspace",
@@ -65,7 +66,15 @@ def _nav_model(request):
                 {"label": "Negócios", "url_name": "crm:deal_board", "icon": "pipeline", "shortcut": "G N"},
                 {"label": "Empresas", "url_name": "crm:company_list", "icon": "building", "shortcut": "G E"},
                 {"label": "Contatos", "url_name": "crm:contact_list", "icon": "users", "shortcut": "G C"},
-                {"label": "WhatsApp", "url_name": "whatsapp", "icon": "phone", "shortcut": "G W"},
+                {
+                    "label": "WhatsApp",
+                    "url_name": "whatsapp",
+                    "icon": "phone",
+                    "shortcut": "G W",
+                    "notification_count": whatsapp_unread,
+                    "notification_label": "99+" if whatsapp_unread > 99 else str(whatsapp_unread),
+                    "notification_url": reverse("whatsapp_unread_count"),
+                },
             ],
         },
     ]
@@ -86,7 +95,8 @@ def _nav_model(request):
 def navigation(request):
     sections = []
     palette = []
-    for section in _nav_model(request):
+    unread_count = whatsapp_unread_count(getattr(request, "workspace", None))
+    for section in _nav_model(request, unread_count):
         items = []
         for item in section["items"]:
             try:
