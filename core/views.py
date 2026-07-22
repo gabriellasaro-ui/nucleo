@@ -13,6 +13,7 @@ from django.db import transaction
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.crypto import get_random_string
 from django.utils.text import slugify
 from django.views.decorators.csrf import csrf_exempt
@@ -30,12 +31,15 @@ from .forms import WhatsAppPromotionForm, WorkspaceForm
 from .models import EVENT_CHOICES, Automation, AutomationRun, CustomField, Domain, Event, IntegrationConnection, Membership
 from .rbac import require_role
 from .whatsapp_inbox import (
+    WHATSAPP_DIRECTORY_SYNC_VERSION,
+    apply_whatsapp_directory_names,
     conversation_for_contact,
     ingest_whatsapp_event,
     normalize_whatsapp_phone,
     promote_whatsapp_conversation,
     record_outgoing_message,
     sync_whatsapp_contact_directory,
+    whatsapp_directory_name,
     whatsapp_unread_count,
 )
 from .whatsapp_service import (
@@ -1310,10 +1314,15 @@ def whatsapp(request):
         connection.status = "disconnected"
         connection.save(update_fields=["status", "updated_at"])
 
+    directory_sync_day = timezone.localdate().isoformat()
     if (
         connection
         and logged_in
-        and config.get("contact_directory_synced_for") != config.get("instance_id")
+        and (
+            config.get("contact_directory_synced_for") != config.get("instance_id")
+            or config.get("contact_directory_sync_version") != WHATSAPP_DIRECTORY_SYNC_VERSION
+            or config.get("contact_directory_synced_on") != directory_sync_day
+        )
     ):
         try:
             directory = get_contacts(config["instance_token"])
@@ -1324,6 +1333,9 @@ def whatsapp(request):
                 **config,
                 "contact_directory_synced_for": config.get("instance_id", ""),
                 "contact_directory_count": sync_result["directory_count"],
+                "contact_directory_names": sync_result["directory_names"],
+                "contact_directory_sync_version": WHATSAPP_DIRECTORY_SYNC_VERSION,
+                "contact_directory_synced_on": directory_sync_day,
             }
             connection.config = config
             connection.save(update_fields=["config", "updated_at"])
@@ -1351,6 +1363,7 @@ def whatsapp(request):
             conversation_query |= Q(phone__icontains=search_phone)
         conversations = conversations.filter(conversation_query)
     conversations = list(conversations[:100])
+    apply_whatsapp_directory_names(conversations, config)
 
     contacts = Contact.objects.filter(workspace=ws).exclude(phone="")
     contact_count = contacts.count()
@@ -1388,6 +1401,8 @@ def whatsapp(request):
                 is_history_import=False,
                 pk=int(selected_id),
             ).select_related("contact").first()
+        if selected:
+            apply_whatsapp_directory_names([selected], config)
 
     draft_contact = None
     contact_id = request.GET.get("contact", "").strip()
@@ -1623,13 +1638,13 @@ def _whatsapp_pipeline_options(workspace):
 
 def _whatsapp_promotion_initial(request, conversation, mode, pipelines):
     contact = conversation.contact
-    name = contact.full_name if contact else ""
+    name = contact.full_name if contact else getattr(conversation, "_directory_name", "")
     display_name = conversation.display_name
     parts = str(name or "").strip().split(maxsplit=1)
     pipeline = next((item for item in pipelines if item.is_default), pipelines[0])
     stage = pipeline.stages.filter(kind="open").order_by("order", "id").first()
     initial = {
-        "first_name": contact.first_name if contact else "",
+        "first_name": contact.first_name if contact else (parts[0] if parts else ""),
         "last_name": contact.last_name if contact else (parts[1] if len(parts) > 1 else ""),
         "phone": contact.phone if contact else "+" + conversation.phone,
         "email": contact.email if contact else "",
@@ -1676,6 +1691,7 @@ def whatsapp_promote_drawer(request, conversation_id):
         is_history_import=False,
         pk=conversation_id,
     )
+    apply_whatsapp_directory_names([conversation], config)
     pipelines = _whatsapp_pipeline_options(request.workspace)
     initial = _whatsapp_promotion_initial(request, conversation, mode, pipelines)
     form = WhatsAppPromotionForm(
@@ -1688,7 +1704,9 @@ def whatsapp_promote_drawer(request, conversation_id):
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
             contact, contact_created = promote_whatsapp_conversation(
-                request.workspace, conversation,
+                request.workspace,
+                conversation,
+                whatsapp_directory_name(config, conversation.phone),
             )
             contact.first_name = form.cleaned_data["first_name"]
             contact.last_name = form.cleaned_data["last_name"]
@@ -1789,10 +1807,13 @@ def whatsapp_promote(request):
         is_history_import=False,
         pk=int(conversation_id),
     )
+    apply_whatsapp_directory_names([conversation], config)
 
     with transaction.atomic():
         contact, contact_created = promote_whatsapp_conversation(
-            request.workspace, conversation,
+            request.workspace,
+            conversation,
+            whatsapp_directory_name(config, conversation.phone),
         )
         deal = None
         deal_created = False
@@ -1857,6 +1878,9 @@ def whatsapp_sync_contacts(request):
         **config,
         "contact_directory_synced_for": config.get("instance_id", ""),
         "contact_directory_count": result["directory_count"],
+        "contact_directory_names": result["directory_names"],
+        "contact_directory_sync_version": WHATSAPP_DIRECTORY_SYNC_VERSION,
+        "contact_directory_synced_on": timezone.localdate().isoformat(),
     }
     connection.save(update_fields=["config", "updated_at"])
     messages.success(

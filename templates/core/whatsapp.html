@@ -156,7 +156,7 @@
       </span>
       <div class="wa-thread__identity">
         <b>{% if selected_conversation %}{{ selected_conversation.display_name }}{% else %}{{ draft_contact.full_name }}{% endif %}</b>
-        <span>{% if selected_conversation %}{% if selected_conversation.contact %}{{ selected_conversation.phone }} · Contato do CRM{% else %}Não salvo no CRM{% endif %}{% else %}{{ draft_contact.phone }} · Contato do CRM{% endif %}</span>
+        <span>{% if selected_conversation %}{% if selected_conversation.contact %}{{ selected_conversation.phone }} · Contato do CRM{% elif selected_conversation.is_directory_contact %}Salvo na agenda · Ainda não está no CRM{% else %}Ainda não está no CRM{% endif %}{% else %}{{ draft_contact.phone }} · Contato do CRM{% endif %}</span>
       </div>
       <div class="wa-crm-actions">
         {% if selected_conversation.contact %}

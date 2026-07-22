@@ -192,7 +192,14 @@ class WhatsAppConversation(TimestampedModel):
     def display_name(self):
         if self.contact_id:
             return self.contact.full_name
+        directory_name = str(getattr(self, "_directory_name", "") or "").strip()
+        if directory_name:
+            return directory_name
         return f"+{self.phone}" if self.phone else "Número desconhecido"
+
+    @property
+    def is_directory_contact(self):
+        return bool(str(getattr(self, "_directory_name", "") or "").strip())
 
 
 class WhatsAppMessage(TimestampedModel):

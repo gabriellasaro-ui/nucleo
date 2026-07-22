@@ -7,7 +7,7 @@
       </span>
       <div>
         <h2>{% if mode == "contact_deal" %}Contato e negócio{% else %}Salvar contato{% endif %}</h2>
-        <p class="modal__subtitle">{{ conversation.display_name }}{% if conversation.contact %} · {{ conversation.phone }}{% else %} · Não salvo no CRM{% endif %}</p>
+        <p class="modal__subtitle">{{ conversation.display_name }}{% if conversation.contact %} · {{ conversation.phone }}{% elif conversation.is_directory_contact %} · Salvo na agenda{% else %} · Ainda não está no CRM{% endif %}</p>
       </div>
     </div>
     <button type="button" class="icon-btn" @click="modal = false" title="Fechar">{% include "core/_icon.html" with icon="close" %}</button>

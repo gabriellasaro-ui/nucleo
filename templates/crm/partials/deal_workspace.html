@@ -67,15 +67,9 @@
               {{ form.company }}
             </div>
           </div>
-          <div class="field-row">
-            <div class="field">
-              <label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label>
-              {{ form.owner }}
-            </div>
-            <div class="field">
-              <label for="deal_workspace_tags">Marcadores</label>
-              <input type="text" name="tags_text" id="deal_workspace_tags" value="{{ tags_text }}" placeholder="Ex.: Quente, Retorno, VIP">
-            </div>
+          <div class="field">
+            <label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label>
+            {{ form.owner }}
           </div>
         </section>
 

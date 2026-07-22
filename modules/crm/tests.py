@@ -19,6 +19,7 @@ from core.models import CustomField, Event, IntegrationConnection, Membership
 from core.tenancy import clear_current_workspace, set_current_workspace
 from core.views import whatsapp_promote_drawer, whatsapp_webhook
 from core.whatsapp_inbox import (
+    apply_whatsapp_directory_names,
     normalize_whatsapp_phone,
     promote_whatsapp_conversation,
     sync_whatsapp_contact_directory,
@@ -257,7 +258,40 @@ class WhatsAppInboxTests(TenantTestBase):
 
         conversation.refresh_from_db()
         self.assertEqual(conversation.name, "Cliente Conhecido")
+        apply_whatsapp_directory_names(
+            [conversation],
+            {"contact_directory_names": result["directory_names"]},
+        )
+        self.assertEqual(conversation.display_name, "Cliente Conhecido")
         self.assertEqual(result["conversation_updates"], 1)
+        self.assertFalse(Contact.objects.exists())
+
+    def test_saved_directory_name_beats_untrusted_message_push_name(self):
+        self.connection.config = {
+            **self.connection.config,
+            "contact_directory_names": {"5511999991234": "Mari"},
+        }
+        self.connection.save(update_fields=["config", "updated_at"])
+        payload = {
+            "event": "Message",
+            "instanceId": "INSTANCE-1",
+            "instanceToken": "instance-token",
+            "data": {
+                "Info": {
+                    "ID": "MESSAGE-DIRECTORY-1",
+                    "Chat": "5511999991234@s.whatsapp.net",
+                    "PushName": "Nome incorreto do evento",
+                    "IsFromMe": False,
+                },
+                "Message": {"conversation": "Olá"},
+            },
+        }
+
+        self.assertEqual(self._send_webhook(payload).status_code, 200)
+        conversation = WhatsAppConversation.objects.get()
+        self.assertEqual(conversation.name, "Mari")
+        apply_whatsapp_directory_names([conversation], self.connection.config)
+        self.assertEqual(conversation.display_name, "Mari")
         self.assertFalse(Contact.objects.exists())
 
     def test_sidebar_notification_counts_only_the_active_whatsapp_inbox(self):
@@ -444,6 +478,39 @@ class WhatsAppPromotionTests(TenantTestBase):
         deal.refresh_from_db()
         self.assertEqual(deal.title, "Negócio aberto")
         self.assertEqual(deal.pipeline_id, self.pipeline.pk)
+
+    def test_deal_workspace_hides_and_preserves_legacy_tags(self):
+        contact = Contact.objects.create(
+            workspace=self.tenant,
+            first_name="Lead",
+            phone="+5511999990000",
+        )
+        deal = Deal.objects.create(
+            workspace=self.tenant,
+            title="Negócio sem etiquetas",
+            value=100,
+            pipeline=self.pipeline,
+            stage="entrada",
+            contact=contact,
+            owner=self.user,
+        )
+        legacy_tag = Tag.objects.create(workspace=self.tenant, name="Legado")
+        deal.tags.add(legacy_tag)
+
+        get_response = deal_workspace(self._request(), deal.pk)
+        self.assertNotContains(get_response, "Etiquetas")
+        self.assertNotContains(get_response, "Marcadores")
+
+        post_response = deal_workspace(self._request("post", {
+            "title": "Negócio atualizado",
+            "value": "150",
+            "pipeline": self.pipeline.pk,
+            "stage": "entrada",
+            "contact": contact.pk,
+            "owner": self.user.pk,
+        }, htmx=True), deal.pk)
+        self.assertEqual(post_response.status_code, 200)
+        self.assertEqual(list(deal.tags.values_list("name", flat=True)), ["Legado"])
 
 
 class PipelineStageTests(TenantTestBase):

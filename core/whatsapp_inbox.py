@@ -11,6 +11,9 @@ from django.utils.dateparse import parse_datetime
 from modules.crm.models import Contact, WhatsAppConversation, WhatsAppMessage
 
 
+WHATSAPP_DIRECTORY_SYNC_VERSION = 2
+
+
 def whatsapp_unread_count(workspace):
     if workspace is None:
         return 0
@@ -51,6 +54,21 @@ def _value(mapping, *names, default=None):
 def normalize_whatsapp_phone(value):
     value = str(value or "").split("@", 1)[0].split(":", 1)[0]
     return re.sub(r"\D", "", value)
+
+
+def whatsapp_directory_name(config, phone):
+    names = (config or {}).get("contact_directory_names", {})
+    if not isinstance(names, dict):
+        return ""
+    return str(names.get(normalize_whatsapp_phone(phone), "") or "").strip()[:160]
+
+
+def apply_whatsapp_directory_names(conversations, config):
+    for conversation in conversations:
+        conversation._directory_name = whatsapp_directory_name(
+            config, conversation.phone,
+        )
+    return conversations
 
 
 def _phone_variants(value):
@@ -112,7 +130,7 @@ def _conversation_jid(info, is_from_me):
 
 
 @transaction.atomic
-def promote_whatsapp_conversation(workspace, conversation):
+def promote_whatsapp_conversation(workspace, conversation, trusted_name=""):
     conversation = (
         WhatsAppConversation.objects.select_for_update()
         .get(workspace=workspace, pk=conversation.pk)
@@ -120,7 +138,7 @@ def promote_whatsapp_conversation(workspace, conversation):
     contact = conversation.contact or find_contact_by_phone(conversation.phone)
     created = False
     if not contact:
-        first_name, last_name = _split_contact_name("", conversation.phone)
+        first_name, last_name = _split_contact_name(trusted_name, conversation.phone)
         contact = Contact.objects.create(
             workspace=workspace,
             first_name=first_name,
@@ -157,6 +175,7 @@ def sync_whatsapp_contact_directory(workspace, instance_id, rows):
 
     conversation_updates = 0
     contact_updates = 0
+    directory_names = {}
     conversations = WhatsAppConversation.objects.filter(
         workspace=workspace,
         instance_id=instance_id,
@@ -165,6 +184,7 @@ def sync_whatsapp_contact_directory(workspace, instance_id, rows):
         name = names_by_phone.get(normalize_whatsapp_phone(conversation.phone))
         if not name:
             continue
+        directory_names[normalize_whatsapp_phone(conversation.phone)] = name[:160]
         if conversation.name != name:
             conversation.name = name[:160]
             conversation.save(update_fields=["name", "updated_at"])
@@ -181,6 +201,7 @@ def sync_whatsapp_contact_directory(workspace, instance_id, rows):
 
     return {
         "directory_count": len(names_by_phone),
+        "directory_names": directory_names,
         "conversation_updates": conversation_updates,
         "contact_updates": contact_updates,
     }
@@ -337,6 +358,7 @@ def ingest_whatsapp_event(workspace, connection, payload):
         _value(info, "PushName", "pushName", default="")
         or _value(data, "PushName", "pushName", default="")
     ).strip()
+    directory_name = whatsapp_directory_name(config, phone)
 
     matches = list(
         WhatsAppConversation.objects.select_for_update()
@@ -367,7 +389,7 @@ def ingest_whatsapp_event(workspace, connection, payload):
             instance_id=instance_id,
             remote_jid=remote_jid,
             phone=phone,
-            name=contact.full_name if contact else push_name,
+            name=contact.full_name if contact else (directory_name or push_name),
             is_history_import=False,
         )
     else:
@@ -375,7 +397,7 @@ def ingest_whatsapp_event(workspace, connection, payload):
         if contact and conversation.contact_id != contact.pk:
             conversation.contact = contact
             changed.append("contact")
-        display_name = contact.full_name if contact else push_name
+        display_name = contact.full_name if contact else (directory_name or push_name)
         if display_name and conversation.name != display_name:
             conversation.name = display_name
             changed.append("name")

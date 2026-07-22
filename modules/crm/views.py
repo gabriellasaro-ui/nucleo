@@ -12,8 +12,9 @@ from django.utils.text import slugify
 
 from core.customfields import get_fields, read_from_post, with_values
 from core.events import emit
-from core.models import CustomField
+from core.models import CustomField, IntegrationConnection
 from core.rbac import can_edit
+from core.whatsapp_inbox import apply_whatsapp_directory_names
 
 from django.shortcuts import redirect
 
@@ -82,17 +83,14 @@ def _scope_owner_field(form, request):
 
 def _apply_tags(request, obj):
     """Parse comma-separated tags, get-or-create them in the workspace, attach."""
+    if "tags_text" not in request.POST:
+        return
     names = [t.strip() for t in request.POST.get("tags_text", "").split(",") if t.strip()]
     tags = []
     for name in list(dict.fromkeys(names))[:20]:
         tag, _ = Tag.all_objects.get_or_create(workspace=request.workspace, name=name)
         tags.append(tag)
     obj.tags.set(tags)
-
-
-def _tags_text(obj):
-    return ", ".join(t.name for t in obj.tags.all()) if (obj and obj.pk) else ""
-
 
 def _scope_parent_field(form, request, instance):
     """The 'Empresa matriz' select shows other companies in the workspace."""
@@ -216,7 +214,6 @@ def company_form(request, pk=None):
         "action": request.path,
         "delete_pk": instance.pk if instance else None,
         "custom_fields": with_values(get_fields(request.workspace, "company"), instance),
-        "tags_text": _tags_text(instance),
         "members": _workspace_members(request),
         "assignee_ids": _assignee_ids(instance),
     }
@@ -313,7 +310,6 @@ def contact_form(request, pk=None):
         "action": request.path,
         "delete_pk": instance.pk if instance else None,
         "custom_fields": with_values(get_fields(request.workspace, "contact"), instance),
-        "tags_text": _tags_text(instance),
         "members": _workspace_members(request),
         "assignee_ids": _assignee_ids(instance),
         "new_company_name": request.POST.get("new_company_name", "") if request.method == "POST" else "",
@@ -658,7 +654,6 @@ def deal_form(request, pk=None):
         "delete_pk": instance.pk if instance else None,
         "selected_stage_key": _selected_deal_stage_key(request, form, pipeline, instance),
         "stage_custom_field_groups": _stage_custom_field_groups(request.workspace, pipeline, instance),
-        "tags_text": _tags_text(instance),
         "members": _workspace_members(request),
         "assignee_ids": _assignee_ids(instance),
     }
@@ -702,6 +697,14 @@ def _deal_workspace_context(request, deal, form, pipeline, pipelines):
             .first()
         )
         if conversation:
+            config = (
+                IntegrationConnection.objects.filter(
+                    workspace=request.workspace,
+                    provider="whatsapp",
+                ).values_list("config", flat=True).first()
+                or {}
+            )
+            apply_whatsapp_directory_names([conversation], config)
             thread_messages = list(conversation.messages.order_by("-sent_at", "-id")[:150])
             thread_messages.reverse()
     return {
@@ -712,7 +715,6 @@ def _deal_workspace_context(request, deal, form, pipeline, pipelines):
         "selected_pipeline_id": selected_pipeline_id,
         "selected_stage_key": selected_stage_key,
         "stage_custom_field_groups": stage_groups,
-        "tags_text": _tags_text(deal),
         "conversation": conversation,
         "thread_messages": thread_messages,
     }
