@@ -120,9 +120,7 @@ def promote_whatsapp_conversation(workspace, conversation):
     contact = conversation.contact or find_contact_by_phone(conversation.phone)
     created = False
     if not contact:
-        first_name, last_name = _split_contact_name(
-            conversation.name, conversation.phone,
-        )
+        first_name, last_name = _split_contact_name("", conversation.phone)
         contact = Contact.objects.create(
             workspace=workspace,
             first_name=first_name,

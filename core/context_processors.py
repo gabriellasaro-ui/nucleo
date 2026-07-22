@@ -63,13 +63,13 @@ def _nav_model(request, whatsapp_unread=0):
         {
             "section": "CRM",
             "items": [
-                {"label": "Negócios", "url_name": "crm:deal_board", "icon": "pipeline", "shortcut": "G N"},
+                {"label": "Negócios", "url_name": "crm:deal_board", "icon": "briefcase", "shortcut": "G N"},
                 {"label": "Empresas", "url_name": "crm:company_list", "icon": "building", "shortcut": "G E"},
                 {"label": "Contatos", "url_name": "crm:contact_list", "icon": "users", "shortcut": "G C"},
                 {
                     "label": "WhatsApp",
                     "url_name": "whatsapp",
-                    "icon": "phone",
+                    "icon": "whatsapp",
                     "shortcut": "G W",
                     "notification_count": whatsapp_unread,
                     "notification_label": "99+" if whatsapp_unread > 99 else str(whatsapp_unread),
@@ -86,7 +86,7 @@ def _nav_model(request, whatsapp_unread=0):
                 {"label": "Aparência", "url_name": "appearance", "icon": "palette", "shortcut": ""},
                 {"label": "Membros", "url_name": "members", "icon": "users", "shortcut": ""},
                 {"label": "Automações", "url_name": "automations", "icon": "bolt", "shortcut": ""},
-                {"label": "Integrações", "url_name": "integrations", "icon": "command", "shortcut": ""},
+                {"label": "Integrações", "url_name": "integrations", "icon": "plug", "shortcut": ""},
             ],
         })
     return sections

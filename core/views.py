@@ -1623,12 +1623,13 @@ def _whatsapp_pipeline_options(workspace):
 
 def _whatsapp_promotion_initial(request, conversation, mode, pipelines):
     contact = conversation.contact
-    name = contact.full_name if contact else conversation.name
+    name = contact.full_name if contact else ""
+    display_name = conversation.display_name
     parts = str(name or "").strip().split(maxsplit=1)
     pipeline = next((item for item in pipelines if item.is_default), pipelines[0])
     stage = pipeline.stages.filter(kind="open").order_by("order", "id").first()
     initial = {
-        "first_name": contact.first_name if contact else (parts[0] if parts else "WhatsApp"),
+        "first_name": contact.first_name if contact else "",
         "last_name": contact.last_name if contact else (parts[1] if len(parts) > 1 else ""),
         "phone": contact.phone if contact else "+" + conversation.phone,
         "email": contact.email if contact else "",
@@ -1636,7 +1637,7 @@ def _whatsapp_promotion_initial(request, conversation, mode, pipelines):
         "owner": contact.owner_id if contact and contact.owner_id else request.user.pk,
         "pipeline": pipeline.pk,
         "stage": stage.key if stage else "novo",
-        "deal_title": f"{name or conversation.phone} - WhatsApp",
+        "deal_title": f"{display_name} - WhatsApp",
         "value": 0,
     }
     if mode == "contact_deal" and contact:

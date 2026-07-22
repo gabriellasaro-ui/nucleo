@@ -167,6 +167,7 @@ class WhatsAppTemplateTests(SimpleTestCase):
         conversation = SimpleNamespace(
             pk=7,
             name="Lead do formulário",
+            display_name="+5511999991234",
             phone="5511999991234",
             last_message="Tenho interesse",
             last_message_at=None,
@@ -175,6 +176,7 @@ class WhatsAppTemplateTests(SimpleTestCase):
         )
         message = SimpleNamespace(
             direction="incoming",
+            message_type="text",
             text="Tenho interesse",
             sent_at=None,
             status="received",
@@ -196,7 +198,8 @@ class WhatsAppTemplateTests(SimpleTestCase):
             "can_edit": True,
         })
 
-        self.assertIn("Lead do formulário", html)
+        self.assertIn("+5511999991234", html)
+        self.assertNotIn("Lead do formulário", html)
         self.assertIn("Tenho interesse", html)
         self.assertIn('action="/whatsapp/send/"', html)
         self.assertIn("Desconectar", html)

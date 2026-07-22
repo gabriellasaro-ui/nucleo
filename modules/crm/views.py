@@ -868,6 +868,14 @@ def _pipeline_modal_context(request, pipeline):
         stage.deal_count = deal_counts.get(stage.key, 0)
         stage.selected_card_fields = stage.card_fields or []
         stage.stage_fields = _stage_custom_fields(request.workspace, pipeline, stage.key)
+    active_stage_id = str(
+        getattr(request, "active_pipeline_stage", "")
+        or request.POST.get("active_stage")
+        or request.GET.get("active_stage")
+        or (stages[0].pk if stages else "")
+    )
+    if active_stage_id not in {str(stage.pk) for stage in stages}:
+        active_stage_id = str(stages[0].pk) if stages else ""
     return {
         "pipeline": pipeline,
         "stages": stages,
@@ -876,6 +884,7 @@ def _pipeline_modal_context(request, pipeline):
         # created and listed inside each stage (modular, Pipefy-style).
         "card_field_options": [{"key": key, "label": label} for key, label in CARD_FIELD_CHOICES],
         "custom_field_type_choices": CustomField.TYPE_CHOICES,
+        "active_stage_id": active_stage_id,
     }
 
 
@@ -1039,10 +1048,11 @@ def stage_add(request):
     message = "Informe o nome da fase."
     if name:
         order = (pipeline.stages.aggregate(m=Max("order"))["m"] or 0) + 1
-        pipeline.stages.create(
+        stage = pipeline.stages.create(
             key=_unique_stage_key(pipeline, name), name=name, color=color,
             kind=kind if kind in dict(Stage.KIND_CHOICES) else "open", order=order,
         )
+        request.active_pipeline_stage = stage.pk
         message = f"Fase “{name}” criada."
     if request.POST.get("return_modal") == "1":
         return _pipeline_modal_response(request, pipeline, message, "success" if name else "error")

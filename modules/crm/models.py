@@ -188,6 +188,12 @@ class WhatsAppConversation(TimestampedModel):
     def __str__(self):
         return self.name or self.phone
 
+    @property
+    def display_name(self):
+        if self.contact_id:
+            return self.contact.full_name
+        return f"+{self.phone}" if self.phone else "Número desconhecido"
+
 
 class WhatsAppMessage(TimestampedModel):
     DIRECTION_CHOICES = [("incoming", "Recebida"), ("outgoing", "Enviada")]

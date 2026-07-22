@@ -140,7 +140,7 @@
   }
 
   function initDealChats() {
-    Array.prototype.forEach.call(document.querySelectorAll("[data-deal-chat-thread]"), function (thread) {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-deal-chat-thread], [data-wa-thread]"), function (thread) {
       thread.scrollTop = thread.scrollHeight;
     });
   }
@@ -2001,7 +2001,7 @@
   document.body.addEventListener("htmx:afterRequest", function (event) {
     var form = event.detail && event.detail.elt;
     var xhr = event.detail && event.detail.xhr;
-    if (form && form.matches && form.matches(".deal-chat__composer") &&
+    if (form && form.matches && form.matches(".deal-chat__composer, .wa-composer") &&
         xhr && xhr.getResponseHeader("X-Nucleo-Message-Sent") === "1") {
       form.reset();
     }

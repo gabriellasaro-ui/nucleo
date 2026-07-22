@@ -1,0 +1,30 @@
+{% if thread_messages %}
+<div class="wa-chat-day"><span>Hoje</span></div>
+{% endif %}
+{% for message in thread_messages %}
+<article class="wa-message wa-message--{{ message.direction }}">
+  <div class="wa-message__bubble">
+    {% if message.message_type != "text" %}
+    <div class="wa-message__attachment">
+      {% include "core/_icon.html" with icon="note" %}
+      <span>{{ message.text|default:"Mídia" }}</span>
+    </div>
+    {% else %}
+    <p>{{ message.text|linebreaksbr }}</p>
+    {% endif %}
+    <span class="wa-message__meta">
+      <time>{{ message.sent_at|date:"H:i" }}</time>
+      {% if message.direction == "outgoing" %}
+      <span class="wa-message__status{% if message.status == 'read' %} is-read{% endif %}" title="{% if message.status == 'read' %}Lida{% elif message.status == 'sent' %}Enviada{% else %}Entregue{% endif %}">
+        {% if message.status == "sent" %}✓{% else %}✓✓{% endif %}
+      </span>
+      {% endif %}
+    </span>
+  </div>
+</article>
+{% empty %}
+<div class="wa-thread-empty">
+  {% include "core/_icon.html" with icon="note" %}
+  <b>{{ empty_message|default:"Conversa sem mensagens" }}</b>
+</div>
+{% endfor %}

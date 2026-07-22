@@ -2,12 +2,12 @@
   <div class="modal__head wa-crm-drawer__head">
     <div class="wa-crm-drawer__person">
       <span class="wa-avatar wa-avatar--lg">
-        {{ conversation.name|default:conversation.phone|slice:":1"|upper }}
+        {% if conversation.contact %}{{ conversation.contact.initials }}{% else %}{% include "core/_icon.html" with icon="whatsapp" %}{% endif %}
         <img src="{% url 'whatsapp_avatar' conversation.pk %}" alt="">
       </span>
       <div>
         <h2>{% if mode == "contact_deal" %}Contato e negócio{% else %}Salvar contato{% endif %}</h2>
-        <p class="modal__subtitle">{{ conversation.name|default:conversation.phone }} · {{ conversation.phone }}</p>
+        <p class="modal__subtitle">{{ conversation.display_name }}{% if conversation.contact %} · {{ conversation.phone }}{% else %} · Não salvo no CRM{% endif %}</p>
       </div>
     </div>
     <button type="button" class="icon-btn" @click="modal = false" title="Fechar">{% include "core/_icon.html" with icon="close" %}</button>

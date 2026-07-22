@@ -73,8 +73,8 @@
               {{ form.owner }}
             </div>
             <div class="field">
-              <label for="deal_workspace_tags">Etiquetas</label>
-              <input type="text" name="tags_text" id="deal_workspace_tags" value="{{ tags_text }}" placeholder="Separadas por vírgula">
+              <label for="deal_workspace_tags">Marcadores</label>
+              <input type="text" name="tags_text" id="deal_workspace_tags" value="{{ tags_text }}" placeholder="Ex.: Quente, Retorno, VIP">
             </div>
           </div>
         </section>
@@ -103,11 +103,11 @@
       <header class="deal-chat__head">
         {% if conversation %}
         <span class="wa-avatar">
-          {{ conversation.name|default:conversation.phone|slice:":1"|upper }}
+          {{ conversation.display_name|slice:":1"|upper }}
           <img src="{% url 'whatsapp_avatar' conversation.pk %}" alt="">
         </span>
         <div>
-          <b>{{ conversation.name|default:conversation.phone }}</b>
+          <b>{{ conversation.display_name }}</b>
           <span>{{ conversation.phone }}</span>
         </div>
         <a class="icon-btn" href="{% url 'whatsapp' %}?conversation={{ conversation.pk }}" title="Abrir no WhatsApp">{% include "core/_icon.html" with icon="phone" %}</a>

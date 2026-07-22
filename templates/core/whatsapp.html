@@ -123,12 +123,12 @@
       {% for conversation in conversations %}
       <a class="wa-conversation{% if selected_conversation.pk == conversation.pk %} is-active{% endif %}" href="{% url 'whatsapp' %}?conversation={{ conversation.pk }}{% if conversation_search %}&q={{ conversation_search|urlencode }}{% endif %}">
         <span class="wa-avatar">
-          {{ conversation.name|default:conversation.phone|slice:":1"|upper }}
+          {% if conversation.contact %}{{ conversation.contact.initials }}{% else %}{% include "core/_icon.html" with icon="whatsapp" %}{% endif %}
           <img data-wa-avatar data-src="{% url 'whatsapp_avatar' conversation.pk %}" alt="">
         </span>
         <span class="wa-conversation__body">
           <span class="wa-conversation__top">
-            <b>{{ conversation.name|default:conversation.phone }}</b>
+            <b>{{ conversation.display_name }}</b>
             <time>{{ conversation.last_message_at|date:"H:i" }}</time>
           </span>
           <span class="wa-conversation__preview">{{ conversation.last_message|default:"Conversa iniciada" }}</span>
@@ -151,12 +151,12 @@
     {% if selected_conversation or draft_contact %}
     <header class="wa-thread__head">
       <span class="wa-avatar wa-avatar--lg">
-        {% if selected_conversation %}{{ selected_conversation.name|default:selected_conversation.phone|slice:":1"|upper }}{% else %}{{ draft_contact.initials }}{% endif %}
+        {% if selected_conversation %}{% if selected_conversation.contact %}{{ selected_conversation.contact.initials }}{% else %}{% include "core/_icon.html" with icon="whatsapp" %}{% endif %}{% else %}{{ draft_contact.initials }}{% endif %}
         {% if selected_conversation %}<img data-wa-avatar data-src="{% url 'whatsapp_avatar' selected_conversation.pk %}" alt="">{% endif %}
       </span>
       <div class="wa-thread__identity">
-        <b>{% if selected_conversation %}{{ selected_conversation.name|default:selected_conversation.phone }}{% else %}{{ draft_contact.full_name }}{% endif %}</b>
-        <span>{% if selected_conversation %}{{ selected_conversation.phone }}{% if selected_conversation.contact %} · Contato do CRM{% else %} · Não salvo no CRM{% endif %}{% else %}{{ draft_contact.phone }} · Contato do CRM{% endif %}</span>
+        <b>{% if selected_conversation %}{{ selected_conversation.display_name }}{% else %}{{ draft_contact.full_name }}{% endif %}</b>
+        <span>{% if selected_conversation %}{% if selected_conversation.contact %}{{ selected_conversation.phone }} · Contato do CRM{% else %}Não salvo no CRM{% endif %}{% else %}{{ draft_contact.phone }} · Contato do CRM{% endif %}</span>
       </div>
       <div class="wa-crm-actions">
         {% if selected_conversation.contact %}
@@ -199,24 +199,13 @@
       </div>
     </header>
 
-    <div class="wa-thread__messages" data-wa-thread>
-      {% for message in thread_messages %}
-      <article class="wa-message wa-message--{{ message.direction }}">
-        <div>
-          <p>{{ message.text|linebreaksbr }}</p>
-          <span>{{ message.sent_at|date:"H:i" }}{% if message.direction == "outgoing" %} · {% if message.status == "read" %}Lida{% elif message.status == "sent" %}Enviada{% else %}Entregue{% endif %}{% endif %}</span>
-        </div>
-      </article>
-      {% empty %}
-      <div class="wa-thread-empty">
-        {% include "core/_icon.html" with icon="note" %}
-        <b>Inicie a conversa</b>
-      </div>
-      {% endfor %}
+    <div class="wa-thread__messages" id="wa-thread-messages" data-wa-thread>
+      {% include "core/partials/whatsapp_messages.html" with empty_message="Inicie a conversa" %}
     </div>
 
     {% if can_edit %}
-    <form class="wa-composer" method="post" action="{% url 'whatsapp_send' %}">
+    <form class="wa-composer" method="post" action="{% url 'whatsapp_send' %}"
+          hx-post="{% url 'whatsapp_send' %}" hx-target="#wa-thread-messages" hx-swap="innerHTML">
       {% csrf_token %}
       {% if selected_conversation %}<input type="hidden" name="conversation_id" value="{{ selected_conversation.pk }}">{% else %}<input type="hidden" name="contact_id" value="{{ draft_contact.pk }}">{% endif %}
       <textarea name="message" rows="1" maxlength="4096" placeholder="Mensagem" required aria-label="Mensagem"></textarea>

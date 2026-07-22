@@ -28,7 +28,7 @@ from core.whatsapp_inbox import (
 from .models import (
     Company, Contact, Deal, Pipeline, Tag, WhatsAppConversation, WhatsAppMessage,
 )
-from .views import deal_workspace
+from .views import _pipeline_modal_context, deal_workspace
 
 
 class TenantTestBase(TenantTestCase):
@@ -124,6 +124,7 @@ class WhatsAppInboxTests(TenantTestBase):
         self.assertEqual(accepted.status_code, 200)
         conversation = WhatsAppConversation.objects.get()
         self.assertEqual(conversation.name, "Pessoa Nova")
+        self.assertEqual(conversation.display_name, "+5511888887777")
         self.assertIsNone(conversation.contact)
         self.assertFalse(Contact.objects.exists())
 
@@ -427,7 +428,8 @@ class WhatsAppPromotionTests(TenantTestBase):
 
         get_response = deal_workspace(self._request(), deal.pk)
         self.assertEqual(get_response.status_code, 200)
-        self.assertContains(get_response, "Lead WhatsApp")
+        self.assertContains(get_response, "<b>Lead</b>", html=True)
+        self.assertNotContains(get_response, "Lead WhatsApp")
         self.assertContains(get_response, "Informações do negócio")
 
         post_response = deal_workspace(self._request("post", {
@@ -445,6 +447,25 @@ class WhatsAppPromotionTests(TenantTestBase):
 
 
 class PipelineStageTests(TenantTestBase):
+    def test_pipeline_customizer_renders_stage_navigation_and_editor(self):
+        pipeline = Pipeline.objects.create(workspace=self.tenant, name="Comercial")
+        stage = pipeline.stages.create(key="entrada", name="Entrada", order=0)
+        request = RequestFactory().get("/crm/pipelines/1/customize/")
+        request.workspace = self.tenant
+
+        from django.template.loader import render_to_string
+
+        html = render_to_string(
+            "crm/partials/pipeline_customize.html",
+            _pipeline_modal_context(request, pipeline),
+            request=request,
+        )
+
+        self.assertIn("pipeline-workspace__nav", html)
+        self.assertIn("pipeline-stage-editor", html)
+        self.assertIn(f"activeStage: '{stage.pk}'", html)
+        self.assertNotIn("stage-row__toggle", html)
+
     def test_ensure_stages_creates_the_default_set(self):
         pipeline = Pipeline.objects.create(workspace=self.tenant, name="Vendas")
         pipeline.ensure_stages()

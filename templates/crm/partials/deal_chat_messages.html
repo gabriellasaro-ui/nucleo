@@ -1,13 +1,1 @@
-{% for message in thread_messages %}
-<article class="wa-message wa-message--{{ message.direction }}">
-  <div>
-    <p>{{ message.text|linebreaksbr }}</p>
-    <span>{{ message.sent_at|date:"H:i" }}{% if message.direction == "outgoing" %} · {% if message.status == "read" %}Lida{% elif message.status == "sent" %}Enviada{% else %}Entregue{% endif %}{% endif %}</span>
-  </div>
-</article>
-{% empty %}
-<div class="deal-chat__empty">
-  {% include "core/_icon.html" with icon="note" %}
-  <b>Conversa sem mensagens</b>
-</div>
-{% endfor %}
+{% include "core/partials/whatsapp_messages.html" with empty_message="Conversa sem mensagens" %}
