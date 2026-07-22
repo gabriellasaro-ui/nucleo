@@ -24,14 +24,17 @@ from .views import (
     _editor_trigger_choices,
     _fixed_custom_fields,
     _facebook_apply_form_map,
+    _facebook_attribution_values,
     _facebook_body_key_for_token,
     _facebook_build_automation,
     _facebook_candidate_map,
     _facebook_destino_needs,
+    _facebook_ensure_attribution_fields,
     _facebook_question_requires_mapping,
     _facebook_resolve_new_fields,
     _facebook_suggest_target,
     _facebook_target_catalog,
+    _normalize_facebook_leadgen,
     _parse_automation_canvas,
 )
 
@@ -208,8 +211,11 @@ class LeadCustomFieldCaptureTests(TransactionTestCase):
             "Orçamento": "5000",            # matches CustomField by label -> number
             "interesse": "Plano Premium",    # matches CustomField by key
             "origem_campanha": "verao2026",  # no field defined -> kept raw
+            "utm_source": "facebook",
+            "utm_campaign": "Campanha Julho",
         }})
         with tenant_context(self.ws):
+            _facebook_ensure_attribution_fields(self.ws)
             contact = _create_contact(auto, None, {}, event)
             contact.refresh_from_db()
             custom = dict(contact.custom or {})
@@ -222,6 +228,9 @@ class LeadCustomFieldCaptureTests(TransactionTestCase):
         self.assertEqual(custom.get("interesse"), "Plano Premium")
         # unknown answer kept raw — nothing lost
         self.assertEqual(custom.get("origem_campanha"), "verao2026")
+        # attribution fields belong to Deal and must not leak into Contact
+        self.assertNotIn("utm_source", custom)
+        self.assertNotIn("utm_campaign", custom)
         # standard fields are NOT duplicated into custom
         self.assertNotIn("email", custom)
         self.assertNotIn("name", custom)
@@ -247,6 +256,35 @@ class FacebookMappingLogicTests(SimpleTestCase):
         self.assertEqual(_facebook_suggest_target({"key": "phone_number"}, None), "contact:phone")
         self.assertEqual(_facebook_suggest_target({"key": "full_name"}, None), "contact:name")
         self.assertEqual(_facebook_suggest_target({"key": "", "label": "Telefone"}, None), "contact:phone")
+
+    def test_meta_campaign_metadata_becomes_deal_utm_values(self):
+        values = _facebook_attribution_values({
+            "platform": "ig",
+            "campaign_name": "Campanha Julho",
+            "adset_name": "Publico SP",
+            "ad_name": "Criativo A",
+            "is_organic": False,
+        })
+        self.assertEqual(values, {
+            "utm_source": "instagram",
+            "utm_medium": "paid_social",
+            "utm_campaign": "Campanha Julho",
+            "utm_content": "Criativo A",
+            "utm_term": "Publico SP",
+        })
+
+    def test_inline_meta_lead_keeps_answers_and_attribution(self):
+        data = _normalize_facebook_leadgen({
+            "field_data": [{"name": "full_name", "values": ["Maria Silva"]}],
+            "campaign_id": "C1",
+            "adset_id": "S1",
+            "ad_id": "A1",
+        }, None)
+        self.assertEqual(data["name"], "Maria Silva")
+        self.assertEqual(data["utm_source"], "facebook")
+        self.assertEqual(data["utm_campaign"], "C1")
+        self.assertEqual(data["utm_term"], "S1")
+        self.assertEqual(data["utm_content"], "A1")
 
     def test_apply_form_map_routes_ignores_and_keeps_extras(self):
         conn = SimpleNamespace(config={"form_maps": {"F1": {
@@ -381,10 +419,11 @@ class FacebookMappingLogicTests(SimpleTestCase):
         self.assertNotIn("fb-map-summary", html)
         self.assertNotIn("Editar no modo avançado", html)
         self.assertNotIn("+ Campo novo", html)
-        self.assertIn("Campo modular deste formulário", html)
+        self.assertIn("Campo automático", html)
         self.assertIn("data-generated-target", html)
         self.assertNotIn("Usar outro campo do CRM", html)
         self.assertNotIn("data-reuse-field", html)
+        self.assertNotIn("fb-map-section__action", html)
 
 
 class FacebookMappingCatalogTests(TransactionTestCase):
@@ -508,6 +547,25 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         self.assertIn("orcamento", keys)
         self.assertNotIn("fb-form-a-tipo", keys)
 
+    def test_utm_fields_are_fixed_exclusively_on_deals(self):
+        fields = _facebook_ensure_attribution_fields(self.ws)
+        self.assertEqual(
+            {field.key for field in fields},
+            {"utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"},
+        )
+        self.assertTrue(all(field.object_type == "deal" for field in fields))
+        self.assertFalse(CustomField.objects.filter(
+            workspace=self.ws,
+            object_type="contact",
+            key__startswith="utm_",
+        ).exists())
+        _facebook_ensure_attribution_fields(self.ws)
+        self.assertEqual(CustomField.objects.filter(
+            workspace=self.ws,
+            object_type="deal",
+            key__startswith="utm_",
+        ).count(), 5)
+
     def test_new_field_token_is_ignored_when_creation_is_blocked(self):
         resolved = _facebook_resolve_new_fields(
             self.ws,
@@ -599,6 +657,7 @@ class FacebookFlowGeneratorTests(TransactionTestCase):
         self.assertTrue(auto.active)
 
         with tenant_context(self.ws):
+            _facebook_ensure_attribution_fields(self.ws)
             event = Event.objects.create(
                 workspace=self.ws, event_type="facebook_lead", object_repr="Lead",
                 payload={"body": {
@@ -606,6 +665,9 @@ class FacebookFlowGeneratorTests(TransactionTestCase):
                     "email": "maria@example.com",
                     "phone": "+5511999998888",
                     "orcamento": "5000",  # as the form map would have renamed it
+                    "utm_source": "facebook",
+                    "utm_medium": "paid_social",
+                    "utm_campaign": "Campanha Julho",
                 }, "form_id": "F1"},
             )
             run_automation_for_event(auto, event, None)
@@ -616,6 +678,9 @@ class FacebookFlowGeneratorTests(TransactionTestCase):
         self.assertIsNotNone(deal)
         self.assertEqual(deal.contact_id, contact.id)
         self.assertEqual(dict(deal.custom or {}).get("orcamento"), 5000)
+        self.assertEqual(dict(deal.custom or {}).get("utm_source"), "facebook")
+        self.assertEqual(dict(deal.custom or {}).get("utm_campaign"), "Campanha Julho")
+        self.assertNotIn("utm_source", dict(contact.custom or {}))
 
     def test_regenerating_updates_the_same_automation(self):
         destino, _ = self._destino()

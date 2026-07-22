@@ -24,11 +24,8 @@
       <div class="fb-map-section__head">
         <div>
           <h2>1. Onde salvar as respostas</h2>
-          <p>Nome, telefone e e-mail já estão resolvidos. Configure somente o que precisar.</p>
+          <p>Campos padrão já estão conectados. Para cada pergunta própria, escolha apenas onde salvar.</p>
         </div>
-        {% if has_custom_fields %}
-        <a class="btn btn--ghost btn--sm fb-map-section__action" href="{% url 'custom_fields' %}">{% include "core/_icon.html" with icon="sliders" %} Campos do CRM</a>
-        {% endif %}
       </div>
 
       <div class="fb-answer-list">
@@ -41,7 +38,7 @@
             </span>
             <span class="fb-answer-question__text">
               <b>{{ row.label }}</b>
-              <small>{% if row.required_mapping %}Pergunta personalizada{% else %}Reconhecido automaticamente{% endif %}</small>
+              <small>{% if row.required_mapping %}Pergunta do formulário{% else %}Reconhecido automaticamente{% endif %}</small>
             </span>
           </div>
 
@@ -55,7 +52,7 @@
 
           <div class="fb-map-controls{% if row.required_mapping %} fb-map-controls--generated{% else %} is-collapsed{% endif %}" data-map-controls>
             <div class="fb-map-control">
-              <label>Registro</label>
+              <label>Salvar em</label>
               <select class="role-select" data-map-object>
                 <option value="">Selecione</option>
                 {% for group in catalog %}
@@ -69,8 +66,8 @@
             <div class="fb-generated-field">
               <span class="fb-generated-field__icon">{% include "core/_icon.html" with icon="check" %}</span>
               <span class="fb-generated-field__text">
-                <small>Campo modular deste formulário</small>
-                <b>{{ row.label }}</b>
+                <small>Campo automático</small>
+                <b>Criado com o nome desta pergunta</b>
               </span>
             </div>
             {% else %}
@@ -100,7 +97,7 @@
       <div class="fb-map-section__head">
         <div>
           <h2>2. Registros e entrada na pipeline</h2>
-          <p>Os campos acima determinam os registros obrigatórios. Você ainda pode adicionar os opcionais.</p>
+          <p>Confirme os registros criados e o ponto de entrada do Negócio.</p>
         </div>
       </div>
 

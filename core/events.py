@@ -723,8 +723,11 @@ def _apply_lead_custom_fields(workspace, obj, object_type, data):
     if not incoming:
         return
     custom = dict(obj.custom or {})
-    consumed = set(_STANDARD_LEAD_KEYS.get(object_type, set()))
-    for field in CustomField.objects.filter(workspace=workspace, object_type=object_type):
+    all_fields = list(CustomField.objects.filter(workspace=workspace))
+    consumed = set().union(*_STANDARD_LEAD_KEYS.values())
+    for field in all_fields:
+        consumed.update({_norm_key(field.key), _norm_key(field.label)})
+    for field in (field for field in all_fields if field.object_type == object_type):
         for cand in {_norm_key(field.key), _norm_key(field.label)}:
             if cand in incoming and incoming[cand] not in (None, "", []):
                 custom[field.key] = _coerce_custom_value(field, incoming[cand])

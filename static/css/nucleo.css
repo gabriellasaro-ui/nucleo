@@ -1268,7 +1268,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .cell-sub { color: var(--ink-3); font-size: 12.5px; }
 
 /* Facebook form mapping: compact review flow ----------------------------- */
-.fb-map-page { max-width: 920px; }
+.fb-map-page { max-width: 900px; }
 .fb-map-page__head { margin-bottom: 24px; }
 .fb-map-form { display: grid; gap: 32px; }
 .fb-map-section { display: grid; gap: 14px; }
@@ -1294,27 +1294,30 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 
 .fb-answer-list,
 .fb-record-list {
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
 .fb-answer-row {
   display: grid;
-  grid-template-columns: minmax(220px, .9fr) minmax(360px, 1.25fr);
+  grid-template-columns: minmax(240px, .95fr) minmax(360px, 1.2fr);
   gap: 12px 24px;
   align-items: center;
-  min-height: 72px;
-  padding: 13px 4px;
+  min-height: 70px;
+  padding: 13px 16px;
   border-bottom: 1px solid var(--border);
 }
 .fb-answer-row:last-child { border-bottom: 0; }
-.fb-answer-row--custom { min-height: 92px; }
+.fb-answer-row--custom { min-height: 88px; }
 .fb-answer-row.needs-attention {
-  margin-inline: -10px;
-  padding-inline: 14px;
-  border-radius: var(--r-md);
   background: #fffdf7;
+  box-shadow: inset 3px 0 0 #d97706;
 }
-.fb-answer-row.has-error { background: #fff8f8; }
+.fb-answer-row.has-error {
+  background: #fff8f8;
+  box-shadow: inset 3px 0 0 #dc2626;
+}
 .fb-answer-question {
   display: flex;
   align-items: center;
@@ -1443,7 +1446,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
   justify-content: space-between;
   gap: 18px;
   min-height: 72px;
-  padding: 13px 4px;
+  padding: 13px 16px;
   border-bottom: 1px solid var(--border);
 }
 .fb-record-row:last-child { border-bottom: 0; }
@@ -1558,7 +1561,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
   .fb-map-resolved { justify-content: flex-start; padding-left: 38px; }
   .fb-map-controls { margin-left: 38px; }
   .fb-map-field-error { grid-column: 1; margin-left: 38px; }
-  .fb-answer-row.needs-attention { margin-inline: -6px; padding-inline: 10px; }
+  .fb-answer-row.needs-attention { padding-inline: 16px; }
   .fb-record-row,
   .fb-record-row__main { align-items: flex-start; }
   .fb-record-required { padding-top: 7px; }

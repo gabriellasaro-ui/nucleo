@@ -1598,6 +1598,28 @@ _FB_STANDARD_BODY_KEYS = {
     "deal:title": "title",
 }
 
+_FB_ATTRIBUTION_FIELD_DEFS = [
+    ("utm_source", "UTM Source"),
+    ("utm_medium", "UTM Medium"),
+    ("utm_campaign", "UTM Campaign"),
+    ("utm_content", "UTM Content"),
+    ("utm_term", "UTM Term"),
+]
+
+_FB_LEAD_GRAPH_FIELDS = [
+    "field_data",
+    "ad_id",
+    "ad_name",
+    "adset_id",
+    "adset_name",
+    "campaign_id",
+    "campaign_name",
+    "form_id",
+    "created_time",
+    "is_organic",
+    "platform",
+]
+
 # Best-guess mapping: normalized question name -> target token.
 _FB_SUGGEST = {
     "email": "contact:email", "e_mail": "contact:email", "email_address": "contact:email",
@@ -1615,6 +1637,34 @@ _FB_SUGGEST = {
 
 def _facebook_active_connection(ws):
     return IntegrationConnection.objects.filter(workspace=ws, provider="facebook", status="connected").first()
+
+
+def _facebook_ensure_attribution_fields(ws):
+    """Keep Meta attribution as fixed Deal fields, never Contact fields."""
+    existing = {
+        field.key: field
+        for field in CustomField.objects.filter(
+            workspace=ws,
+            object_type="deal",
+            key__in=[key for key, _label in _FB_ATTRIBUTION_FIELD_DEFS],
+        )
+    }
+    order = _fixed_custom_fields(ws, "deal").count()
+    fields = []
+    for key, label in _FB_ATTRIBUTION_FIELD_DEFS:
+        field = existing.get(key)
+        if field is None:
+            field = CustomField.objects.create(
+                workspace=ws,
+                object_type="deal",
+                key=key,
+                label=label,
+                field_type="text",
+                order=order,
+            )
+            order += 1
+        fields.append(field)
+    return fields
 
 
 def _facebook_list_forms(conn):
@@ -2049,6 +2099,7 @@ def facebook_form_map(request, form_id):
                 messages.error(request, error)
             submitted_map = candidate_map
         else:
+            _facebook_ensure_attribution_fields(ws)
             # New-field tokens are resolved only after every validation passes.
             new_map = _facebook_resolve_new_fields(
                 ws,
@@ -2187,6 +2238,8 @@ def automation_webhook(request, key):
                 # A Facebook Lead Ads payload is flattened to standard lead fields
                 # so the same "create contact/company/deal" actions just work.
                 fb = _normalize_facebook_leadgen(body, auto.workspace)
+                if fb:
+                    _facebook_ensure_attribution_fields(auto.workspace)
                 event = Event.objects.create(
                     workspace=auto.workspace,
                     event_type="webhook_received",
@@ -2225,6 +2278,32 @@ def _facebook_flatten_fields(field_data):
     return out
 
 
+def _facebook_attribution_values(payload):
+    """Normalize Meta campaign metadata into the CRM's fixed Deal UTM fields."""
+    if not isinstance(payload, dict):
+        return {}
+    platform = str(payload.get("platform") or "").strip().lower()
+    source = "instagram" if platform in {"ig", "instagram"} else "facebook"
+    organic = payload.get("is_organic")
+    is_organic = organic is True or str(organic).strip().lower() in {"1", "true", "yes"}
+    values = {
+        "utm_source": source,
+        "utm_medium": "organic_social" if is_organic else "paid_social",
+        "utm_campaign": payload.get("campaign_name") or payload.get("campaign_id"),
+        "utm_content": payload.get("ad_name") or payload.get("ad_id"),
+        "utm_term": payload.get("adset_name") or payload.get("adset_id"),
+    }
+    return {key: value for key, value in values.items() if value not in (None, "")}
+
+
+def _facebook_flatten_lead(payload):
+    if not isinstance(payload, dict):
+        return {}
+    out = _facebook_flatten_fields(payload.get("field_data"))
+    out.update(_facebook_attribution_values(payload))
+    return out
+
+
 def _normalize_facebook_leadgen(body, workspace):
     """If `body` is a Facebook Lead Ads payload, return a flat lead dict; else None.
     Handles inline field_data (test tool / connectors) and the native leadgen
@@ -2233,7 +2312,7 @@ def _normalize_facebook_leadgen(body, workspace):
     if not isinstance(body, dict):
         return None
     if isinstance(body.get("field_data"), list):
-        return _facebook_flatten_fields(body["field_data"]) or None
+        return _facebook_flatten_lead(body) or None
     entries = body.get("entry")
     if not isinstance(entries, list):
         return None
@@ -2241,7 +2320,7 @@ def _normalize_facebook_leadgen(body, workspace):
         for change in (entry.get("changes") or []) if isinstance(entry, dict) else []:
             value = change.get("value") or {} if isinstance(change, dict) else {}
             if isinstance(value.get("field_data"), list):
-                return _facebook_flatten_fields(value["field_data"]) or None
+                return _facebook_flatten_lead(value) or None
             leadgen_id = value.get("leadgen_id")
             if leadgen_id:
                 fetched = _facebook_fetch_lead(leadgen_id, workspace)
@@ -2262,12 +2341,15 @@ def _facebook_fetch_lead(leadgen_id, workspace):
 
     url = "https://graph.facebook.com/v19.0/{}?{}".format(
         urllib.parse.quote(str(leadgen_id)),
-        urllib.parse.urlencode({"access_token": token}),
+        urllib.parse.urlencode({
+            "access_token": token,
+            "fields": ",".join(_FB_LEAD_GRAPH_FIELDS),
+        }),
     )
     try:
         with urllib.request.urlopen(url, timeout=8) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-        return _facebook_flatten_fields(payload.get("field_data")) or None
+        return _facebook_flatten_lead(payload) or None
     except Exception:
         return None
 
@@ -2322,6 +2404,7 @@ def facebook_leadgen(request):
                         continue
                     data = _facebook_fetch_lead(leadgen_id, ws)
                     if data:
+                        _facebook_ensure_attribution_fields(ws)
                         # Apply the form's field mapping (if the gestor configured one)
                         # so answers land on the exact CRM fields they chose.
                         data = _facebook_apply_form_map(conn, form_id, data)
