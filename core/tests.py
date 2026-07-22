@@ -9,7 +9,8 @@ from types import SimpleNamespace
 
 from django.db import connection
 from django.http import HttpResponse
-from django.test import SimpleTestCase, TransactionTestCase
+from django.template.loader import render_to_string
+from django.test import SimpleTestCase, TransactionTestCase, override_settings
 from django_tenants.utils import tenant_context
 
 from modules.crm.models import Company, Contact, Deal
@@ -21,9 +22,11 @@ from .views import (
     _automation_pipelines,
     _automation_trigger_data,
     _editor_trigger_choices,
+    _fixed_custom_fields,
     _facebook_apply_form_map,
     _facebook_body_key_for_token,
     _facebook_build_automation,
+    _facebook_candidate_map,
     _facebook_destino_needs,
     _facebook_question_requires_mapping,
     _facebook_resolve_new_fields,
@@ -278,6 +281,21 @@ class FacebookMappingLogicTests(SimpleTestCase):
         flat = {"email": "a@b.com", "phone_number": "123"}
         self.assertEqual(_facebook_apply_form_map(conn, "F1", flat), flat)
 
+    def test_each_form_uses_only_its_own_saved_mapping(self):
+        conn = SimpleNamespace(config={"form_maps": {
+            "FORM-A": {"pergunta": "custom:deal:campo-form-a"},
+            "FORM-B": {"pergunta": "custom:deal:campo-form-b"},
+        }})
+
+        self.assertEqual(
+            _facebook_apply_form_map(conn, "FORM-A", {"pergunta": "A"}),
+            {"campo-form-a": "A"},
+        )
+        self.assertEqual(
+            _facebook_apply_form_map(conn, "FORM-B", {"pergunta": "B"}),
+            {"campo-form-b": "B"},
+        )
+
     def test_trigger_form_id_is_read_from_the_canvas(self):
         auto = SimpleNamespace(canvas={"nodes": [
             {"type": "trigger", "data": {"trigger": "facebook_lead", "trigger_form_id": "F1"}},
@@ -295,9 +313,82 @@ class FacebookMappingLogicTests(SimpleTestCase):
             "key": "email", "label": "Email", "type": "EMAIL",
         }))
 
+    def test_custom_questions_cannot_be_sent_to_fixed_crm_fields(self):
+        questions = [
+            {"key": "tipo", "label": "Qual o tipo?", "type": "CUSTOM"},
+            {"key": "email", "label": "Email", "type": "EMAIL"},
+        ]
+        candidate = _facebook_candidate_map(
+            "FORM-A",
+            questions,
+            {
+                "tipo": "custom:deal:utm-source",
+                "email": "contact:email",
+            },
+            {"custom:deal:utm-source", "contact:email", "new:deal"},
+        )
+
+        self.assertEqual(candidate["tipo"], "new:deal")
+        self.assertEqual(candidate["email"], "contact:email")
+
+        saved = _facebook_candidate_map(
+            "FORM-A",
+            questions[:1],
+            {"tipo": "custom:deal:fb-form-a-tipo"},
+            {"custom:deal:fb-form-a-tipo", "new:deal"},
+        )
+        self.assertEqual(saved["tipo"], "custom:deal:fb-form-a-tipo")
+
+    @override_settings(STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    })
+    def test_mapping_template_keeps_standard_fields_compact(self):
+        catalog = [
+            {"object": "contact", "label": "Contato", "options": [("contact:name", "Nome completo")]},
+            {"object": "company", "label": "Empresa", "options": []},
+            {"object": "deal", "label": "Negócio", "options": [("custom:deal:teste", "Teste")]},
+        ]
+        rows = [
+            {
+                "key": "nome", "label": "Full name", "current": "contact:name",
+                "current_object": "contact", "current_object_label": "Contato",
+                "current_field_label": "Nome completo", "required_mapping": False,
+                "invalid_mapping": False,
+            },
+            {
+                "key": "tipo", "label": "Para qual tipo de caminhão?", "current": "",
+                "current_object": "", "current_object_label": "",
+                "current_field_label": "", "required_mapping": True,
+                "invalid_mapping": False,
+            },
+        ]
+        html = render_to_string("core/facebook_form_map.html", {
+            "form_id": "F1",
+            "form_name": "Forms Qualify - 01",
+            "has_questions": True,
+            "rows": rows,
+            "catalog": catalog,
+            "pipelines": [],
+            "dest": {"create_contact": True, "create_deal": True},
+            "has_custom_fields": True,
+            "allow_new_fields": True,
+            "flow_pk": 1,
+        })
+
+        self.assertIn("Contato / Nome completo", html)
+        self.assertIn('data-map-required="true"', html)
+        self.assertNotIn("fb-map-summary", html)
+        self.assertNotIn("Editar no modo avançado", html)
+        self.assertNotIn("+ Campo novo", html)
+        self.assertIn("Campo modular deste formulário", html)
+        self.assertIn("data-generated-target", html)
+        self.assertNotIn("Usar outro campo do CRM", html)
+        self.assertNotIn("data-reuse-field", html)
+
 
 class FacebookMappingCatalogTests(TransactionTestCase):
-    """Suggestions and the target catalog resolve the workspace's custom fields."""
+    """Fixed CRM fields stay separate from form-owned Meta question fields."""
 
     def setUp(self):
         connection.set_schema_to_public()
@@ -316,10 +407,19 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         except Exception:
             pass
 
-    def test_suggest_matches_a_custom_field_then_defaults_to_ignore(self):
-        self.assertEqual(_facebook_suggest_target({"key": "orcamento"}, self.ws), "custom:deal:orcamento")
-        self.assertEqual(_facebook_suggest_target({"label": "Orçamento"}, self.ws), "custom:deal:orcamento")
-        self.assertEqual(_facebook_suggest_target({"key": "pergunta_solta"}, self.ws), "ignore")
+    def test_suggest_never_consumes_a_fixed_custom_field(self):
+        self.assertEqual(
+            _facebook_suggest_target(
+                {"key": "orcamento"}, self.ws, allow_new_fields=False,
+            ),
+            "ignore",
+        )
+        self.assertEqual(
+            _facebook_suggest_target(
+                {"label": "Orçamento"}, self.ws, allow_new_fields=True,
+            ),
+            "new:deal",
+        )
 
     def test_suggest_can_still_create_new_field_when_allowed(self):
         self.assertEqual(
@@ -334,6 +434,31 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         self.assertIn("deal:title", tokens)
         self.assertIn("custom:deal:orcamento", tokens)
 
+    def test_catalog_can_be_scoped_to_the_current_form(self):
+        unlinked = _facebook_target_catalog(self.ws, custom_tokens=set())
+        deal_group = next(group for group in unlinked if group["object"] == "deal")
+        tokens = [token for token, _label in deal_group["options"]]
+        self.assertIn("deal:title", tokens)
+        self.assertNotIn("custom:deal:orcamento", tokens)
+
+        linked = _facebook_target_catalog(
+            self.ws, custom_tokens={"custom:deal:orcamento"},
+        )
+        deal_group = next(group for group in linked if group["object"] == "deal")
+        tokens = [token for token, _label in deal_group["options"]]
+        self.assertIn("custom:deal:orcamento", tokens)
+
+    def test_linked_fields_do_not_change_native_question_suggestions(self):
+        self.assertEqual(
+            _facebook_suggest_target(
+                {"key": "orcamento"},
+                self.ws,
+                allow_new_fields=False,
+                allowed_custom_tokens={"custom:deal:orcamento"},
+            ),
+            "ignore",
+        )
+
     def test_new_field_token_creates_a_custom_field_on_the_fly(self):
         resolved = _facebook_resolve_new_fields(self.ws, {
             "tipo de veículo": "new:deal",
@@ -345,6 +470,43 @@ class FacebookMappingCatalogTests(TransactionTestCase):
         self.assertEqual(resolved["lixo"], "ignore")            # unknown object
         self.assertTrue(CustomField.objects.filter(
             workspace=self.ws, object_type="deal", key="tipo-de-veiculo").exists())
+
+    def test_generated_fields_are_isolated_by_meta_form(self):
+        question = {"tipo_de_veiculo": "Para qual tipo de caminhão?"}
+        first = _facebook_resolve_new_fields(
+            self.ws,
+            {"tipo_de_veiculo": "new:deal"},
+            form_id="FORM-A",
+            question_labels=question,
+        )
+        second = _facebook_resolve_new_fields(
+            self.ws,
+            {"tipo_de_veiculo": "new:deal"},
+            form_id="FORM-B",
+            question_labels=question,
+        )
+
+        self.assertNotEqual(first["tipo_de_veiculo"], second["tipo_de_veiculo"])
+        self.assertEqual(first["tipo_de_veiculo"], "custom:deal:fb-form-a-tipo-de-veiculo")
+        self.assertEqual(second["tipo_de_veiculo"], "custom:deal:fb-form-b-tipo-de-veiculo")
+        self.assertEqual(
+            CustomField.objects.get(
+                workspace=self.ws, object_type="deal", key="fb-form-a-tipo-de-veiculo",
+            ).label,
+            "Para qual tipo de caminhão?",
+        )
+
+    def test_generated_form_fields_do_not_become_fixed_crm_fields(self):
+        _facebook_resolve_new_fields(
+            self.ws,
+            {"tipo": "new:deal"},
+            form_id="FORM-A",
+            question_labels={"tipo": "Qual o tipo?"},
+        )
+
+        keys = set(_fixed_custom_fields(self.ws).values_list("key", flat=True))
+        self.assertIn("orcamento", keys)
+        self.assertNotIn("fb-form-a-tipo", keys)
 
     def test_new_field_token_is_ignored_when_creation_is_blocked(self):
         resolved = _facebook_resolve_new_fields(

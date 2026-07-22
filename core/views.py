@@ -372,6 +372,13 @@ def _available_username(User, email):
 # --------------------------------------------------------------------------- #
 # Metadata engine: custom fields (admin+)
 # --------------------------------------------------------------------------- #
+def _fixed_custom_fields(ws, object_type=None):
+    fields = CustomField.objects.filter(workspace=ws)
+    if object_type:
+        fields = fields.filter(object_type=object_type)
+    return fields.exclude(key__startswith="fb-")
+
+
 @login_required
 @require_role("admin")
 def custom_fields(request):
@@ -380,7 +387,7 @@ def custom_fields(request):
         {
             "type": obj_type,
             "label": label,
-            "fields": CustomField.objects.filter(workspace=ws, object_type=obj_type),
+            "fields": _fixed_custom_fields(ws, obj_type),
         }
         for obj_type, label in CustomField.OBJECT_CHOICES
     ]
@@ -403,7 +410,7 @@ def _custom_field_modal_context(request, object_type):
     return {
         "object_type": object_type,
         "object_label": _custom_field_label(object_type),
-        "fields": CustomField.objects.filter(workspace=request.workspace, object_type=object_type),
+        "fields": _fixed_custom_fields(request.workspace, object_type),
         "type_choices": CustomField.TYPE_CHOICES,
     }
 
@@ -455,7 +462,7 @@ def custom_field_add(request):
                 field_type=field_type,
                 options=options if field_type == "select" else [],
                 required=required,
-                order=CustomField.objects.filter(workspace=ws, object_type=object_type).count(),
+                order=_fixed_custom_fields(ws, object_type).count(),
             )
             if request.POST.get("return_modal") == "1":
                 return _custom_field_modal_response(request, object_type, f"Campo “{label}” criado.")
@@ -1652,21 +1659,25 @@ def _facebook_form_questions(conn, form_id):
     return out
 
 
-def _facebook_target_catalog(ws):
-    """Grouped (token, label) options for the mapping <select>, incl. custom fields."""
+def _facebook_target_catalog(ws, custom_tokens=None, include_standard=True):
+    """Build mapping options, optionally scoped to selected CRM custom fields."""
     custom_by_obj = {"contact": [], "company": [], "deal": []}
     custom_fields = list(CustomField.objects.filter(workspace=ws)) if ws is not None else []
     for field in custom_fields:
+        token = f"custom:{field.object_type}:{field.key}"
+        if custom_tokens is not None and token not in custom_tokens:
+            continue
         if field.object_type in custom_by_obj:
-            custom_by_obj[field.object_type].append((f"custom:{field.object_type}:{field.key}", field.label))
+            custom_by_obj[field.object_type].append((token, field.label))
     groups = []
     for obj, label, std in _FB_STANDARD_TARGETS:
-        groups.append({"object": obj, "label": label, "options": list(std) + custom_by_obj.get(obj, [])})
+        options = list(std) if include_standard else []
+        groups.append({"object": obj, "label": label, "options": options + custom_by_obj.get(obj, [])})
     return groups
 
 
 def _facebook_has_custom_fields(ws):
-    return bool(ws) and CustomField.objects.filter(workspace=ws).exists()
+    return bool(ws) and _fixed_custom_fields(ws).exists()
 
 
 def _facebook_valid_targets(ws):
@@ -1677,23 +1688,37 @@ def _facebook_valid_targets(ws):
     return tokens
 
 
-def _facebook_suggest_target(question, ws, allow_new_fields=None):
-    """Best-guess destination token for a form question (matched by key/label)."""
+def _facebook_target_object(token):
+    if not isinstance(token, str) or not token or token == "ignore":
+        return ""
+    parts = token.split(":")
+    if parts[0] in {"custom", "new"} and len(parts) > 1:
+        return parts[1]
+    return parts[0] if len(parts) > 1 else ""
+
+
+def _facebook_form_field_key(form_id, question_key):
+    base_key = (slugify(question_key) or "campo").replace("_", "-")
+    if not form_id:
+        return base_key[:60]
+    return slugify(f"fb-{form_id}-{base_key}")[:60] or "campo"
+
+
+def _facebook_form_field_token(form_id, question_key, object_type):
+    if object_type not in {"contact", "company", "deal"}:
+        return ""
+    return f"custom:{object_type}:{_facebook_form_field_key(form_id, question_key)}"
+
+
+def _facebook_suggest_target(question, ws, allow_new_fields=None, allowed_custom_tokens=None):
+    """Resolve standard Meta questions; custom questions get form-owned fields."""
     from core.events import _norm_key
 
     norm = _norm_key(question.get("key") or question.get("label") or "")
     if norm in _FB_SUGGEST:
         return _FB_SUGGEST[norm]
-    custom_fields = list(CustomField.objects.filter(workspace=ws)) if ws is not None else []
-    for field in custom_fields:
-        if norm and norm in {_norm_key(field.key), _norm_key(field.label)}:
-            return f"custom:{field.object_type}:{field.key}"
-    # No matching field: use existing CRM fields unless this workspace is empty.
-    # Empty workspaces can still create the first field from here.
     if allow_new_fields is None:
-        allow_new_fields = not custom_fields
-    # If CRM custom fields already exist, this screen should not invent another
-    # field. The user picks an existing field or discards that answer.
+        allow_new_fields = True
     return "new:deal" if allow_new_fields else "ignore"
 
 
@@ -1704,6 +1729,26 @@ def _facebook_question_requires_mapping(question):
     question_type = str(question.get("type") or "").strip().upper()
     norm = _norm_key(question.get("key") or question.get("label") or "")
     return question_type == "CUSTOM" or bool(norm and norm not in _FB_SUGGEST)
+
+
+def _facebook_candidate_map(form_id, questions, raw, valid_targets):
+    """Normalize submitted mappings and isolate every custom Meta question."""
+    candidate = {}
+    for question in questions:
+        submitted = raw.get(question["key"], "ignore")
+        if submitted not in valid_targets:
+            submitted = "ignore"
+        if _facebook_question_requires_mapping(question):
+            object_type = _facebook_target_object(submitted)
+            expected = _facebook_form_field_token(
+                form_id, question["key"], object_type,
+            )
+            if object_type in {"contact", "company", "deal"}:
+                submitted = expected if submitted == expected else f"new:{object_type}"
+            else:
+                submitted = "ignore"
+        candidate[question["key"]] = submitted
+    return candidate
 
 
 def _facebook_body_key_for_token(token):
@@ -1803,11 +1848,14 @@ def facebook_forms(request):
     })
 
 
-def _facebook_resolve_new_fields(ws, raw, allow_new_fields=True):
+def _facebook_resolve_new_fields(
+    ws, raw, allow_new_fields=True, form_id="", question_labels=None,
+):
     """Resolve 'new:<obj>' mapping tokens by creating a text custom field on the
     fly (idempotent). Returns the mapping with those tokens turned into real
     'custom:<obj>:<key>' targets, so a form question is never silently dropped."""
     resolved = {}
+    question_labels = question_labels or {}
     for qkey, token in raw.items():
         if token.startswith("new:"):
             if not allow_new_fields:
@@ -1815,10 +1863,13 @@ def _facebook_resolve_new_fields(ws, raw, allow_new_fields=True):
                 continue
             obj = token.split(":", 1)[1]
             if obj in {"contact", "company", "deal"}:
-                fkey = slugify(qkey)[:60] or "campo"
+                fkey = _facebook_form_field_key(form_id, qkey)
                 field, _ = CustomField.objects.get_or_create(
                     workspace=ws, object_type=obj, key=fkey,
-                    defaults={"label": (qkey[:80] or fkey), "field_type": "text"},
+                    defaults={
+                        "label": (str(question_labels.get(qkey) or qkey)[:80] or fkey),
+                        "field_type": "text",
+                    },
                 )
                 token = f"custom:{obj}:{field.key}"
             else:
@@ -1932,7 +1983,9 @@ def facebook_form_map(request, form_id):
         form_id,
     )
     has_custom_fields = _facebook_has_custom_fields(ws)
-    allow_new_fields = not has_custom_fields
+    # Every custom Meta question generates a field owned by this form. Manually
+    # managed fields (UTMs, internal metadata, etc.) remain fixed CRM fields.
+    allow_new_fields = True
     questions = _facebook_form_questions(conn, form_id)
     pipelines = _automation_pipelines(ws)
     submitted_map = None
@@ -1947,14 +2000,9 @@ def facebook_form_map(request, form_id):
         valid_input = _facebook_valid_targets(ws)
         if allow_new_fields:
             valid_input.update({"new:contact", "new:company", "new:deal"})
-        candidate_map = {
-            question["key"]: (
-                raw.get(question["key"], "ignore")
-                if raw.get(question["key"], "ignore") in valid_input
-                else "ignore"
-            )
-            for question in questions
-        }
+        candidate_map = _facebook_candidate_map(
+            form_id, questions, raw, valid_input,
+        )
 
         required_questions = [
             question for question in questions
@@ -2003,7 +2051,11 @@ def facebook_form_map(request, form_id):
         else:
             # New-field tokens are resolved only after every validation passes.
             new_map = _facebook_resolve_new_fields(
-                ws, candidate_map, allow_new_fields=allow_new_fields
+                ws,
+                candidate_map,
+                allow_new_fields=allow_new_fields,
+                form_id=form_id,
+                question_labels={question["key"]: question["label"] for question in questions},
             )
             destino = submitted_dest
             form_maps = dict(cfg.get("form_maps") or {})
@@ -2020,24 +2072,78 @@ def facebook_form_map(request, form_id):
             return redirect("facebook_forms")
 
     saved = submitted_map if submitted_map is not None else (cfg.get("form_maps") or {}).get(form_id, {})
-    valid_targets = _facebook_valid_targets(ws)
+    linked_custom_tokens = {
+        token for token in saved.values()
+        if isinstance(token, str) and token.startswith("custom:")
+    }
+    editable_custom_tokens = {
+        saved.get(question["key"])
+        for question in questions
+        if not _facebook_question_requires_mapping(question)
+        and isinstance(saved.get(question["key"]), str)
+        and saved.get(question["key"], "").startswith("custom:")
+    }
+    catalog = _facebook_target_catalog(ws, custom_tokens=editable_custom_tokens)
+    metadata_catalog = _facebook_target_catalog(
+        ws, custom_tokens=linked_custom_tokens,
+    )
+    target_meta = {
+        token: {
+            "object": group["object"],
+            "object_label": group["label"],
+            "field_label": label,
+        }
+        for group in metadata_catalog
+        for token, label in group["options"]
+    }
+    valid_targets = set(target_meta) | {"ignore"}
     rows = []
     for question in questions:
         required_mapping = _facebook_question_requires_mapping(question)
-        current = saved.get(question["key"]) or _facebook_suggest_target(
-            question, ws, allow_new_fields=allow_new_fields
-        )
+        saved_target = saved.get(question["key"], "")
+        if required_mapping:
+            current_object = _facebook_target_object(saved_target)
+            expected = _facebook_form_field_token(
+                form_id, question["key"], current_object,
+            )
+            if current_object in {"contact", "company", "deal"}:
+                current = (
+                    expected
+                    if saved_target == expected and expected in valid_targets
+                    else f"new:{current_object}"
+                )
+            else:
+                current = ""
+        else:
+            current = saved_target or _facebook_suggest_target(
+                question, ws, allow_new_fields=False,
+            )
         if current.startswith("new:") and not allow_new_fields:
             current = "ignore"
         elif current not in valid_targets and not (allow_new_fields and current.startswith("new:")):
             current = "ignore"
         if required_mapping and current == "ignore":
             current = ""
+        meta = target_meta.get(current, {})
+        current_object = meta.get("object", "")
+        current_object_label = meta.get("object_label", "")
+        current_field_label = meta.get("field_label", "")
+        if current.startswith("new:"):
+            current_object = current.split(":", 1)[1]
+            current_object_label = dict(CustomField.OBJECT_CHOICES).get(current_object, "")
+            current_field_label = question["label"]
+        elif current == "ignore":
+            current_object = "ignore"
+            current_object_label = "Não salvar"
+            current_field_label = "Resposta ignorada"
         rows.append({
             "key": question["key"],
             "label": question["label"],
             "type": question.get("type", ""),
             "current": current,
+            "current_object": current_object,
+            "current_object_label": current_object_label,
+            "current_field_label": current_field_label,
             "required_mapping": required_mapping,
             "invalid_mapping": question["key"] in invalid_mapping_keys,
         })
@@ -2049,7 +2155,7 @@ def facebook_form_map(request, form_id):
         "form_id": form_id,
         "form_name": form_name,
         "rows": rows,
-        "catalog": _facebook_target_catalog(ws),
+        "catalog": catalog,
         "has_questions": bool(questions),
         "pipelines": pipelines,
         "dest": dest,
