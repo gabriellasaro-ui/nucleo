@@ -111,6 +111,7 @@ def connect_instance(instance_token, webhook_url):
                 "CONNECTION",
                 "QRCODE",
                 "CONTACT",
+                "PICTURE",
                 "HISTORY_SYNC",
             ],
             "immediate": True,
@@ -138,6 +139,25 @@ def get_contacts(instance_token):
     result = _evogo_request("/user/contacts", api_key=instance_token, timeout=30)
     contacts = result.get("data") or []
     return contacts if isinstance(contacts, list) else []
+
+
+def get_avatar(instance_token, phone):
+    result = _evogo_request(
+        "/user/avatar",
+        api_key=instance_token,
+        method="POST",
+        payload={"number": phone, "preview": True},
+        timeout=8,
+    )
+    data = result.get("data") or {}
+    if not isinstance(data, dict):
+        return ""
+    return str(
+        data.get("URL")
+        or data.get("url")
+        or data.get("profilePictureUrl")
+        or ""
+    )
 
 
 def send_text(instance_token, phone, text):

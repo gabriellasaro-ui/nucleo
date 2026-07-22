@@ -4,7 +4,7 @@
 <div class="page-head wa-page-head">
   <div>
     <h1>WhatsApp</h1>
-    <p>{% if whatsapp_connected %}{{ conversation_count }} conversa{{ conversation_count|pluralize }} · {{ contact_count }} contato{{ contact_count|pluralize }} com telefone{% else %}Atendimento comercial e conversas dos leads.{% endif %}</p>
+    <p>{% if whatsapp_connected %}{{ whatsapp_status.Name|default:"Atendimento conectado" }}{% else %}Atendimento comercial e conversas dos leads.{% endif %}</p>
   </div>
   <div class="page-actions">
     {% if whatsapp_connected %}
@@ -69,49 +69,52 @@
   <aside class="wa-inbox__sidebar">
     <div class="wa-sidebar-head">
       <div class="wa-sidebar-title">
+        {% if new_chat %}
+        <a class="icon-btn" href="{% url 'whatsapp' %}" title="Voltar para conversas">{% include "core/_icon.html" with icon="back" %}</a>
         <div>
-          <b>Atendimento</b>
+          <b>Nova conversa</b>
+          <span>Escolha um lead com telefone</span>
+        </div>
+        {% else %}
+        <div>
+          <b>Conversas</b>
           <span>WhatsApp conectado</span>
         </div>
-        {% if can_admin %}
-        <form method="post" action="{% url 'whatsapp_sync_contacts' %}">
-          {% csrf_token %}
-          <button class="icon-btn" type="submit" title="Sincronizar nomes dos contatos">{% include "core/_icon.html" with icon="loop" %}</button>
-        </form>
+        <div class="wa-sidebar-actions">
+          {% if can_admin %}
+          <form method="post" action="{% url 'whatsapp_sync_contacts' %}">
+            {% csrf_token %}
+            <button class="icon-btn" type="submit" title="Sincronizar nomes">{% include "core/_icon.html" with icon="loop" %}</button>
+          </form>
+          {% endif %}
+          <a class="icon-btn" href="{% url 'whatsapp' %}?new=1" title="Nova conversa">{% include "core/_icon.html" with icon="plus" %}</a>
+        </div>
         {% endif %}
       </div>
-      <nav class="wa-inbox-tabs" aria-label="Conteúdo do atendimento">
-        <a class="{% if inbox_section == 'conversations' %}is-active{% endif %}" href="{% url 'whatsapp' %}?view=conversations">
-          Conversas <span>{{ conversation_count }}</span>
-        </a>
-        <a class="{% if inbox_section == 'contacts' %}is-active{% endif %}" href="{% url 'whatsapp' %}?view=contacts">
-          Contatos CRM <span>{{ contact_count }}</span>
-        </a>
-      </nav>
       <form method="get" class="wa-search">
-        <input type="hidden" name="view" value="{{ inbox_section }}">
+        {% if new_chat %}<input type="hidden" name="new" value="1">{% endif %}
         <span>{% include "core/_icon.html" with icon="search" %}</span>
-        <input type="search" name="q" value="{{ conversation_search }}" placeholder="{% if inbox_section == 'contacts' %}Buscar contato{% else %}Buscar conversa{% endif %}" aria-label="Buscar">
+        <input type="search" name="q" value="{{ conversation_search }}" placeholder="{% if new_chat %}Buscar lead{% else %}Buscar ou iniciar conversa{% endif %}" aria-label="Buscar">
       </form>
     </div>
 
-    {% if inbox_section == "contacts" %}
-    <nav class="wa-conversation-list" aria-label="Contatos do CRM">
+    {% if new_chat %}
+    <nav class="wa-conversation-list" aria-label="Leads disponíveis">
       {% for contact in contact_options %}
-      <a class="wa-conversation{% if draft_contact.pk == contact.pk or selected_conversation.contact_id == contact.pk %} is-active{% endif %}" href="{% url 'whatsapp' %}?{% if contact.whatsapp_conversation_id %}conversation={{ contact.whatsapp_conversation_id }}{% else %}view=contacts&amp;contact={{ contact.pk }}{% endif %}">
+      <a class="wa-conversation" href="{% url 'whatsapp' %}?{% if contact.whatsapp_conversation_id %}conversation={{ contact.whatsapp_conversation_id }}{% else %}contact={{ contact.pk }}{% endif %}">
         <span class="wa-avatar">{{ contact.initials }}</span>
         <span class="wa-conversation__body">
           <span class="wa-conversation__top"><b>{{ contact.full_name }}</b></span>
           <span class="wa-conversation__preview">{{ contact.phone }}</span>
         </span>
-        <span class="wa-contact-action" title="{% if contact.whatsapp_conversation_id %}Abrir conversa{% else %}Iniciar conversa{% endif %}">{% include "core/_icon.html" with icon="send" %}</span>
+        <span class="wa-contact-action">{% include "core/_icon.html" with icon="send" %}</span>
       </a>
       {% empty %}
       <div class="wa-sidebar-empty">
         {% include "core/_icon.html" with icon="users" %}
-        <b>Nenhum contato com telefone</b>
-        <span>Os leads dos formulários aparecerão aqui quando tiverem telefone.</span>
-        <a href="{% url 'crm:contact_list' %}">Abrir contatos do CRM</a>
+        <b>Nenhum lead com telefone</b>
+        <span>Leads dos formulários aparecerão aqui quando tiverem um telefone válido.</span>
+        <a href="{% url 'crm:contact_list' %}">Abrir contatos</a>
       </div>
       {% endfor %}
     </nav>
@@ -119,7 +122,10 @@
     <nav class="wa-conversation-list" aria-label="Conversas do WhatsApp">
       {% for conversation in conversations %}
       <a class="wa-conversation{% if selected_conversation.pk == conversation.pk %} is-active{% endif %}" href="{% url 'whatsapp' %}?conversation={{ conversation.pk }}{% if conversation_search %}&q={{ conversation_search|urlencode }}{% endif %}">
-        <span class="wa-avatar">{{ conversation.name|default:conversation.phone|slice:":1"|upper }}</span>
+        <span class="wa-avatar">
+          {{ conversation.name|default:conversation.phone|slice:":1"|upper }}
+          {% if conversation.avatar_url %}<img src="{{ conversation.avatar_url }}" alt="" referrerpolicy="no-referrer">{% else %}<img data-wa-avatar data-src="{% url 'whatsapp_avatar' conversation.pk %}" alt="">{% endif %}
+        </span>
         <span class="wa-conversation__body">
           <span class="wa-conversation__top">
             <b>{{ conversation.name|default:conversation.phone }}</b>
@@ -133,8 +139,8 @@
       <div class="wa-sidebar-empty">
         {% include "core/_icon.html" with icon="loop" %}
         <b>{% if conversation_search %}Nenhuma conversa encontrada{% else %}Aguardando conversas{% endif %}</b>
-        <span>{% if conversation_search %}Tente buscar por outro nome ou telefone.{% else %}O histórico está sendo sincronizado. Você também pode iniciar pelo contato do CRM.{% endif %}</span>
-        {% if not conversation_search %}<a href="{% url 'whatsapp' %}?view=contacts">Ver contatos do CRM</a>{% endif %}
+        <span>{% if conversation_search %}Tente buscar por outro nome ou telefone.{% else %}Novas mensagens aparecerão aqui automaticamente.{% endif %}</span>
+        {% if not conversation_search %}<a href="{% url 'whatsapp' %}?new=1">Iniciar conversa</a>{% endif %}
       </div>
       {% endfor %}
     </nav>
@@ -144,7 +150,10 @@
   <section class="wa-thread">
     {% if selected_conversation or draft_contact %}
     <header class="wa-thread__head">
-      <span class="wa-avatar wa-avatar--lg">{% if selected_conversation %}{{ selected_conversation.name|default:selected_conversation.phone|slice:":1"|upper }}{% else %}{{ draft_contact.initials }}{% endif %}</span>
+      <span class="wa-avatar wa-avatar--lg">
+        {% if selected_conversation %}{{ selected_conversation.name|default:selected_conversation.phone|slice:":1"|upper }}{% else %}{{ draft_contact.initials }}{% endif %}
+        {% if selected_conversation %}{% if selected_conversation.avatar_url %}<img src="{{ selected_conversation.avatar_url }}" alt="" referrerpolicy="no-referrer">{% else %}<img data-wa-avatar data-src="{% url 'whatsapp_avatar' selected_conversation.pk %}" alt="">{% endif %}{% endif %}
+      </span>
       <div>
         <b>{% if selected_conversation %}{{ selected_conversation.name|default:selected_conversation.phone }}{% else %}{{ draft_contact.full_name }}{% endif %}</b>
         <span>{% if selected_conversation %}{{ selected_conversation.phone }}{% else %}{{ draft_contact.phone }}{% endif %}</span>
@@ -180,9 +189,9 @@
     {% endif %}
     {% else %}
     <div class="wa-thread-placeholder">
-      {% include "core/_icon.html" with icon="note" %}
-      <b>{% if inbox_section == "contacts" %}Escolha um contato{% else %}Selecione uma conversa{% endif %}</b>
-      <span>{% if inbox_section == "contacts" %}Clique em um contato do CRM para enviar a primeira mensagem.{% else %}As mensagens do atendimento aparecerão aqui.{% endif %}</span>
+      <span class="wa-placeholder-mark">{% include "core/_icon.html" with icon="phone" %}</span>
+      <b>WhatsApp</b>
+      <span>Selecione uma conversa ou inicie um novo atendimento.</span>
     </div>
     {% endif %}
   </section>
@@ -194,6 +203,48 @@
 (function () {
   var inbox = document.querySelector("[data-wa-inbox]");
   if (!inbox) return;
+  Array.from(inbox.querySelectorAll(".wa-avatar img")).forEach(function (avatar) {
+    avatar.addEventListener("error", function () { avatar.hidden = true; }, {once: true});
+  });
+  var avatarQueue = [];
+  var avatarActive = 0;
+  var avatarSeen = new WeakSet();
+  function pumpAvatars() {
+    while (avatarActive < 2 && avatarQueue.length) {
+      var avatar = avatarQueue.shift();
+      avatarActive += 1;
+      avatar.addEventListener("load", function (event) {
+        event.currentTarget.classList.add("is-ready");
+        avatarActive -= 1;
+        pumpAvatars();
+      }, {once: true});
+      avatar.addEventListener("error", function () {
+        avatarActive -= 1;
+        pumpAvatars();
+      }, {once: true});
+      avatar.src = avatar.dataset.src;
+    }
+  }
+  function queueAvatar(avatar) {
+    if (avatarSeen.has(avatar)) return;
+    avatarSeen.add(avatar);
+    avatarQueue.push(avatar);
+    pumpAvatars();
+  }
+  var pendingAvatars = Array.from(inbox.querySelectorAll("[data-wa-avatar]"));
+  var conversationList = inbox.querySelector(".wa-conversation-list");
+  function queueVisibleAvatars() {
+    var listRect = conversationList ? conversationList.getBoundingClientRect() : null;
+    pendingAvatars.forEach(function (avatar) {
+      var parent = avatar.parentElement;
+      var rect = parent.getBoundingClientRect();
+      var inThreadHeader = Boolean(parent.closest(".wa-thread__head"));
+      var inVisibleList = listRect && rect.bottom >= listRect.top && rect.top <= listRect.bottom;
+      if (inThreadHeader || inVisibleList) queueAvatar(avatar);
+    });
+  }
+  queueVisibleAvatars();
+  if (conversationList) conversationList.addEventListener("scroll", queueVisibleAvatars, {passive: true});
   var initialVersion = inbox.dataset.inboxVersion || "";
   window.setInterval(function () {
     var draft = inbox.querySelector("textarea[name='message']");

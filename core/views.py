@@ -41,6 +41,7 @@ from .whatsapp_service import (
     connect_instance,
     create_instance,
     evogo_is_configured,
+    get_avatar as get_whatsapp_avatar,
     get_contacts,
     get_instance_qr,
     get_instance_status,
@@ -1328,14 +1329,12 @@ def whatsapp(request):
             api_error = api_error or str(exc)
 
     search = request.GET.get("q", "").strip()
-    inbox_section = request.GET.get("view", "conversations").strip()
-    if inbox_section not in {"conversations", "contacts"}:
-        inbox_section = "conversations"
+    new_chat = request.GET.get("new", "").strip() == "1"
 
     conversation_base = WhatsAppConversation.objects.filter(workspace=ws)
     conversation_count = conversation_base.count()
     conversations = conversation_base.select_related("contact")
-    if search:
+    if search and not new_chat:
         conversation_query = (
             Q(name__icontains=search)
             | Q(contact__first_name__icontains=search)
@@ -1349,7 +1348,7 @@ def whatsapp(request):
 
     contacts = Contact.objects.filter(workspace=ws).exclude(phone="")
     contact_count = contacts.count()
-    if inbox_section == "contacts" and search:
+    if new_chat and search:
         contacts = contacts.filter(
             Q(first_name__icontains=search)
             | Q(last_name__icontains=search)
@@ -1372,6 +1371,7 @@ def whatsapp(request):
     selected = None
     selected_id = request.GET.get("conversation", "").strip()
     if selected_id.isdigit():
+        new_chat = False
         selected = next(
             (item for item in conversations if item.pk == int(selected_id)), None,
         )
@@ -1383,7 +1383,7 @@ def whatsapp(request):
     draft_contact = None
     contact_id = request.GET.get("contact", "").strip()
     if contact_id.isdigit():
-        inbox_section = "contacts"
+        new_chat = False
         draft_contact = Contact.objects.filter(
             workspace=ws, pk=int(contact_id),
         ).first()
@@ -1397,12 +1397,7 @@ def whatsapp(request):
                 selected = existing
                 draft_contact = None
 
-    if (
-        inbox_section == "conversations"
-        and not selected
-        and not draft_contact
-        and conversations
-    ):
+    if not new_chat and not selected and not draft_contact and conversations:
         selected = conversations[0]
     if selected and selected.unread_count:
         selected.unread_count = 0
@@ -1437,7 +1432,7 @@ def whatsapp(request):
         "contact_count": contact_count,
         "conversation_count": conversation_count,
         "conversation_search": search,
-        "inbox_section": inbox_section,
+        "new_chat": new_chat,
         "whatsapp_inbox_version": inbox_version,
     })
 
@@ -1540,6 +1535,37 @@ def whatsapp_status(request):
         ).exclude(phone="").count(),
         "inbox_version": latest_conversation.isoformat() if latest_conversation else "",
     })
+
+
+@login_required
+def whatsapp_avatar(request, conversation_id):
+    connection = IntegrationConnection.objects.filter(
+        workspace=request.workspace,
+        provider="whatsapp",
+        status="connected",
+    ).first()
+    config = connection.config if connection else {}
+    conversation = get_object_or_404(
+        WhatsAppConversation,
+        workspace=request.workspace,
+        instance_id=config.get("instance_id", ""),
+        pk=conversation_id,
+    )
+    if conversation.avatar_url:
+        return redirect(conversation.avatar_url)
+    if not config.get("instance_token"):
+        return HttpResponse(status=204)
+    try:
+        avatar_url = get_whatsapp_avatar(
+            config["instance_token"], conversation.remote_jid,
+        )
+    except EvoGoError:
+        return HttpResponse(status=204)
+    if not avatar_url.startswith(("https://", "http://")):
+        return HttpResponse(status=204)
+    conversation.avatar_url = avatar_url[:500]
+    conversation.save(update_fields=["avatar_url"])
+    return redirect(conversation.avatar_url)
 
 
 @login_required

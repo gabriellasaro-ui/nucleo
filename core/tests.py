@@ -19,7 +19,7 @@ from modules.crm.models import Company, Contact, Deal
 from .events import _coerce_custom_value, _create_contact, _norm_key, run_automation_for_event
 from .models import Automation, CustomField, Domain, Event, IntegrationConnection, Membership, Workspace
 from .rbac import can_edit, require_role
-from .whatsapp_service import connect_instance, create_instance
+from .whatsapp_service import connect_instance, create_instance, get_avatar
 from .views import (
     _automation_pipelines,
     _automation_trigger_data,
@@ -109,16 +109,24 @@ class EvoGoClientTests(SimpleTestCase):
         connect_response.read.return_value = json.dumps({
             "message": "success", "data": {},
         }).encode()
+        avatar_response = MagicMock()
+        avatar_response.read.return_value = json.dumps({
+            "message": "success",
+            "data": {"URL": "https://cdn.example.test/avatar.jpg"},
+        }).encode()
         urlopen.return_value.__enter__.side_effect = [
             create_response,
             connect_response,
+            avatar_response,
         ]
 
         instance, token = create_instance("nucleo-1")
         connect_instance(token, "https://crm.example.test/webhooks/whatsapp/secret/")
+        avatar_url = get_avatar(token, "5511999991234@s.whatsapp.net")
 
         create_request = urlopen.call_args_list[0].args[0]
         connect_request = urlopen.call_args_list[1].args[0]
+        avatar_request = urlopen.call_args_list[2].args[0]
         create_payload = json.loads(create_request.data)
         connect_payload = json.loads(connect_request.data)
         self.assertEqual(instance["id"], "INSTANCE-1")
@@ -133,10 +141,21 @@ class EvoGoClientTests(SimpleTestCase):
             connect_request.full_url,
             "https://evogo.example.test/instance/connect",
         )
+        self.assertEqual(avatar_url, "https://cdn.example.test/avatar.jpg")
+        self.assertEqual(
+            avatar_request.full_url,
+            "https://evogo.example.test/user/avatar",
+        )
+        self.assertTrue(json.loads(avatar_request.data)["preview"])
+        self.assertEqual(
+            json.loads(avatar_request.data)["number"],
+            "5511999991234@s.whatsapp.net",
+        )
         self.assertFalse(create_payload["advancedSettings"]["readMessages"])
         self.assertTrue(create_payload["advancedSettings"]["ignoreGroups"])
         self.assertIn("MESSAGE", connect_payload["subscribe"])
         self.assertIn("HISTORY_SYNC", connect_payload["subscribe"])
+        self.assertIn("PICTURE", connect_payload["subscribe"])
 
 
 class WhatsAppTemplateTests(SimpleTestCase):
@@ -181,6 +200,8 @@ class WhatsAppTemplateTests(SimpleTestCase):
         self.assertIn("Tenho interesse", html)
         self.assertIn('action="/whatsapp/send/"', html)
         self.assertIn("Desconectar", html)
+        self.assertIn("Nova conversa", html)
+        self.assertNotIn("Contatos CRM", html)
         self.assertNotIn("instance_token", html)
 
 

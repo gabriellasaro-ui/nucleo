@@ -264,6 +264,16 @@ def ingest_whatsapp_event(workspace, connection, payload):
             provider_message_id__in=ids or [],
         ).update(status="read")
         return None
+    if event_key == "picture":
+        jid = str(_value(data, "JID", "jid", default="") or "")
+        phone = normalize_whatsapp_phone(jid)
+        if phone:
+            WhatsAppConversation.objects.filter(
+                workspace=workspace,
+                instance_id=config.get("instance_id", ""),
+                phone=phone,
+            ).update(avatar_url="")
+        return None
     if event_key == "historysync":
         _ingest_history_sync(workspace, connection, payload, data)
         return None
