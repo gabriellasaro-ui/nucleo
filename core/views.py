@@ -33,6 +33,7 @@ from .whatsapp_inbox import (
     conversation_for_contact,
     ingest_whatsapp_event,
     normalize_whatsapp_phone,
+    promote_whatsapp_conversation,
     record_outgoing_message,
     sync_whatsapp_contact_directory,
 )
@@ -1331,7 +1332,11 @@ def whatsapp(request):
     search = request.GET.get("q", "").strip()
     new_chat = request.GET.get("new", "").strip() == "1"
 
-    conversation_base = WhatsAppConversation.objects.filter(workspace=ws)
+    conversation_base = WhatsAppConversation.objects.filter(
+        workspace=ws,
+        instance_id=config.get("instance_id", ""),
+        is_history_import=False,
+    ).exclude(remote_jid__endswith="@lid")
     conversation_count = conversation_base.count()
     conversations = conversation_base.select_related("contact")
     if search and not new_chat:
@@ -1377,7 +1382,10 @@ def whatsapp(request):
         )
         if not selected:
             selected = WhatsAppConversation.objects.filter(
-                workspace=ws, pk=int(selected_id),
+                workspace=ws,
+                instance_id=config.get("instance_id", ""),
+                is_history_import=False,
+                pk=int(selected_id),
             ).select_related("contact").first()
 
     draft_contact = None
@@ -1404,11 +1412,18 @@ def whatsapp(request):
         selected.save(update_fields=["unread_count", "updated_at"])
 
     thread_messages = []
+    selected_deal = None
     if selected:
         thread_messages = list(selected.messages.order_by("-sent_at", "-id")[:300])
         thread_messages.reverse()
+        if selected.contact_id:
+            selected_deal = Deal.objects.filter(
+                workspace=ws,
+                contact=selected.contact,
+                stage_kind="open",
+            ).order_by("-updated_at").first()
     inbox_version = (
-        WhatsAppConversation.objects.filter(workspace=ws)
+        conversation_base
         .order_by("-updated_at")
         .values_list("updated_at", flat=True)
         .first()
@@ -1426,6 +1441,7 @@ def whatsapp(request):
         "whatsapp_error": api_error,
         "conversations": conversations,
         "selected_conversation": selected,
+        "selected_deal": selected_deal,
         "draft_contact": draft_contact,
         "thread_messages": thread_messages,
         "contact_options": contact_options,
@@ -1514,7 +1530,11 @@ def whatsapp_status(request):
         connection.status = "connected" if connected else "disconnected"
         connection.save(update_fields=["status", "updated_at"])
     latest_conversation = (
-        WhatsAppConversation.objects.filter(workspace=request.workspace)
+        WhatsAppConversation.objects.filter(
+            workspace=request.workspace,
+            instance_id=config.get("instance_id", ""),
+            is_history_import=False,
+        ).exclude(remote_jid__endswith="@lid")
         .order_by("-updated_at")
         .values_list("updated_at", flat=True)
         .first()
@@ -1529,7 +1549,9 @@ def whatsapp_status(request):
         "passkey_url": qr.get("passkeyOpenUrl", ""),
         "conversation_count": WhatsAppConversation.objects.filter(
             workspace=request.workspace,
-        ).count(),
+            instance_id=config.get("instance_id", ""),
+            is_history_import=False,
+        ).exclude(remote_jid__endswith="@lid").count(),
         "contact_count": Contact.objects.filter(
             workspace=request.workspace,
         ).exclude(phone="").count(),
@@ -1551,7 +1573,8 @@ def whatsapp_avatar(request, conversation_id):
         instance_id=config.get("instance_id", ""),
         pk=conversation_id,
     )
-    if conversation.avatar_url:
+    refresh = request.GET.get("refresh", "") == "1"
+    if conversation.avatar_url and not refresh:
         return redirect(conversation.avatar_url)
     if not config.get("instance_token"):
         return HttpResponse(status=204)
@@ -1566,6 +1589,83 @@ def whatsapp_avatar(request, conversation_id):
     conversation.avatar_url = avatar_url[:500]
     conversation.save(update_fields=["avatar_url"])
     return redirect(conversation.avatar_url)
+
+
+def _whatsapp_default_pipeline(workspace):
+    pipeline = (
+        Pipeline.objects.filter(workspace=workspace, is_default=True).first()
+        or Pipeline.objects.filter(workspace=workspace).first()
+    )
+    if pipeline is None:
+        pipeline = Pipeline.objects.create(
+            workspace=workspace,
+            name="Vendas",
+            is_default=True,
+        )
+    pipeline.ensure_stages()
+    return pipeline
+
+
+@login_required
+@require_role("member")
+@require_POST
+def whatsapp_promote(request):
+    conversation_id = request.POST.get("conversation_id", "").strip()
+    action = request.POST.get("action", "contact").strip()
+    if not conversation_id.isdigit() or action not in {"contact", "contact_deal"}:
+        messages.error(request, "Ação inválida para esta conversa.")
+        return redirect("whatsapp")
+
+    connection = IntegrationConnection.objects.filter(
+        workspace=request.workspace,
+        provider="whatsapp",
+    ).first()
+    config = connection.config if connection else {}
+    conversation = get_object_or_404(
+        WhatsAppConversation,
+        workspace=request.workspace,
+        instance_id=config.get("instance_id", ""),
+        is_history_import=False,
+        pk=int(conversation_id),
+    )
+
+    with transaction.atomic():
+        contact, contact_created = promote_whatsapp_conversation(
+            request.workspace, conversation,
+        )
+        deal = None
+        deal_created = False
+        if action == "contact_deal":
+            deal = Deal.objects.filter(
+                workspace=request.workspace,
+                contact=contact,
+                stage_kind="open",
+            ).order_by("-updated_at").first()
+            if deal is None:
+                pipeline = _whatsapp_default_pipeline(request.workspace)
+                stage = pipeline.stages.filter(kind="open").order_by("order", "id").first()
+                deal = Deal(
+                    workspace=request.workspace,
+                    pipeline=pipeline,
+                    contact=contact,
+                    owner=request.user,
+                    title=f"{contact.full_name} - WhatsApp",
+                    stage=stage.key if stage else "novo",
+                )
+                deal.sync_stage_kind()
+                deal.save()
+                deal_created = True
+
+    if action == "contact_deal":
+        if deal_created:
+            messages.success(request, "Contato e negócio criados no CRM.")
+        else:
+            messages.info(request, "Contato vinculado ao negócio que já estava aberto.")
+    elif contact_created:
+        messages.success(request, "Contato criado no CRM.")
+    else:
+        messages.info(request, "Conversa vinculada ao contato existente.")
+    return redirect(f"{reverse('whatsapp')}?conversation={conversation.pk}")
 
 
 @login_required

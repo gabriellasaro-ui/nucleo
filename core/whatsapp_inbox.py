@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -52,6 +53,66 @@ def _split_contact_name(name, phone):
     if not parts:
         return f"WhatsApp {phone[-4:]}", ""
     return parts[0][:120], " ".join(parts[1:])[:120]
+
+
+def _jid_string(info, *names):
+    value = _value(info, *names, default="")
+    if isinstance(value, dict):
+        user = str(_value(value, "User", "user", default="") or "")
+        server = str(_value(value, "Server", "server", default="") or "")
+        return f"{user}@{server}" if user and server else user
+    return str(value or "")
+
+
+def _conversation_jid(info, is_from_me):
+    chat = _jid_string(info, "Chat", "chat")
+    if chat.endswith("@s.whatsapp.net"):
+        return chat
+
+    alternate_names = (
+        ("RecipientAlt", "recipientAlt", "RemoteJIDAlt", "remoteJidAlt")
+        if is_from_me
+        else ("Sender", "sender", "SenderAlt", "senderAlt", "RemoteJIDAlt", "remoteJidAlt")
+    )
+    for name in alternate_names:
+        candidate = _jid_string(info, name)
+        if candidate.endswith("@s.whatsapp.net"):
+            return candidate
+
+    # A LID is an internal WhatsApp identifier, not a customer phone number.
+    # Without its phone-number alternate it cannot safely identify a CRM person.
+    if chat.endswith("@lid"):
+        return ""
+    return chat
+
+
+@transaction.atomic
+def promote_whatsapp_conversation(workspace, conversation):
+    conversation = (
+        WhatsAppConversation.objects.select_for_update()
+        .get(workspace=workspace, pk=conversation.pk)
+    )
+    contact = conversation.contact or find_contact_by_phone(conversation.phone)
+    created = False
+    if not contact:
+        first_name, last_name = _split_contact_name(
+            conversation.name, conversation.phone,
+        )
+        contact = Contact.objects.create(
+            workspace=workspace,
+            first_name=first_name,
+            last_name=last_name,
+            phone="+" + conversation.phone,
+            stage="lead",
+        )
+        created = True
+
+    WhatsAppConversation.objects.filter(
+        workspace=workspace,
+        instance_id=conversation.instance_id,
+        phone=conversation.phone,
+    ).update(contact=contact, name=contact.full_name)
+    return contact, created
 
 
 @transaction.atomic
@@ -182,55 +243,6 @@ def _provider_message_id(payload, info, instance_id, remote_jid):
     return f"fallback-{instance_id}-{remote_jid}-{digest}"[:180]
 
 
-def _ingest_history_sync(workspace, connection, payload, data):
-    history = _value(data, "Data", "data", default=data) or {}
-    conversations = _value(history, "Conversations", "conversations", default=[])
-    if not isinstance(conversations, list):
-        return
-    for chat in conversations[-50:]:
-        remote_jid = str(_value(chat, "ID", "id", default="") or "")
-        messages = _value(chat, "Messages", "messages", default=[])
-        if not isinstance(messages, list):
-            continue
-        for item in messages[-100:]:
-            web_message = _value(item, "Message", "message", default=item) or {}
-            key = _value(web_message, "Key", "key", default={}) or {}
-            message = _value(web_message, "Message", "message", default={}) or {}
-            chat_jid = str(
-                _value(key, "RemoteJID", "remoteJID", "remoteJid", default="")
-                or remote_jid
-            )
-            message_id = str(_value(key, "ID", "id", default="") or "")
-            if not chat_jid or not message_id:
-                continue
-            from_me = bool(_value(key, "FromMe", "fromMe", default=False))
-            pseudo = {
-                "event": "SendMessage" if from_me else "Message",
-                "instanceId": payload.get("instanceId", ""),
-                "instanceToken": payload.get("instanceToken", ""),
-                "_history_sync": True,
-                "data": {
-                    "Info": {
-                        "ID": message_id,
-                        "Chat": chat_jid,
-                        "Sender": chat_jid,
-                        "PushName": _value(
-                            web_message, "PushName", "pushName", default="",
-                        ),
-                        "IsFromMe": from_me,
-                        "Timestamp": _value(
-                            web_message,
-                            "MessageTimestamp",
-                            "messageTimestamp",
-                            default="",
-                        ),
-                    },
-                    "Message": message,
-                },
-            }
-            ingest_whatsapp_event(workspace, connection, pseudo)
-
-
 @transaction.atomic
 def ingest_whatsapp_event(workspace, connection, payload):
     event_name = str(_value(payload, "event", default="") or "")
@@ -275,17 +287,16 @@ def ingest_whatsapp_event(workspace, connection, payload):
             ).update(avatar_url="")
         return None
     if event_key == "historysync":
-        _ingest_history_sync(workspace, connection, payload, data)
+        # The CRM inbox starts clean. Old phone history must not look like
+        # newly arrived commercial conversations.
         return None
     if event_key not in {"message", "sendmessage"}:
         return None
 
     info = _value(data, "Info", "info", default={}) or {}
     message = _value(data, "Message", "message", default={}) or {}
-    remote_jid = str(
-        _value(info, "Chat", "chat", default="")
-        or _value(info, "Sender", "sender", default="")
-    )
+    is_from_me = bool(_value(info, "IsFromMe", "isFromMe", default=False))
+    remote_jid = _conversation_jid(info, is_from_me)
     if not remote_jid or any(
         suffix in remote_jid for suffix in ("@g.us", "@broadcast", "@newsletter")
     ):
@@ -298,34 +309,33 @@ def ingest_whatsapp_event(workspace, connection, payload):
         _value(payload, "instanceId", default="")
         or config.get("instance_id", "")
     )
-    is_from_me = bool(_value(info, "IsFromMe", "isFromMe", default=False))
     direction = "outgoing" if is_from_me or event_key == "sendmessage" else "incoming"
     push_name = str(
         _value(info, "PushName", "pushName", default="")
         or _value(data, "PushName", "pushName", default="")
     ).strip()
 
-    conversation = (
+    matches = list(
         WhatsAppConversation.objects.select_for_update()
-        .filter(
-            workspace=workspace,
-            instance_id=instance_id,
-            remote_jid=remote_jid,
-        )
-        .first()
+        .filter(workspace=workspace, instance_id=instance_id)
+        .filter(Q(remote_jid=remote_jid) | Q(phone=phone))
+        .order_by("-contact_id", "id")
     )
+    conversation = next(
+        (item for item in matches if item.contact_id),
+        matches[0] if matches else None,
+    )
+    if conversation and len(matches) > 1:
+        for duplicate in (item for item in matches if item.pk != conversation.pk):
+            duplicate.messages.update(conversation=conversation)
+            conversation.unread_count += duplicate.unread_count
+            if not conversation.avatar_url and duplicate.avatar_url:
+                conversation.avatar_url = duplicate.avatar_url
+            duplicate.delete()
+
     contact = conversation.contact if conversation and conversation.contact_id else None
     if not contact:
         contact = find_contact_by_phone(phone)
-    if not contact and direction == "incoming" and not payload.get("_history_sync"):
-        first_name, last_name = _split_contact_name(push_name, phone)
-        contact = Contact.objects.create(
-            workspace=workspace,
-            first_name=first_name,
-            last_name=last_name,
-            phone="+" + phone,
-            stage="lead",
-        )
 
     if not conversation:
         conversation = WhatsAppConversation.objects.create(
@@ -335,6 +345,7 @@ def ingest_whatsapp_event(workspace, connection, payload):
             remote_jid=remote_jid,
             phone=phone,
             name=contact.full_name if contact else push_name,
+            is_history_import=False,
         )
     else:
         changed = []
@@ -345,6 +356,9 @@ def ingest_whatsapp_event(workspace, connection, payload):
         if display_name and conversation.name != display_name:
             conversation.name = display_name
             changed.append("name")
+        if conversation.is_history_import:
+            conversation.is_history_import = False
+            changed.append("is_history_import")
         if changed:
             conversation.save(update_fields=[*changed, "updated_at"])
 
@@ -371,10 +385,10 @@ def ingest_whatsapp_event(workspace, connection, payload):
 
     conversation.last_message = text[:300]
     conversation.last_message_at = sent_at
-    if direction == "incoming" and not payload.get("_history_sync"):
+    if direction == "incoming":
         conversation.unread_count += 1
     conversation.save(update_fields=[
-        "last_message", "last_message_at", "unread_count", "updated_at",
+        "last_message", "last_message_at", "unread_count", "avatar_url", "updated_at",
     ])
     return message_obj
 

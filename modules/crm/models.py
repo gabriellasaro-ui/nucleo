@@ -165,6 +165,7 @@ class WhatsAppConversation(TimestampedModel):
     phone = models.CharField(max_length=40)
     name = models.CharField(max_length=160, blank=True)
     avatar_url = models.URLField(max_length=500, blank=True)
+    is_history_import = models.BooleanField(default=False)
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="open")
     unread_count = models.PositiveIntegerField(default=0)
     last_message = models.CharField(max_length=300, blank=True)

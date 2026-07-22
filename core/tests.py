@@ -154,7 +154,7 @@ class EvoGoClientTests(SimpleTestCase):
         self.assertFalse(create_payload["advancedSettings"]["readMessages"])
         self.assertTrue(create_payload["advancedSettings"]["ignoreGroups"])
         self.assertIn("MESSAGE", connect_payload["subscribe"])
-        self.assertIn("HISTORY_SYNC", connect_payload["subscribe"])
+        self.assertNotIn("HISTORY_SYNC", connect_payload["subscribe"])
         self.assertIn("PICTURE", connect_payload["subscribe"])
 
 
@@ -201,6 +201,8 @@ class WhatsAppTemplateTests(SimpleTestCase):
         self.assertIn('action="/whatsapp/send/"', html)
         self.assertIn("Desconectar", html)
         self.assertIn("Nova conversa", html)
+        self.assertIn("Criar contato", html)
+        self.assertIn("Contato + negócio", html)
         self.assertNotIn("Contatos CRM", html)
         self.assertNotIn("instance_token", html)
 

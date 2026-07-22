@@ -17,6 +17,7 @@ from core.tenancy import clear_current_workspace, set_current_workspace
 from core.views import whatsapp_webhook
 from core.whatsapp_inbox import (
     normalize_whatsapp_phone,
+    promote_whatsapp_conversation,
     sync_whatsapp_contact_directory,
 )
 
@@ -93,7 +94,7 @@ class WhatsAppInboxTests(TenantTestBase):
         self.assertEqual(WhatsAppMessage.objects.count(), 1)
         self.assertEqual(Contact.objects.count(), 1)
 
-    def test_unknown_inbound_number_creates_a_lead_and_bad_token_is_rejected(self):
+    def test_unknown_inbound_number_waits_for_manual_crm_promotion(self):
         payload = {
             "event": "Message",
             "instanceId": "INSTANCE-1",
@@ -115,13 +116,12 @@ class WhatsAppInboxTests(TenantTestBase):
         payload["instanceToken"] = "instance-token"
         accepted = self._send_webhook(payload)
         self.assertEqual(accepted.status_code, 200)
-        contact = Contact.objects.get()
-        self.assertEqual(contact.full_name, "Pessoa Nova")
-        self.assertEqual(contact.phone, "+5511888887777")
-        self.assertEqual(contact.stage, "lead")
-        self.assertEqual(normalize_whatsapp_phone(contact.phone), "5511888887777")
+        conversation = WhatsAppConversation.objects.get()
+        self.assertEqual(conversation.name, "Pessoa Nova")
+        self.assertIsNone(conversation.contact)
+        self.assertFalse(Contact.objects.exists())
 
-    def test_history_sync_imports_recent_messages_without_marking_them_unread(self):
+    def test_history_sync_does_not_import_old_phone_conversations(self):
         payload = {
             "event": "HistorySync",
             "instanceId": "INSTANCE-1",
@@ -150,12 +150,83 @@ class WhatsAppInboxTests(TenantTestBase):
         response = self._send_webhook(payload)
 
         self.assertEqual(response.status_code, 200)
-        conversation = WhatsAppConversation.objects.get()
-        self.assertEqual(conversation.last_message, "Mensagem anterior")
-        self.assertEqual(conversation.unread_count, 0)
-        self.assertIsNone(conversation.contact)
+        self.assertFalse(WhatsAppConversation.objects.exists())
         self.assertFalse(Contact.objects.exists())
-        self.assertEqual(WhatsAppMessage.objects.get().provider_message_id, "HISTORY-1")
+        self.assertFalse(WhatsAppMessage.objects.exists())
+
+    def test_lid_uses_phone_number_alternate_and_does_not_duplicate_chat(self):
+        base = {
+            "event": "Message",
+            "instanceId": "INSTANCE-1",
+            "instanceToken": "instance-token",
+            "data": {
+                "Info": {
+                    "ID": "MESSAGE-LID-1",
+                    "Chat": "227307469975622@lid",
+                    "Sender": "227307469975622@lid",
+                    "SenderAlt": "553173042273@s.whatsapp.net",
+                    "PushName": "Gabriel",
+                    "IsFromMe": False,
+                },
+                "Message": {"conversation": "Olá"},
+            },
+        }
+        self.assertEqual(self._send_webhook(base).status_code, 200)
+        base["data"]["Info"].update({
+            "ID": "MESSAGE-LID-2",
+            "Chat": "553173042273@s.whatsapp.net",
+            "Sender": "553173042273@s.whatsapp.net",
+        })
+        self.assertEqual(self._send_webhook(base).status_code, 200)
+
+        conversation = WhatsAppConversation.objects.get()
+        self.assertEqual(conversation.phone, "553173042273")
+        self.assertEqual(conversation.remote_jid, "553173042273@s.whatsapp.net")
+        self.assertEqual(conversation.messages.count(), 2)
+        self.assertFalse(Contact.objects.exists())
+
+    def test_lid_without_phone_alternate_is_ignored(self):
+        payload = {
+            "event": "Message",
+            "instanceId": "INSTANCE-1",
+            "instanceToken": "instance-token",
+            "data": {
+                "Info": {
+                    "ID": "MESSAGE-LID-ONLY",
+                    "Chat": "227307469975622@lid",
+                    "Sender": "227307469975622@lid",
+                    "PushName": "Identidade interna",
+                    "IsFromMe": False,
+                },
+                "Message": {"conversation": "Olá"},
+            },
+        }
+
+        self.assertEqual(self._send_webhook(payload).status_code, 200)
+        self.assertFalse(WhatsAppConversation.objects.exists())
+
+    def test_manual_promotion_is_idempotent(self):
+        conversation = WhatsAppConversation.objects.create(
+            workspace=self.tenant,
+            instance_id="INSTANCE-1",
+            remote_jid="5511888887777@s.whatsapp.net",
+            phone="5511888887777",
+            name="Pessoa Nova",
+        )
+
+        first, first_created = promote_whatsapp_conversation(
+            self.tenant, conversation,
+        )
+        second, second_created = promote_whatsapp_conversation(
+            self.tenant, conversation,
+        )
+
+        self.assertTrue(first_created)
+        self.assertFalse(second_created)
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(Contact.objects.count(), 1)
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.contact_id, first.pk)
 
     def test_contact_directory_names_conversations_without_importing_the_phonebook(self):
         conversation = WhatsAppConversation.objects.create(

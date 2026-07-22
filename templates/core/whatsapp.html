@@ -124,7 +124,7 @@
       <a class="wa-conversation{% if selected_conversation.pk == conversation.pk %} is-active{% endif %}" href="{% url 'whatsapp' %}?conversation={{ conversation.pk }}{% if conversation_search %}&q={{ conversation_search|urlencode }}{% endif %}">
         <span class="wa-avatar">
           {{ conversation.name|default:conversation.phone|slice:":1"|upper }}
-          {% if conversation.avatar_url %}<img src="{{ conversation.avatar_url }}" alt="" referrerpolicy="no-referrer">{% else %}<img data-wa-avatar data-src="{% url 'whatsapp_avatar' conversation.pk %}" alt="">{% endif %}
+          <img data-wa-avatar data-src="{% url 'whatsapp_avatar' conversation.pk %}" alt="">
         </span>
         <span class="wa-conversation__body">
           <span class="wa-conversation__top">
@@ -152,13 +152,36 @@
     <header class="wa-thread__head">
       <span class="wa-avatar wa-avatar--lg">
         {% if selected_conversation %}{{ selected_conversation.name|default:selected_conversation.phone|slice:":1"|upper }}{% else %}{{ draft_contact.initials }}{% endif %}
-        {% if selected_conversation %}{% if selected_conversation.avatar_url %}<img src="{{ selected_conversation.avatar_url }}" alt="" referrerpolicy="no-referrer">{% else %}<img data-wa-avatar data-src="{% url 'whatsapp_avatar' selected_conversation.pk %}" alt="">{% endif %}{% endif %}
+        {% if selected_conversation %}<img data-wa-avatar data-src="{% url 'whatsapp_avatar' selected_conversation.pk %}" alt="">{% endif %}
       </span>
-      <div>
+      <div class="wa-thread__identity">
         <b>{% if selected_conversation %}{{ selected_conversation.name|default:selected_conversation.phone }}{% else %}{{ draft_contact.full_name }}{% endif %}</b>
-        <span>{% if selected_conversation %}{{ selected_conversation.phone }}{% else %}{{ draft_contact.phone }}{% endif %}</span>
+        <span>{% if selected_conversation %}{{ selected_conversation.phone }}{% if selected_conversation.contact %} · Contato do CRM{% else %} · Não salvo no CRM{% endif %}{% else %}{{ draft_contact.phone }} · Contato do CRM{% endif %}</span>
       </div>
-      {% if selected_conversation.contact %}<a class="icon-btn" href="{{ selected_conversation.contact.get_absolute_url }}" title="Abrir contato">{% include "core/_icon.html" with icon="users" %}</a>{% elif draft_contact %}<a class="icon-btn" href="{{ draft_contact.get_absolute_url }}" title="Abrir contato">{% include "core/_icon.html" with icon="users" %}</a>{% endif %}
+      <div class="wa-crm-actions">
+        {% if selected_conversation.contact %}
+        <a class="btn btn--ghost btn--sm" href="{{ selected_conversation.contact.get_absolute_url }}">{% include "core/_icon.html" with icon="users" %} Contato</a>
+        {% if selected_deal %}
+        <a class="btn btn--ghost btn--sm" href="{{ selected_deal.get_absolute_url }}">{% include "core/_icon.html" with icon="pipeline" %} Negócio</a>
+        {% elif can_edit %}
+        <form method="post" action="{% url 'whatsapp_promote' %}">
+          {% csrf_token %}<input type="hidden" name="conversation_id" value="{{ selected_conversation.pk }}"><input type="hidden" name="action" value="contact_deal">
+          <button class="btn btn--ghost btn--sm" type="submit">{% include "core/_icon.html" with icon="pipeline" %} Criar negócio</button>
+        </form>
+        {% endif %}
+        {% elif selected_conversation and can_edit %}
+        <form method="post" action="{% url 'whatsapp_promote' %}">
+          {% csrf_token %}<input type="hidden" name="conversation_id" value="{{ selected_conversation.pk }}"><input type="hidden" name="action" value="contact">
+          <button class="btn btn--ghost btn--sm" type="submit">{% include "core/_icon.html" with icon="users" %} Criar contato</button>
+        </form>
+        <form method="post" action="{% url 'whatsapp_promote' %}">
+          {% csrf_token %}<input type="hidden" name="conversation_id" value="{{ selected_conversation.pk }}"><input type="hidden" name="action" value="contact_deal">
+          <button class="btn btn--primary btn--sm" type="submit">{% include "core/_icon.html" with icon="pipeline" %} Contato + negócio</button>
+        </form>
+        {% elif draft_contact %}
+        <a class="btn btn--ghost btn--sm" href="{{ draft_contact.get_absolute_url }}">{% include "core/_icon.html" with icon="users" %} Contato</a>
+        {% endif %}
+      </div>
     </header>
 
     <div class="wa-thread__messages" data-wa-thread>
@@ -203,25 +226,31 @@
 (function () {
   var inbox = document.querySelector("[data-wa-inbox]");
   if (!inbox) return;
-  Array.from(inbox.querySelectorAll(".wa-avatar img")).forEach(function (avatar) {
-    avatar.addEventListener("error", function () { avatar.hidden = true; }, {once: true});
-  });
   var avatarQueue = [];
   var avatarActive = 0;
   var avatarSeen = new WeakSet();
+  function finishAvatar() {
+    avatarActive -= 1;
+    pumpAvatars();
+  }
   function pumpAvatars() {
     while (avatarActive < 2 && avatarQueue.length) {
       var avatar = avatarQueue.shift();
       avatarActive += 1;
       avatar.addEventListener("load", function (event) {
         event.currentTarget.classList.add("is-ready");
-        avatarActive -= 1;
-        pumpAvatars();
+        finishAvatar();
       }, {once: true});
-      avatar.addEventListener("error", function () {
-        avatarActive -= 1;
-        pumpAvatars();
-      }, {once: true});
+      avatar.addEventListener("error", function (event) {
+        var current = event.currentTarget;
+        if (!current.dataset.retried) {
+          current.dataset.retried = "1";
+          current.src = current.dataset.src + "?refresh=1";
+          return;
+        }
+        current.hidden = true;
+        finishAvatar();
+      });
       avatar.src = avatar.dataset.src;
     }
   }

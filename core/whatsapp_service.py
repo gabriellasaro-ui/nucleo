@@ -112,7 +112,6 @@ def connect_instance(instance_token, webhook_url):
                 "QRCODE",
                 "CONTACT",
                 "PICTURE",
-                "HISTORY_SYNC",
             ],
             "immediate": True,
             "rabbitmqEnable": "disabled",
