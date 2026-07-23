@@ -3379,6 +3379,10 @@ def appearance(request):
             messages.success(request, "Logo removida.")
             return redirect("appearance")
         ok = True
+        if "app_theme" in request.POST:
+            value = request.POST.get("app_theme")
+            if value in dict(ws.THEME_CHOICES):
+                ws.app_theme = value
         if "brand_color" in request.POST:
             color = request.POST.get("brand_color", "").strip()
             if _COLOR_RE.match(color):
@@ -3418,6 +3422,7 @@ def appearance(request):
         "page_title": "Aparência",
         "breadcrumb": ["Configurações", "Aparência"],
         "presets": ["#2563eb", "#7c3aed", "#059669", "#dc2626", "#d97706", "#0891b2", "#db2777", "#0f172a"],
+        "theme_choices": ws.THEME_CHOICES,
         "sidebar_choices": ws.SIDEBAR_CHOICES,
         "radius_choices": ws.RADIUS_CHOICES,
         "font_choices": ws.FONT_CHOICES,

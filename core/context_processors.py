@@ -34,16 +34,32 @@ def branding(request):
         color = "#2563eb"
     rgb = _hex_to_rgb(color)
     white, black = (255, 255, 255), (0, 0, 0)
-    ramp = {
-        "--blue-50": _to_hex(_mix(rgb, white, 0.92)),
-        "--blue-100": _to_hex(_mix(rgb, white, 0.85)),
-        "--blue-200": _to_hex(_mix(rgb, white, 0.72)),
-        "--blue-500": _to_hex(_mix(rgb, white, 0.10)),
-        "--blue-600": color,
-        "--blue-700": _to_hex(_mix(rgb, black, 0.14)),
-        "--blue-800": _to_hex(_mix(rgb, black, 0.28)),
-        "--ring": f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.22)",
-    }
+    theme = getattr(ws, "app_theme", None) or "light"
+    if theme == "dark":
+        # On dark, the "light" shades become dark-blue washes, and the "dark"
+        # shades become lighter so accent text/hover stays legible on a dark ground.
+        dark = (21, 27, 38)
+        ramp = {
+            "--blue-50": _to_hex(_mix(rgb, dark, 0.82)),
+            "--blue-100": _to_hex(_mix(rgb, dark, 0.68)),
+            "--blue-200": _to_hex(_mix(rgb, dark, 0.50)),
+            "--blue-500": _to_hex(_mix(rgb, white, 0.22)),
+            "--blue-600": _to_hex(_mix(rgb, white, 0.08)),
+            "--blue-700": _to_hex(_mix(rgb, white, 0.28)),
+            "--blue-800": _to_hex(_mix(rgb, white, 0.45)),
+            "--ring": f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.35)",
+        }
+    else:
+        ramp = {
+            "--blue-50": _to_hex(_mix(rgb, white, 0.92)),
+            "--blue-100": _to_hex(_mix(rgb, white, 0.85)),
+            "--blue-200": _to_hex(_mix(rgb, white, 0.72)),
+            "--blue-500": _to_hex(_mix(rgb, white, 0.10)),
+            "--blue-600": color,
+            "--blue-700": _to_hex(_mix(rgb, black, 0.14)),
+            "--blue-800": _to_hex(_mix(rgb, black, 0.28)),
+            "--ring": f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.22)",
+        }
     # Corner radius preset.
     radius = getattr(ws, "ui_radius", None) or "rounded"
     radius_map = {
@@ -65,6 +81,7 @@ def branding(request):
         "brand_css": brand_css,
         "brand_color": color,
         "brand_logo_uri": logo_uri,
+        "app_theme": getattr(ws, "app_theme", None) or "light",
         "sidebar_theme": getattr(ws, "sidebar_theme", None) or "light",
         "ui_radius": radius,
         "ui_font": font,

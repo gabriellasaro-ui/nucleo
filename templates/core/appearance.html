@@ -8,7 +8,7 @@
   </div>
 </div>
 
-<div class="appearance-grid" x-data="{ color: '{{ brand_color }}', sidebar: '{{ sidebar_theme }}', radius: '{{ ui_radius }}', font: '{{ ui_font }}', fonts: { sans: '\'Inter\', system-ui, sans-serif', serif: 'Georgia, \'Times New Roman\', serif' } }">
+<div class="appearance-grid" x-data="{ theme: '{{ app_theme }}', color: '{{ brand_color }}', sidebar: '{{ sidebar_theme }}', radius: '{{ ui_radius }}', font: '{{ ui_font }}', fonts: { sans: '\'Inter\', system-ui, sans-serif', serif: 'Georgia, \'Times New Roman\', serif' } }">
   <div class="card panel">
     <div class="panel__head"><b>Tema</b></div>
     <form method="post" class="appearance-form">
@@ -16,18 +16,29 @@
 
       <label class="appearance-label" style="margin-top:2px;">Temas prontos</label>
       <div class="theme-presets">
-        <button type="button" class="theme-preset" @click="color='#2563eb'; sidebar='light'; radius='rounded'; font='sans'">
+        <button type="button" class="theme-preset" @click="theme='light'; color='#2563eb'; sidebar='light'; radius='rounded'; font='sans'">
           <span class="theme-preset__dots"><i style="background:#2563eb"></i><i style="background:#fff;box-shadow:inset 0 0 0 1px #e7e9ee"></i></span>Clean
         </button>
-        <button type="button" class="theme-preset" @click="color='#3b82f6'; sidebar='dark'; radius='rounded'; font='sans'">
+        <button type="button" class="theme-preset" @click="theme='dark'; color='#3b82f6'; sidebar='dark'; radius='rounded'; font='sans'">
           <span class="theme-preset__dots"><i style="background:#3b82f6"></i><i style="background:#101827"></i></span>Escuro
         </button>
-        <button type="button" class="theme-preset" @click="color='#7c3aed'; sidebar='dark'; radius='soft'; font='sans'">
-          <span class="theme-preset__dots"><i style="background:#7c3aed"></i><i style="background:#101827"></i></span>Vibrante
+        <button type="button" class="theme-preset" @click="theme='dark'; color='#8b5cf6'; sidebar='dark'; radius='soft'; font='sans'">
+          <span class="theme-preset__dots"><i style="background:#8b5cf6"></i><i style="background:#101827"></i></span>Vibrante
         </button>
-        <button type="button" class="theme-preset" @click="color='#0891b2'; sidebar='light'; radius='sharp'; font='serif'">
+        <button type="button" class="theme-preset" @click="theme='light'; color='#0891b2'; sidebar='light'; radius='sharp'; font='serif'">
           <span class="theme-preset__dots"><i style="background:#0891b2"></i><i style="background:#fff;box-shadow:inset 0 0 0 1px #e7e9ee"></i></span>Corporativo
         </button>
+      </div>
+
+      <label class="appearance-label">Tema do app</label>
+      <div class="opt-cards">
+        {% for value, label in theme_choices %}
+        <label class="opt-card" :class="{ 'is-active': theme === '{{ value }}' }">
+          <input type="radio" name="app_theme" value="{{ value }}" x-model="theme">
+          <span class="opt-card__swatch opt-card__swatch--theme-{{ value }}"></span>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
       </div>
 
       <label class="appearance-label">Cor da marca</label>
@@ -85,7 +96,7 @@
   <div class="appearance-col">
     <div class="card panel">
       <div class="panel__head"><b>Prévia</b></div>
-      <div class="appearance-preview" :data-sidebar="sidebar">
+      <div class="appearance-preview" :data-theme="theme" :data-sidebar="sidebar">
         <div class="ap-mini" :style="'--r-md:'+({rounded:'9px',soft:'13px',sharp:'3px'}[radius] || '9px')+';font-family:'+fonts[font]">
           <div class="ap-mini__side">
             <div class="ap-mini__brand"><span :style="'background:'+color"></span> Núcleo</div>

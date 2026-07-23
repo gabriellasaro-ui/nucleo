@@ -19,6 +19,7 @@
   --surface:  #ffffff;
   --canvas:   #f7f8fa;   /* app background behind cards */
   --surface-2:#f9fafb;
+  --surface-3:#f1f3f7;
   --border:   #e7e9ee;
   --border-strong: #d7dae1;
   --ink:      #0f1729;   /* primary text */
@@ -43,6 +44,28 @@
 
   --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* Dark theme — flips the neutral tokens; components styled through tokens follow.
+   The accent ramp (--blue-*) is emitted per-workspace by branding(). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --white: #ffffff;
+  --surface: #151b26;
+  --canvas: #0d1119;
+  --surface-2: #1a2130;
+  --surface-3: #212a3a;
+  --border: #27303f;
+  --border-strong: #3a465e;
+  --ink: #eef1f6;
+  --ink-2: #a8b2c4;
+  --ink-3: #78829a;
+  --green-600: #34d399; --green-50: rgba(52, 211, 153, .13);
+  --amber-600: #fbbf24; --amber-50: rgba(251, 191, 36, .12);
+  --red-600: #f87171;   --red-50: rgba(248, 113, 113, .12);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.4), 0 2px 5px rgba(0,0,0,.4);
+  --shadow-md: 0 6px 20px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.45);
+  --shadow-lg: 0 18px 48px rgba(0,0,0,.6), 0 6px 16px rgba(0,0,0,.5);
 }
 
 * { box-sizing: border-box; }
@@ -105,7 +128,7 @@ button { font-family: inherit; }
   cursor: pointer;
   transition: border-color .15s, background .15s;
 }
-.kbtn:hover { border-color: var(--border-strong); background: #fff; }
+.kbtn:hover { border-color: var(--border-strong); background: var(--surface); }
 .kbtn svg { width: 16px; height: 16px; flex: none; color: var(--ink-3); }
 .kbtn kbd { margin-left: auto; }
 
@@ -130,7 +153,7 @@ button { font-family: inherit; }
 .ws-menu__item.is-active { background: var(--blue-50); color: var(--blue-700); }
 .ws-menu__name { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-role { font-size: 10.5px; color: var(--ink-3); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-full); padding: 0 6px; }
-.ws-menu__item.is-active .ws-role { background: #fff; }
+.ws-menu__item.is-active .ws-role { background: var(--surface); }
 .ws-menu__new { display: flex; align-items: center; gap: 7px; padding: 8px; margin-top: 4px; border-top: 1px solid var(--border); color: var(--blue-600); font-size: 13px; font-weight: 600; }
 .ws-menu__new:hover { background: var(--surface-2); }
 .ws-menu__new svg { width: 15px; height: 15px; }
@@ -186,7 +209,7 @@ button { font-family: inherit; }
 .cond-rule select, .cond-rule input { min-width: 0; width: 100%; height: 30px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; padding: 0 7px; }
 .cond-rule select:focus, .cond-rule input:focus { outline: 0; border-color: var(--blue-500); box-shadow: var(--ring); }
 .cond-rule__rm { border: 0; background: transparent; color: var(--ink-3); cursor: pointer; padding: 3px; border-radius: 6px; display: grid; place-items: center; height: 30px; width: 28px; }
-.cond-rule__rm:hover { background: #fff; color: var(--red-600); }
+.cond-rule__rm:hover { background: var(--surface); color: var(--red-600); }
 .cond-rule__rm svg { width: 14px; height: 14px; }
 .cond-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; border: 1px dashed var(--border-strong); background: transparent; color: var(--blue-700); font: inherit; font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: var(--r-md); cursor: pointer; }
 .cond-add:hover { background: var(--blue-50); border-color: var(--blue-200); }
@@ -307,7 +330,7 @@ button { font-family: inherit; }
 .cf-tab:hover { background: var(--surface-2); color: var(--ink); }
 .cf-tab.is-active { background: var(--blue-50); color: var(--blue-700); }
 .cf-tab__count { font-size: 11px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-full); padding: 0 6px; color: var(--ink-3); }
-.cf-tab.is-active .cf-tab__count { background: #fff; border-color: var(--blue-100); color: var(--blue-700); }
+.cf-tab.is-active .cf-tab__count { background: var(--surface); border-color: var(--blue-100); color: var(--blue-700); }
 .cf-panel { padding: 16px; }
 .cf-panel__head {
   display: flex;
@@ -782,7 +805,7 @@ button { font-family: inherit; }
   left: 2px;
   top: 2px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--surface);
   transition: transform .15s;
 }
 .node-toggle input:checked { background: var(--green-600) !important; }
@@ -1121,6 +1144,9 @@ button { font-family: inherit; }
 .opt-card__swatch--radius-soft { border-radius: 14px; background: var(--surface-3, #f1f3f7); }
 .opt-card__swatch--radius-sharp { border-radius: 1px; background: var(--surface-3, #f1f3f7); }
 .opt-card__font { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 15px; font-weight: 700; color: var(--ink); background: var(--surface-2); }
+.opt-card__swatch--theme-light { background: #fff; }
+.opt-card__swatch--theme-dark { background: #0d1119; border-color: #0d1119; }
+.appearance-preview[data-theme="dark"] { --surface: #151b26; --canvas: #0d1119; --surface-2: #1a2130; --border: #27303f; --ink: #eef1f6; --ink-2: #a8b2c4; --ink-3: #78829a; }
 .theme-presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .theme-preset { display: flex; align-items: center; gap: 9px; padding: 8px 13px; border: 1px solid var(--border); border-radius: var(--r-full); background: var(--surface); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-2); transition: border-color .15s, background .15s, color .15s; }
 .theme-preset:hover { border-color: var(--border-strong); background: var(--surface-2); color: var(--ink); }
@@ -1130,7 +1156,7 @@ button { font-family: inherit; }
 
 .appearance-preview { padding: 14px 16px 18px; }
 .ap-mini { display: grid; grid-template-columns: 96px 1fr; height: 196px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--canvas); box-shadow: var(--shadow-sm); }
-.ap-mini__side { background: #fff; border-right: 1px solid var(--border); padding: 11px 9px; display: flex; flex-direction: column; gap: 5px; }
+.ap-mini__side { background: var(--surface); border-right: 1px solid var(--border); padding: 11px 9px; display: flex; flex-direction: column; gap: 5px; }
 .appearance-preview[data-sidebar="dark"] .ap-mini__side { background: #101827; border-right-color: #1f2a3d; }
 .ap-mini__brand { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
 .appearance-preview[data-sidebar="dark"] .ap-mini__brand { color: #eef2f8; }
@@ -1140,9 +1166,9 @@ button { font-family: inherit; }
 .ap-mini__nav.is-active { color: #fff !important; }
 .ap-mini__body { padding: 15px; display: flex; flex-direction: column; gap: 11px; }
 .ap-mini__btn { align-self: flex-start; color: #fff; font-size: 11px; font-weight: 700; padding: 7px 15px; border-radius: var(--r-md); }
-.ap-mini__card { height: 46px; background: #fff; border: 1px solid var(--border); border-radius: var(--r-md); }
+.ap-mini__card { height: 46px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
 .ap-mini__row { display: flex; gap: 11px; }
-.ap-mini__row span { flex: 1; height: 30px; background: #fff; border: 1px solid var(--border); border-radius: var(--r-md); }
+.ap-mini__row span { flex: 1; height: 30px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
 
 .nav { padding: 8px 10px; overflow-y: auto; flex: 1; }
 .nav__section { margin-top: 14px; }
@@ -1218,6 +1244,16 @@ button { font-family: inherit; }
 [data-sidebar="dark"] .sidebar .ws-menu__label { color: #626d84; }
 [data-sidebar="dark"] .sidebar .ws-menu__item { color: #aeb8cc; }
 [data-sidebar="dark"] .sidebar .ws-menu__item:hover { background: #182234; }
+
+/* Dark app theme — tweaks for components with WhatsApp-specific hardcoded colors. */
+[data-theme="dark"] .wa-thread,
+[data-theme="dark"] .wa-thread__messages { background: #0b141a; }
+[data-theme="dark"] .wa-message--outgoing .wa-message__bubble { background: #005c4b; }
+[data-theme="dark"] .wa-message--outgoing .wa-message__bubble::after { border-top-color: #005c4b; }
+[data-theme="dark"] .wa-message__attachment { background: rgba(255, 255, 255, .06); }
+[data-theme="dark"] .wa-thread-placeholder .wa-placeholder-mark { background: rgba(255, 255, 255, .07); }
+/* Kanban cards read as surfaces in dark. */
+[data-theme="dark"] .kanban-card { background: var(--surface-2); }
 .topbar__spacer { flex: 1; }
 
 .content { padding: 18px 22px 44px; max-width: 1440px; width: 100%; margin: 0 auto; }
@@ -2317,7 +2353,7 @@ kbd {
 }
 .pipeline-workspace__nav {
   min-width: 0; min-height: 0; display: flex; flex-direction: column;
-  border-right: 1px solid var(--border); background: #f7f8fa;
+  border-right: 1px solid var(--border); background: var(--canvas);
 }
 .pipeline-workspace__name { flex: none !important; padding: 14px; border-bottom: 1px solid var(--border); }
 .pipeline-workspace__name label,
@@ -2543,7 +2579,7 @@ kbd {
   place-items: center;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
   overflow: hidden;
 }
 .wa-pairing__qr img { width: 100%; height: 100%; object-fit: contain; }
@@ -2644,7 +2680,7 @@ kbd {
 .wa-avatar--lg { width: 42px; height: 42px; }
 .wa-conversation__body { min-width: 0; display: grid; gap: 5px; }
 .wa-conversation__top { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.wa-conversation__top b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #111b21; font-size: 13.5px; }
+.wa-conversation__top b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: 13.5px; }
 .wa-conversation__top time { flex: none; color: var(--ink-3); font-size: 10.5px; }
 .wa-conversation__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); font-size: 12px; }
 .wa-unread {
