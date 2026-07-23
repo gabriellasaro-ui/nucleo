@@ -4,15 +4,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Entrar · Núcleo</title>
+  <title>Entrar · {{ request.workspace.name|default:"Núcleo" }}</title>
+  {% if brand_logo_uri %}<link rel="icon" href="{{ brand_logo_uri }}">{% endif %}
   <link rel="stylesheet" href="{% static 'css/nucleo.css' %}">
+  <style>{{ brand_css|safe }}</style>
 </head>
 <body>
   <div class="auth">
     <form class="auth__card" method="post">
       {% csrf_token %}
-      <div class="auth__brand"><span class="brand-mark">N</span> Núcleo</div>
-      <p class="sub">Entre no seu workspace.</p>
+      <div class="auth__brand">
+        {% if brand_logo_uri %}
+        <img src="{{ brand_logo_uri }}" alt="{{ request.workspace.name }}" class="auth__logo">
+        {% else %}
+        <span class="brand-mark">{{ request.workspace.initials|default:"N" }}</span> {{ request.workspace.name|default:"Núcleo" }}
+        {% endif %}
+      </div>
+      <p class="sub">Entre em {{ request.workspace.name|default:"seu workspace" }}.</p>
 
       {% if form.errors %}
       <div class="auth__error">Usuário ou senha inválidos.</div>

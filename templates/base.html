@@ -5,6 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ page_title|default:"Núcleo" }} · Núcleo{% endblock %}</title>
+  {% if brand_logo_uri %}<link rel="icon" href="{{ brand_logo_uri }}">{% endif %}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="{% static 'css/nucleo.css' %}?v={% now 'U' %}">
   <style>{{ brand_css|safe }}</style>

@@ -1121,6 +1121,12 @@ button { font-family: inherit; }
 .opt-card__swatch--radius-soft { border-radius: 14px; background: var(--surface-3, #f1f3f7); }
 .opt-card__swatch--radius-sharp { border-radius: 1px; background: var(--surface-3, #f1f3f7); }
 .opt-card__font { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 15px; font-weight: 700; color: var(--ink); background: var(--surface-2); }
+.theme-presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.theme-preset { display: flex; align-items: center; gap: 9px; padding: 8px 13px; border: 1px solid var(--border); border-radius: var(--r-full); background: var(--surface); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-2); transition: border-color .15s, background .15s, color .15s; }
+.theme-preset:hover { border-color: var(--border-strong); background: var(--surface-2); color: var(--ink); }
+.theme-preset__dots { display: inline-flex; }
+.theme-preset__dots i { width: 14px; height: 14px; border-radius: 50%; display: block; }
+.theme-preset__dots i:last-child { margin-left: -5px; }
 
 .appearance-preview { padding: 14px 16px 18px; }
 .ap-mini { display: grid; grid-template-columns: 96px 1fr; height: 196px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--canvas); box-shadow: var(--shadow-sm); }
@@ -2908,6 +2914,7 @@ kbd {
 .auth { min-height: 100vh; display: grid; place-items: center; background: radial-gradient(1200px 600px at 50% -10%, var(--blue-50), var(--canvas)); }
 .auth__card { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-md); padding: 30px 28px; }
 .auth__brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; margin-bottom: 4px; }
+.auth__logo { max-height: 44px; max-width: 200px; object-fit: contain; }
 .auth__card p.sub { color: var(--ink-3); font-size: 14px; margin: 0 0 22px; }
 .auth__card .btn { width: 100%; justify-content: center; margin-top: 6px; }
 .auth__error { background: var(--red-50); color: var(--red-600); font-size: 13px; padding: 8px 12px; border-radius: var(--r-md); margin-bottom: 14px; }

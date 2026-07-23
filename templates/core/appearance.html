@@ -14,6 +14,22 @@
     <form method="post" class="appearance-form">
       {% csrf_token %}
 
+      <label class="appearance-label" style="margin-top:2px;">Temas prontos</label>
+      <div class="theme-presets">
+        <button type="button" class="theme-preset" @click="color='#2563eb'; sidebar='light'; radius='rounded'; font='sans'">
+          <span class="theme-preset__dots"><i style="background:#2563eb"></i><i style="background:#fff;box-shadow:inset 0 0 0 1px #e7e9ee"></i></span>Clean
+        </button>
+        <button type="button" class="theme-preset" @click="color='#3b82f6'; sidebar='dark'; radius='rounded'; font='sans'">
+          <span class="theme-preset__dots"><i style="background:#3b82f6"></i><i style="background:#101827"></i></span>Escuro
+        </button>
+        <button type="button" class="theme-preset" @click="color='#7c3aed'; sidebar='dark'; radius='soft'; font='sans'">
+          <span class="theme-preset__dots"><i style="background:#7c3aed"></i><i style="background:#101827"></i></span>Vibrante
+        </button>
+        <button type="button" class="theme-preset" @click="color='#0891b2'; sidebar='light'; radius='sharp'; font='serif'">
+          <span class="theme-preset__dots"><i style="background:#0891b2"></i><i style="background:#fff;box-shadow:inset 0 0 0 1px #e7e9ee"></i></span>Corporativo
+        </button>
+      </div>
+
       <label class="appearance-label">Cor da marca</label>
       <div class="color-row">
         <input type="color" name="brand_color" x-model="color" class="color-input">
