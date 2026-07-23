@@ -35,6 +35,7 @@
   <form id="fb-form" class="fb-map-form" method="post" action="{% url 'facebook_form_map' form_id %}">
     {% csrf_token %}
 
+    <div class="fb-map-col">
     <section class="fb-map-section">
       <div class="fb-map-section__head">
         <div>
@@ -178,6 +179,32 @@
         <a class="btn btn--ghost" href="{% url 'facebook_forms' %}">Cancelar</a>
       </div>
     </div>
+    </div><!-- /fb-map-col -->
+
+    <aside class="fb-map-aside">
+      <div class="fb-sum">
+        <div class="fb-sum__head">
+          <span class="fb-sum__ey">Resumo do fluxo</span>
+          <b>Quando chega um lead deste formulário</b>
+        </div>
+        <div class="fb-sum__body">
+          <div class="fb-sum__row" data-sum="contact">
+            <span class="fb-sum__ck">{% include "core/_icon.html" with icon="check" %}</span>
+            <span class="fb-sum__k">Cria um <b>Contato</b></span>
+          </div>
+          <div class="fb-sum__row" data-sum="deal">
+            <span class="fb-sum__ck">{% include "core/_icon.html" with icon="check" %}</span>
+            <span class="fb-sum__k">Cria um <b>Negócio</b><small>entra na pipeline</small></span>
+            <span class="fb-sum__v" data-sum-stage></span>
+          </div>
+          <div class="fb-sum__row" data-sum="company">
+            <span class="fb-sum__ck">{% include "core/_icon.html" with icon="check" %}</span>
+            <span class="fb-sum__k">Cria uma <b>Empresa</b></span>
+          </div>
+        </div>
+        <div class="fb-sum__foot">{% include "core/_icon.html" with icon="check" %} Ao salvar, o fluxo fica ativo em Formulários.</div>
+      </div>
+    </aside>
   </form>
 
   <script>
@@ -387,6 +414,25 @@
       });
 
       refresh(false);
+    })();
+  </script>
+
+  <script>
+    (function () {
+      var form = document.getElementById("fb-form");
+      if (!form) return;
+      var stageOut = form.querySelector("[data-sum-stage]");
+      function optText(sel) { var s = form.querySelector(sel); return s && s.options && s.selectedIndex >= 0 ? s.options[s.selectedIndex].text : ""; }
+      function on(key) { var c = form.querySelector('[data-record-checkbox="' + key + '"]'); return !!(c && c.checked); }
+      function updateSummary() {
+        ["contact", "deal", "company"].forEach(function (key) {
+          var row = form.querySelector('[data-sum="' + key + '"]');
+          if (row) row.classList.toggle("off", !on(key));
+        });
+        if (stageOut) stageOut.textContent = on("deal") ? (optText("[data-fb-pipeline]") + " · " + optText("[data-fb-stage]")) : "";
+      }
+      form.addEventListener("change", updateSummary);
+      updateSummary();
     })();
   </script>
   {% endif %}
