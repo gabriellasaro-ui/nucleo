@@ -292,10 +292,26 @@
   }
 
   document.body.addEventListener("htmx:afterSwap", function (e) {
-    if (e.target && e.target.id === "wa-thread-messages") scrollThread();
+    if (e.target && e.target.id === "wa-thread-messages") {
+      scrollThread();
+      var ta = document.querySelector(".wa-composer textarea");
+      if (ta) { ta.value = ""; autoGrow(); }
+    }
   });
   document.body.addEventListener("nucleo:whatsappChanged", refreshInbox);
   document.addEventListener("input", function (e) { if (e.target && e.target.matches && e.target.matches(".wa-composer textarea")) autoGrow(); });
+  // Enter sends; Shift+Enter makes a new line (like WhatsApp).
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    var ta = e.target;
+    if (!ta || !ta.matches || !ta.matches(".wa-composer textarea")) return;
+    e.preventDefault();
+    var form = ta.closest("form");
+    if (form && ta.value.trim()) {
+      if (form.requestSubmit) form.requestSubmit();
+      else form.dispatchEvent(new Event("submit", {cancelable: true, bubbles: true}));
+    }
+  });
 
   window.setInterval(function () {
     var root = inbox(); if (!root) return;

@@ -44,11 +44,21 @@ def branding(request):
         "--blue-800": _to_hex(_mix(rgb, black, 0.28)),
         "--ring": f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.22)",
     }
+    # Corner radius preset.
+    radius = getattr(ws, "ui_radius", None) or "rounded"
+    radius_map = {
+        "rounded": {"--r-sm": "6px", "--r-md": "9px", "--r-lg": "14px"},
+        "soft": {"--r-sm": "9px", "--r-md": "13px", "--r-lg": "19px"},
+        "sharp": {"--r-sm": "2px", "--r-md": "3px", "--r-lg": "5px"},
+    }
+    ramp.update(radius_map.get(radius, radius_map["rounded"]))
     brand_css = ":root{" + "".join(f"{k}:{v};" for k, v in ramp.items()) + "}"
     return {
         "brand_css": brand_css,
         "brand_color": color,
         "brand_logo": getattr(ws, "logo", None),
+        "sidebar_theme": getattr(ws, "sidebar_theme", None) or "light",
+        "ui_radius": radius,
     }
 
 

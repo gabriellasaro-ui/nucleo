@@ -23,7 +23,7 @@
 
   {{ command_palette|json_script:"cmdk-data" }}
 
-  <div class="app">
+  <div class="app" data-sidebar="{{ sidebar_theme|default:'light' }}">
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="ws-switch ws-switch--top" x-data="{ open: false }" @keydown.escape="open = false">

@@ -11,9 +11,14 @@ def workspace_logo_path(instance, filename):
 
 class Workspace(TenantMixin):
     """A tenant. It OWNS a PostgreSQL schema; all CRM data lives inside it."""
+    SIDEBAR_CHOICES = [("light", "Clara"), ("dark", "Escura")]
+    RADIUS_CHOICES = [("rounded", "Arredondado"), ("soft", "Suave"), ("sharp", "Reto")]
+
     name = models.CharField("Nome", max_length=120)
     brand_color = models.CharField("Cor da marca", max_length=7, default="#2563eb")
     logo = models.FileField("Logo", upload_to=workspace_logo_path, blank=True, null=True)
+    sidebar_theme = models.CharField("Menu lateral", max_length=10, choices=SIDEBAR_CHOICES, default="light")
+    ui_radius = models.CharField("Cantos", max_length=10, choices=RADIUS_CHOICES, default="rounded")
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Create/drop the Postgres schema automatically with the workspace.

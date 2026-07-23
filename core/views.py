@@ -3377,11 +3377,20 @@ def appearance(request):
                 ws.save(update_fields=["logo"])
                 messages.success(request, "Logo removida.")
             return redirect("appearance")
-        color = request.POST.get("brand_color", "").strip()
-        if _COLOR_RE.match(color):
-            ws.brand_color = color
-        else:
-            messages.error(request, "Cor inválida.")
+        if "brand_color" in request.POST:
+            color = request.POST.get("brand_color", "").strip()
+            if _COLOR_RE.match(color):
+                ws.brand_color = color
+            else:
+                messages.error(request, "Cor inválida.")
+        if "sidebar_theme" in request.POST:
+            value = request.POST.get("sidebar_theme")
+            if value in dict(ws.SIDEBAR_CHOICES):
+                ws.sidebar_theme = value
+        if "ui_radius" in request.POST:
+            value = request.POST.get("ui_radius")
+            if value in dict(ws.RADIUS_CHOICES):
+                ws.ui_radius = value
         upload = request.FILES.get("logo")
         if upload:
             ws.logo = upload
@@ -3392,4 +3401,6 @@ def appearance(request):
         "page_title": "Aparência",
         "breadcrumb": ["Configurações", "Aparência"],
         "presets": ["#2563eb", "#7c3aed", "#059669", "#dc2626", "#d97706", "#0891b2", "#db2777", "#0f172a"],
+        "sidebar_choices": ws.SIDEBAR_CHOICES,
+        "radius_choices": ws.RADIUS_CHOICES,
     })
