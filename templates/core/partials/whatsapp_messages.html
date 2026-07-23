@@ -1,13 +1,21 @@
-{% if thread_messages %}
-<div class="wa-chat-day"><span>Hoje</span></div>
-{% endif %}
 {% for message in thread_messages %}
+{% ifchanged message.sent_at|date:"Y-m-d" %}
+<div class="wa-chat-day"><span>{{ message.sent_at|date:"d 'de' F" }}</span></div>
+{% endifchanged %}
 <article class="wa-message wa-message--{{ message.direction }}">
   <div class="wa-message__bubble">
-    {% if message.message_type != "text" %}
+    {% if message.message_type == "audio" and message.media_url %}
+    <audio class="wa-message__audio" controls preload="none" src="{{ message.media_url }}"></audio>
+    {% elif message.message_type == "image" and message.media_url %}
+    <a class="wa-message__media" href="{{ message.media_url }}" target="_blank" rel="noopener">
+      <img src="{{ message.media_url }}" alt="{{ message.text|default:'Imagem' }}" loading="lazy">
+    </a>
+    {% if message.text and message.text != "Imagem" %}<p>{{ message.text|linebreaksbr }}</p>{% endif %}
+    {% elif message.message_type != "text" %}
     <div class="wa-message__attachment">
-      {% include "core/_icon.html" with icon="note" %}
-      <span>{{ message.text|default:"Mídia" }}</span>
+      <span class="wa-message__attachment-icon">{% include "core/_icon.html" with icon="note" %}</span>
+      <span class="wa-message__attachment-text">{{ message.text|default:"Mídia" }}</span>
+      {% if message.media_url %}<a class="wa-message__dl" href="{{ message.media_url }}" target="_blank" rel="noopener">Abrir</a>{% endif %}
     </div>
     {% else %}
     <p>{{ message.text|linebreaksbr }}</p>

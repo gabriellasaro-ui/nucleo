@@ -2627,7 +2627,7 @@ kbd {
 .wa-crm-actions form { margin: 0; }
 .wa-crm-actions .btn { white-space: nowrap; }
 .wa-crm-actions .btn svg { width: 14px; height: 14px; }
-.wa-thread__messages { min-height: 0; overflow-y: auto; padding: 18px clamp(22px, 5vw, 86px) 24px; scroll-behavior: smooth; }
+.wa-thread__messages { min-height: 0; overflow-y: auto; padding: 18px clamp(22px, 5vw, 86px) 24px; scroll-behavior: smooth; background: #f4f0e9; }
 .wa-chat-day {
   position: sticky; top: 0; z-index: 2;
   display: flex; justify-content: center; margin: 0 0 14px;
@@ -2666,6 +2666,12 @@ kbd {
 .wa-message__status.is-read { color: #53bdeb; }
 .wa-message__attachment { min-width: 150px; display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 6px; background: rgba(255, 255, 255, .5); color: var(--ink-2); font-size: 13px; font-weight: 600; }
 .wa-message__attachment svg { width: 18px; height: 18px; color: var(--green-600); }
+.wa-message__attachment-text { min-width: 0; overflow-wrap: anywhere; }
+.wa-message__dl { margin-left: auto; color: var(--green-600); font-weight: 700; font-size: 12px; white-space: nowrap; }
+.wa-message__audio { display: block; width: 250px; max-width: 60vw; height: 38px; margin: 2px 0; }
+.wa-message__media { display: block; }
+.wa-message__media img { display: block; max-width: 260px; max-height: 300px; border-radius: 9px; }
+.wa-message__media + p { margin-top: 6px; }
 .wa-thread-empty, .wa-thread-placeholder {
   height: 100%;
   display: grid;

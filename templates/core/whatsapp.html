@@ -65,7 +65,7 @@
   </div>
 </section>
 {% else %}
-<div class="wa-inbox" data-wa-inbox data-status-url="{% url 'whatsapp_status' %}" data-inbox-version="{{ whatsapp_inbox_version|date:'c' }}">
+<div class="wa-inbox" data-wa-inbox data-status-url="{% url 'whatsapp_status' %}" data-inbox-version="{{ whatsapp_inbox_version|date:'U' }}">
   <aside class="wa-inbox__sidebar">
     <div class="wa-sidebar-head">
       <div class="wa-sidebar-title">
@@ -228,72 +228,88 @@
 {% if whatsapp_connected %}
 <script>
 (function () {
-  var inbox = document.querySelector("[data-wa-inbox]");
-  if (!inbox) return;
-  document.body.addEventListener("nucleo:whatsappChanged", function () {
-    window.location.reload();
-  });
-  var avatarQueue = [];
-  var avatarActive = 0;
-  var avatarSeen = new WeakSet();
-  function finishAvatar() {
-    avatarActive -= 1;
-    pumpAvatars();
-  }
+  function inbox() { return document.querySelector("[data-wa-inbox]"); }
+  if (!inbox()) return;
+  var version = inbox().dataset.inboxVersion || "";
+
+  // Avatars: lazy-load with bounded concurrency; re-scannable after a swap.
+  var avatarQueue = [], avatarActive = 0, avatarSeen = new WeakSet();
   function pumpAvatars() {
     while (avatarActive < 2 && avatarQueue.length) {
       var avatar = avatarQueue.shift();
       avatarActive += 1;
-      avatar.addEventListener("load", function (event) {
-        event.currentTarget.classList.add("is-ready");
-        finishAvatar();
-      }, {once: true});
-      avatar.addEventListener("error", function (event) {
-        var current = event.currentTarget;
-        if (!current.dataset.retried) {
-          current.dataset.retried = "1";
-          current.src = current.dataset.src + "?refresh=1";
-          return;
-        }
-        current.hidden = true;
-        finishAvatar();
+      avatar.addEventListener("load", function (e) { e.currentTarget.classList.add("is-ready"); avatarActive -= 1; pumpAvatars(); }, {once: true});
+      avatar.addEventListener("error", function (e) {
+        var cur = e.currentTarget;
+        if (!cur.dataset.retried) { cur.dataset.retried = "1"; cur.src = cur.dataset.src + "?refresh=1"; return; }
+        cur.hidden = true; avatarActive -= 1; pumpAvatars();
       });
       avatar.src = avatar.dataset.src;
     }
   }
-  function queueAvatar(avatar) {
-    if (avatarSeen.has(avatar)) return;
-    avatarSeen.add(avatar);
-    avatarQueue.push(avatar);
-    pumpAvatars();
-  }
-  var pendingAvatars = Array.from(inbox.querySelectorAll("[data-wa-avatar]"));
-  var conversationList = inbox.querySelector(".wa-conversation-list");
-  function queueVisibleAvatars() {
-    var listRect = conversationList ? conversationList.getBoundingClientRect() : null;
-    pendingAvatars.forEach(function (avatar) {
-      var parent = avatar.parentElement;
-      var rect = parent.getBoundingClientRect();
-      var inThreadHeader = Boolean(parent.closest(".wa-thread__head"));
-      var inVisibleList = listRect && rect.bottom >= listRect.top && rect.top <= listRect.bottom;
-      if (inThreadHeader || inVisibleList) queueAvatar(avatar);
+  function queueAvatar(a) { if (avatarSeen.has(a)) return; avatarSeen.add(a); avatarQueue.push(a); pumpAvatars(); }
+  function scanAvatars() {
+    var root = inbox(); if (!root) return;
+    var list = root.querySelector(".wa-conversation-list");
+    var listRect = list ? list.getBoundingClientRect() : null;
+    root.querySelectorAll("[data-wa-avatar]").forEach(function (avatar) {
+      var parent = avatar.parentElement, rect = parent.getBoundingClientRect();
+      var inHeader = Boolean(parent.closest(".wa-thread__head"));
+      var visible = listRect && rect.bottom >= listRect.top && rect.top <= listRect.bottom;
+      if (inHeader || visible) queueAvatar(avatar);
     });
+    if (list && !list.dataset.avatarScroll) { list.dataset.avatarScroll = "1"; list.addEventListener("scroll", scanAvatars, {passive: true}); }
   }
-  queueVisibleAvatars();
-  if (conversationList) conversationList.addEventListener("scroll", queueVisibleAvatars, {passive: true});
-  var initialVersion = inbox.dataset.inboxVersion || "";
+  function scrollThread() { var t = document.querySelector("[data-wa-thread]"); if (t) t.scrollTop = t.scrollHeight; }
+  function autoGrow() {
+    var ta = document.querySelector(".wa-composer textarea"); if (!ta) return;
+    ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 140) + "px";
+  }
+  // Note: don't re-sync `version` from the DOM here — after a poll the status
+  // endpoint is the source of truth, which avoids a refresh loop if the view and
+  // status compute the version slightly differently.
+  function initInbox() { scanAvatars(); scrollThread(); autoGrow(); }
+
+  // Refresh the inbox IN PLACE (fetch the page, swap only .wa-inbox) — no
+  // full-page reload, so nothing flickers. Falls back to reload on any error.
+  var refreshing = false;
+  function refreshInbox() {
+    if (refreshing) return;
+    refreshing = true;
+    fetch(window.location.href, {credentials: "same-origin"})
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) {
+        refreshing = false;
+        var current = inbox();
+        if (!html || !current) return;
+        var fresh = new DOMParser().parseFromString(html, "text/html").querySelector("[data-wa-inbox]");
+        if (!fresh) return;
+        current.replaceWith(fresh);
+        if (window.htmx) htmx.process(fresh);
+        initInbox();
+      })
+      .catch(function () { refreshing = false; });
+  }
+
+  document.body.addEventListener("htmx:afterSwap", function (e) {
+    if (e.target && e.target.id === "wa-thread-messages") scrollThread();
+  });
+  document.body.addEventListener("nucleo:whatsappChanged", refreshInbox);
+  document.addEventListener("input", function (e) { if (e.target && e.target.matches && e.target.matches(".wa-composer textarea")) autoGrow(); });
+
   window.setInterval(function () {
-    var draft = inbox.querySelector("textarea[name='message']");
-    if (draft && draft.value.trim()) return;
-    fetch(inbox.dataset.statusUrl, {headers: {"X-Requested-With": "XMLHttpRequest"}})
-      .then(function (response) { return response.ok ? response.json() : null; })
+    var root = inbox(); if (!root) return;
+    var draft = root.querySelector("textarea[name='message']");
+    if (draft && draft.value.trim()) return;  // don't interrupt typing
+    fetch(root.dataset.statusUrl, {headers: {"X-Requested-With": "XMLHttpRequest"}})
+      .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
-        if (data && data.connected && (data.inbox_version || "") !== initialVersion) {
-          window.location.reload();
-        }
+        if (data && data.connected && (data.inbox_version || "") !== version) { version = data.inbox_version || ""; refreshInbox(); }
       })
       .catch(function () {});
   }, 6000);
+
+  initInbox();
 })();
 </script>
 {% endif %}
@@ -341,12 +357,4 @@
 </script>
 {% endif %}
 
-{% if whatsapp_connected %}
-<script>
-(function () {
-  var thread = document.querySelector("[data-wa-thread]");
-  if (thread) thread.scrollTop = thread.scrollHeight;
-})();
-</script>
-{% endif %}
 {% endblock %}

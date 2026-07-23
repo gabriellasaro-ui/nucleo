@@ -1592,7 +1592,7 @@ def whatsapp_status(request):
         "contact_count": Contact.objects.filter(
             workspace=request.workspace,
         ).exclude(phone="").count(),
-        "inbox_version": latest_conversation.isoformat() if latest_conversation else "",
+        "inbox_version": str(int(latest_conversation.timestamp())) if latest_conversation else "",
     })
 
 
