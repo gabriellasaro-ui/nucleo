@@ -42,6 +42,9 @@ urlpatterns = [
     path("pipelines/stages/<int:pk>/edit/", views.stage_update, name="stage_update"),
     path("pipelines/stages/<int:pk>/delete/", views.stage_delete, name="stage_delete"),
     # Activities (timeline)
+    path("tasks/", views.tasks, name="tasks"),
+    path("tasks/new/", views.task_create, name="task_create"),
+    path("tasks/<int:pk>/toggle/", views.task_toggle, name="task_toggle"),
     path("activities/new/", views.activity_create, name="activity_create"),
     path("activities/<int:pk>/toggle/", views.activity_toggle, name="activity_toggle"),
     path("activities/<int:pk>/delete/", views.activity_delete, name="activity_delete"),

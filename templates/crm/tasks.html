@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Tarefas</h1>
+    <p>Tudo o que precisa de acompanhamento, num lugar só.</p>
+  </div>
+</div>
+
+{% if can_edit %}
+<form method="post" action="{% url 'crm:task_create' %}" class="task-new">
+  {% csrf_token %}
+  <span class="task-new__mark">{% include "core/_icon.html" with icon="plus" %}</span>
+  <input type="text" name="body" placeholder="Escreva uma tarefa e pressione Enter…" maxlength="2000" required class="task-new__input" autocomplete="off">
+  <input type="date" name="due_date" class="task-new__date" aria-label="Prazo">
+  <button class="btn btn--primary btn--sm" type="submit">Adicionar</button>
+</form>
+{% endif %}
+
+<div class="task-tabs">
+  <a href="?show=pending" class="task-tab{% if show == 'pending' %} is-active{% endif %}">Pendentes <span>{{ pending_count }}</span></a>
+  <a href="?show=done" class="task-tab{% if show == 'done' %} is-active{% endif %}">Concluídas <span>{{ done_count }}</span></a>
+  <a href="?show=all" class="task-tab{% if show == 'all' %} is-active{% endif %}">Todas</a>
+</div>
+
+{% if show == 'pending' %}
+  {% if groups.overdue %}
+  <div class="task-group"><div class="task-group__head task-group__head--overdue">Atrasadas</div>
+    {% for task in groups.overdue %}{% include "crm/partials/_task_row.html" %}{% endfor %}
+  </div>
+  {% endif %}
+  {% if groups.today %}
+  <div class="task-group"><div class="task-group__head">Hoje</div>
+    {% for task in groups.today %}{% include "crm/partials/_task_row.html" %}{% endfor %}
+  </div>
+  {% endif %}
+  {% if groups.upcoming %}
+  <div class="task-group"><div class="task-group__head">Em breve</div>
+    {% for task in groups.upcoming %}{% include "crm/partials/_task_row.html" %}{% endfor %}
+  </div>
+  {% endif %}
+  {% if groups.nodate %}
+  <div class="task-group"><div class="task-group__head">Sem prazo</div>
+    {% for task in groups.nodate %}{% include "crm/partials/_task_row.html" %}{% endfor %}
+  </div>
+  {% endif %}
+  {% if not groups.overdue and not groups.today and not groups.upcoming and not groups.nodate %}
+  <div class="cf-empty" style="padding:44px 16px;">{% include "core/_icon.html" with icon="check" %}<div>Nenhuma tarefa pendente. 🎉</div></div>
+  {% endif %}
+{% else %}
+  <div class="task-group">
+    {% for task in groups.flat %}{% include "crm/partials/_task_row.html" %}{% empty %}
+    <div class="cf-empty" style="padding:44px 16px;">{% include "core/_icon.html" with icon="task" %}<div>{% if show == 'done' %}Nenhuma tarefa concluída ainda.{% else %}Nenhuma tarefa.{% endif %}</div></div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

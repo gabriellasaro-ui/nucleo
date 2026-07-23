@@ -1,0 +1,30 @@
+<div class="task-row{% if task.done %} is-done{% endif %}">
+  {% if can_edit %}
+  <form method="post" action="{% url 'crm:task_toggle' task.pk %}" class="task-check-form">
+    {% csrf_token %}
+    <input type="hidden" name="show" value="{{ show }}">
+    <button type="submit" class="task-check{% if task.done %} is-done{% endif %}" aria-label="{% if task.done %}Reabrir tarefa{% else %}Concluir tarefa{% endif %}">
+      {% include "core/_icon.html" with icon="check" %}
+    </button>
+  </form>
+  {% else %}
+  <span class="task-check{% if task.done %} is-done{% endif %}">{% include "core/_icon.html" with icon="check" %}</span>
+  {% endif %}
+  <div class="task-row__body">
+    <div class="task-row__text">{{ task.body }}</div>
+    <div class="task-row__meta">
+      {% if task.due_date %}
+      <span class="task-chip task-due{% if not task.done and task.due_date < today %} is-overdue{% endif %}">
+        {% include "core/_icon.html" with icon="calendar" %} {{ task.due_date|date:"d/m/Y" }}
+      </span>
+      {% endif %}
+      {% if task.rec %}
+      <span class="task-chip">
+        {% if task.deal %}{% include "core/_icon.html" with icon="briefcase" %}{% elif task.contact %}{% include "core/_icon.html" with icon="users" %}{% else %}{% include "core/_icon.html" with icon="building" %}{% endif %}
+        {{ task.rec }}
+      </span>
+      {% endif %}
+      {% if task.author %}<span class="task-chip task-chip--author"><span class="avatar avatar--xs">{{ task.author.get_username|slice:":2"|upper }}</span> {{ task.author.get_username }}</span>{% endif %}
+    </div>
+  </div>
+</div>

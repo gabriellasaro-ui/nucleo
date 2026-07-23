@@ -104,6 +104,7 @@ def _nav_model(request, whatsapp_unread=0):
                 {"label": "Negócios", "url_name": "crm:deal_board", "icon": "briefcase", "shortcut": "G N"},
                 {"label": "Empresas", "url_name": "crm:company_list", "icon": "building", "shortcut": "G E"},
                 {"label": "Contatos", "url_name": "crm:contact_list", "icon": "users", "shortcut": "G C"},
+                {"label": "Tarefas", "url_name": "crm:tasks", "icon": "task", "shortcut": "G T"},
                 {
                     "label": "WhatsApp",
                     "url_name": "whatsapp",

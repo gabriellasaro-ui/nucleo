@@ -1295,6 +1295,81 @@ def activity_delete(request, pk):
     return _with_toast(_render_timeline(request, on, obj), "Atividade excluída.")
 
 
+@login_required
+def tasks(request):
+    """Workspace-wide task list — Activities of kind 'task', grouped by due date."""
+    from django.utils import timezone
+
+    ws = request.workspace
+    show = request.GET.get("show", "pending")
+    if show not in {"pending", "done", "all"}:
+        show = "pending"
+    base = Activity.objects.filter(workspace=ws, kind="task").select_related(
+        "author", "deal", "contact", "company",
+    )
+    pending_count = base.filter(done=False).count()
+    done_count = base.filter(done=True).count()
+    qs = base
+    if show == "pending":
+        qs = qs.filter(done=False)
+    elif show == "done":
+        qs = qs.filter(done=True)
+    today = timezone.localdate()
+    groups = {"overdue": [], "today": [], "upcoming": [], "nodate": [], "flat": []}
+    for activity in qs.order_by("due_date", "-created_at")[:400]:
+        activity.rec = activity.deal or activity.contact or activity.company
+        if show != "pending":
+            groups["flat"].append(activity)
+        elif activity.due_date and activity.due_date < today:
+            groups["overdue"].append(activity)
+        elif activity.due_date == today:
+            groups["today"].append(activity)
+        elif activity.due_date:
+            groups["upcoming"].append(activity)
+        else:
+            groups["nodate"].append(activity)
+    return render(request, "crm/tasks.html", {
+        "page_title": "Tarefas",
+        "breadcrumb": ["CRM", "Tarefas"],
+        "show": show,
+        "groups": groups,
+        "pending_count": pending_count,
+        "done_count": done_count,
+        "today": today,
+        "can_edit": can_edit(request),
+    })
+
+
+@login_required
+def task_create(request):
+    from django.utils.dateparse import parse_date
+
+    if request.method != "POST" or not can_edit(request):
+        return redirect("crm:tasks")
+    body = request.POST.get("body", "").strip()
+    due = request.POST.get("due_date", "").strip()
+    if body:
+        Activity.objects.create(
+            workspace=request.workspace, kind="task", source="manual",
+            body=body[:2000], due_date=parse_date(due) if due else None,
+            author=request.user,
+        )
+        messages.success(request, "Tarefa criada.")
+    return redirect("crm:tasks")
+
+
+@login_required
+def task_toggle(request, pk):
+    if request.method != "POST" or not can_edit(request):
+        return redirect("crm:tasks")
+    activity = get_object_or_404(Activity, pk=pk, workspace=request.workspace, kind="task")
+    activity.done = not activity.done
+    activity.save(update_fields=["done", "updated_at"])
+    messages.success(request, "Tarefa concluída." if activity.done else "Tarefa reaberta.")
+    show = request.POST.get("show", "pending")
+    return redirect(f"{reverse('crm:tasks')}?show={show}")
+
+
 def _owner_of(activity):
     if activity.company_id:
         return "company", activity.company
