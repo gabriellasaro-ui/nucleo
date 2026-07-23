@@ -1120,6 +1120,7 @@ button { font-family: inherit; }
 .opt-card__swatch--radius-rounded { border-radius: 10px; background: var(--surface-3, #f1f3f7); }
 .opt-card__swatch--radius-soft { border-radius: 14px; background: var(--surface-3, #f1f3f7); }
 .opt-card__swatch--radius-sharp { border-radius: 1px; background: var(--surface-3, #f1f3f7); }
+.opt-card__font { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 15px; font-weight: 700; color: var(--ink); background: var(--surface-2); }
 
 .appearance-preview { padding: 14px 16px 18px; }
 .ap-mini { display: grid; grid-template-columns: 96px 1fr; height: 196px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--canvas); box-shadow: var(--shadow-sm); }

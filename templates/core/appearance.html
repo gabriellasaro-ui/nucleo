@@ -8,7 +8,7 @@
   </div>
 </div>
 
-<div class="appearance-grid" x-data="{ color: '{{ brand_color }}', sidebar: '{{ sidebar_theme }}', radius: '{{ ui_radius }}' }">
+<div class="appearance-grid" x-data="{ color: '{{ brand_color }}', sidebar: '{{ sidebar_theme }}', radius: '{{ ui_radius }}', font: '{{ ui_font }}', fonts: { sans: '\'Inter\', system-ui, sans-serif', serif: 'Georgia, \'Times New Roman\', serif' } }">
   <div class="card panel">
     <div class="panel__head"><b>Tema</b></div>
     <form method="post" class="appearance-form">
@@ -48,6 +48,17 @@
         {% endfor %}
       </div>
 
+      <label class="appearance-label">Fonte</label>
+      <div class="opt-cards">
+        {% for value, label in font_choices %}
+        <label class="opt-card" :class="{ 'is-active': font === '{{ value }}' }">
+          <input type="radio" name="ui_font" value="{{ value }}" x-model="font">
+          <span class="opt-card__font" :style="'font-family:'+fonts['{{ value }}']">Ag</span>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+
       <div class="appearance-actions">
         <button class="btn btn--primary" type="submit">Salvar tema</button>
         <span class="appearance-hint">Cor, menu e cantos valem em todo o app.</span>
@@ -59,7 +70,7 @@
     <div class="card panel">
       <div class="panel__head"><b>Prévia</b></div>
       <div class="appearance-preview" :data-sidebar="sidebar">
-        <div class="ap-mini" :style="'--r-md:'+({rounded:'9px',soft:'13px',sharp:'3px'}[radius] || '9px')">
+        <div class="ap-mini" :style="'--r-md:'+({rounded:'9px',soft:'13px',sharp:'3px'}[radius] || '9px')+';font-family:'+fonts[font]">
           <div class="ap-mini__side">
             <div class="ap-mini__brand"><span :style="'background:'+color"></span> Núcleo</div>
             <div class="ap-mini__nav is-active" :style="'background:'+color">Negócios</div>
@@ -78,8 +89,8 @@
     <div class="card panel">
       <div class="panel__head"><b>Logo</b></div>
       <div class="appearance-form">
-        {% if request.workspace.logo %}
-        <div class="logo-preview"><img src="{{ request.workspace.logo.url }}" alt="Logo atual"></div>
+        {% if request.workspace.logo_data %}
+        <div class="logo-preview"><img src="{{ request.workspace.logo_data }}" alt="Logo atual"></div>
         <form method="post">
           {% csrf_token %}
           <button name="remove_logo" value="1" class="btn btn--danger btn--sm" type="submit">

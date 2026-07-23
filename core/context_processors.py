@@ -52,13 +52,22 @@ def branding(request):
         "sharp": {"--r-sm": "2px", "--r-md": "3px", "--r-lg": "5px"},
     }
     ramp.update(radius_map.get(radius, radius_map["rounded"]))
+    # Typography preset (system-safe stacks — no webfont loading).
+    font = getattr(ws, "ui_font", None) or "sans"
+    font_map = {
+        "sans": '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+        "serif": 'Georgia, "Times New Roman", "Noto Serif", serif',
+    }
+    ramp["--font"] = font_map.get(font, font_map["sans"])
     brand_css = ":root{" + "".join(f"{k}:{v};" for k, v in ramp.items()) + "}"
+    logo_uri = (getattr(ws, "logo_data", "") or "").strip()
     return {
         "brand_css": brand_css,
         "brand_color": color,
-        "brand_logo": getattr(ws, "logo", None),
+        "brand_logo_uri": logo_uri,
         "sidebar_theme": getattr(ws, "sidebar_theme", None) or "light",
         "ui_radius": radius,
+        "ui_font": font,
     }
 
 

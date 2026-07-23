@@ -28,8 +28,8 @@
     <aside class="sidebar">
       <div class="ws-switch ws-switch--top" x-data="{ open: false }" @keydown.escape="open = false">
         <button class="ws-switch__btn" @click="open = !open">
-          {% if brand_logo %}
-            <img src="{{ brand_logo.url }}" alt="{{ request.workspace.name }}" class="ws-switch__logo">
+          {% if brand_logo_uri %}
+            <img src="{{ brand_logo_uri }}" alt="{{ request.workspace.name }}" class="ws-switch__logo">
           {% else %}
             <span class="ws-mark">{{ request.workspace.initials }}</span>
           {% endif %}

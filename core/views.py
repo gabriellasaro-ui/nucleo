@@ -3371,17 +3371,20 @@ def appearance(request):
     ws = request.workspace
     if request.method == "POST":
         if "remove_logo" in request.POST:
+            ws.logo_data = ""
             if ws.logo:
                 ws.logo.delete(save=False)
                 ws.logo = None
-                ws.save(update_fields=["logo"])
-                messages.success(request, "Logo removida.")
+            ws.save(update_fields=["logo", "logo_data"])
+            messages.success(request, "Logo removida.")
             return redirect("appearance")
+        ok = True
         if "brand_color" in request.POST:
             color = request.POST.get("brand_color", "").strip()
             if _COLOR_RE.match(color):
                 ws.brand_color = color
             else:
+                ok = False
                 messages.error(request, "Cor inválida.")
         if "sidebar_theme" in request.POST:
             value = request.POST.get("sidebar_theme")
@@ -3391,11 +3394,25 @@ def appearance(request):
             value = request.POST.get("ui_radius")
             if value in dict(ws.RADIUS_CHOICES):
                 ws.ui_radius = value
+        if "ui_font" in request.POST:
+            value = request.POST.get("ui_font")
+            if value in dict(ws.FONT_CHOICES):
+                ws.ui_font = value
         upload = request.FILES.get("logo")
         if upload:
-            ws.logo = upload
+            import base64
+            if upload.size > 400 * 1024:
+                ok = False
+                messages.error(request, "A logo deve ter no máximo 400 KB.")
+            elif not (upload.content_type or "").startswith("image/"):
+                ok = False
+                messages.error(request, "Envie um arquivo de imagem (PNG, SVG ou JPG).")
+            else:
+                encoded = base64.b64encode(upload.read()).decode("ascii")
+                ws.logo_data = f"data:{upload.content_type};base64,{encoded}"
         ws.save()
-        messages.success(request, "Aparência atualizada.")
+        if ok:
+            messages.success(request, "Aparência atualizada.")
         return redirect("appearance")
     return render(request, "core/appearance.html", {
         "page_title": "Aparência",
@@ -3403,4 +3420,5 @@ def appearance(request):
         "presets": ["#2563eb", "#7c3aed", "#059669", "#dc2626", "#d97706", "#0891b2", "#db2777", "#0f172a"],
         "sidebar_choices": ws.SIDEBAR_CHOICES,
         "radius_choices": ws.RADIUS_CHOICES,
+        "font_choices": ws.FONT_CHOICES,
     })
