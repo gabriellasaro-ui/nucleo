@@ -108,10 +108,22 @@ def navigation(request):
             palette.append({**entry, "section": section["section"]})
         if items:
             sections.append({"section": section["section"], "items": items})
+    # Map common breadcrumb labels -> their page, so crumbs become clickable.
+    breadcrumb_urls = {}
+    for section in sections:
+        for item in section["items"]:
+            breadcrumb_urls[item["label"]] = item["url"]
+    for label, name in (("Facebook", "facebook_forms"), ("Formulários", "facebook_forms"),
+                        ("Campos personalizados", "custom_fields")):
+        try:
+            breadcrumb_urls.setdefault(label, reverse(name))
+        except Exception:
+            pass
     membership = getattr(request, "membership", None)
     return {
         "nav_sections": sections,
         "command_palette": palette,
+        "breadcrumb_urls": breadcrumb_urls,
         "can_edit": _can_edit(request),
         "can_admin": bool(membership and membership.can("admin")),
     }

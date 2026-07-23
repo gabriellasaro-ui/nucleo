@@ -1,14 +1,14 @@
 {% load humanize %}
 <div class="deal-stats">
   <div class="deal-stat">
-    <span class="deal-stat__icon">{% include "core/_icon.html" with icon="pipeline" %}</span>
+    <span class="deal-stat__icon">{% include "core/_icon.html" with icon="briefcase" %}</span>
     <div>
       <div class="deal-stat__label">Pipeline aberto</div>
       <div class="deal-stat__value">R$ {{ stats.open_value|floatformat:0|intcomma }}</div>
     </div>
   </div>
   <div class="deal-stat">
-    <span class="deal-stat__icon">{% include "core/_icon.html" with icon="pipeline" %}</span>
+    <span class="deal-stat__icon">{% include "core/_icon.html" with icon="briefcase" %}</span>
     <div>
       <div class="deal-stat__label">Negócios abertos</div>
       <div class="deal-stat__value">{{ stats.open_count }}</div>

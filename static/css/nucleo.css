@@ -1150,6 +1150,8 @@ button { font-family: inherit; }
 .breadcrumb { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-3); }
 .breadcrumb b { color: var(--ink); font-weight: 600; }
 .breadcrumb .sep { color: var(--border-strong); }
+.breadcrumb .crumb-link { color: var(--ink-3); border-radius: 5px; transition: color .12s; }
+.breadcrumb .crumb-link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .topbar__spacer { flex: 1; }
 
 .content { padding: 18px 22px 44px; max-width: 1440px; width: 100%; margin: 0 auto; }

@@ -169,13 +169,13 @@
         <button class="btn btn--ghost btn--sm" type="button"
                 hx-get="{% url 'crm:deal_workspace' selected_deal.pk %}"
                 hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
-          {% include "core/_icon.html" with icon="pipeline" %} Negócio
+          {% include "core/_icon.html" with icon="briefcase" %} Negócio
         </button>
         {% elif can_edit %}
         <button class="btn btn--ghost btn--sm" type="button"
                 hx-get="{% url 'whatsapp_promote_drawer' selected_conversation.pk %}?mode=contact_deal"
                 hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
-          {% include "core/_icon.html" with icon="pipeline" %} Criar negócio
+          {% include "core/_icon.html" with icon="briefcase" %} Criar negócio
         </button>
         {% endif %}
         {% elif selected_conversation and can_edit %}
@@ -187,7 +187,7 @@
         <button class="btn btn--primary btn--sm" type="button"
                 hx-get="{% url 'whatsapp_promote_drawer' selected_conversation.pk %}?mode=contact_deal"
                 hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
-          {% include "core/_icon.html" with icon="pipeline" %} Contato + negócio
+          {% include "core/_icon.html" with icon="briefcase" %} Contato + negócio
         </button>
         {% elif draft_contact %}
         <button class="btn btn--ghost btn--sm" type="button"

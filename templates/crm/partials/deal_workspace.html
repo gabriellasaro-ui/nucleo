@@ -7,7 +7,7 @@
       <p class="modal__subtitle">{{ deal.pipeline.name|default:"Sem pipeline" }} · {{ deal.stage_display }}</p>
     </div>
     <div class="deal-workspace__head-actions">
-      <a class="icon-btn" href="{{ deal.get_absolute_url }}" title="Abrir página completa">{% include "core/_icon.html" with icon="pipeline" %}</a>
+      <a class="icon-btn" href="{{ deal.get_absolute_url }}" title="Abrir página completa">{% include "core/_icon.html" with icon="briefcase" %}</a>
       <button type="button" class="icon-btn" @click="modal = false" title="Fechar">{% include "core/_icon.html" with icon="close" %}</button>
     </div>
   </div>
@@ -18,7 +18,7 @@
       <div class="deal-workspace__form-scroll">
         <section class="drawer-section">
           <div class="drawer-section__head">
-            <span>{% include "core/_icon.html" with icon="pipeline" %}</span>
+            <span>{% include "core/_icon.html" with icon="briefcase" %}</span>
             <div><b>Informações do negócio</b><small>Dados comerciais e posicionamento</small></div>
           </div>
           <div class="field">

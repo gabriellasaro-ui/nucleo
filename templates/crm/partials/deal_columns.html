@@ -3,11 +3,6 @@
   {% for col in columns %}
   <div class="kanban__col" data-stage-id="{{ col.stage_id }}" style="--stage-color: {{ col.color }};">
     <div class="kanban__col-head">
-      {% if can_edit %}
-      <span class="kanban__col-grip" title="Arrastar fase">
-        {% include "core/_icon.html" with icon="sliders" %}
-      </span>
-      {% endif %}
       <span class="kanban__dot" style="background: {{ col.color }}"></span>
       <b>{{ col.label }}</b>
       <span class="kanban__count">{{ col.count }}</span>
