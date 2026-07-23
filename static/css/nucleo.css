@@ -1225,8 +1225,9 @@ button { font-family: inherit; }
 .ap-mini__row { display: flex; gap: 11px; }
 .ap-mini__row span { flex: 1; height: 30px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
 
-.nav { padding: 8px 10px; overflow-y: auto; flex: 1; }
+.nav { padding: 8px 10px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; }
 .nav__section { margin-top: 14px; }
+.nav__section--bottom { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); }
 .nav__label {
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
   color: var(--ink-3); padding: 4px 10px; margin-bottom: 2px;
@@ -1320,6 +1321,12 @@ button { font-family: inherit; }
 [data-theme="dark"] .wa-thread-placeholder .wa-placeholder-mark { background: rgba(255, 255, 255, .07); }
 /* Kanban cards read as surfaces in dark. */
 [data-theme="dark"] .kanban-card { background: var(--surface-2); }
+/* Topbar had a hardcoded translucent-white bg (showed as a white strip in dark). */
+[data-theme="dark"] .topbar { background: rgba(18, 23, 33, .82); }
+/* Workspace switcher button was white on a dark sidebar. */
+[data-sidebar="dark"] .sidebar .ws-switch--top .ws-switch__btn { background: transparent; }
+[data-sidebar="dark"] .sidebar .ws-switch--top .ws-switch__btn:hover { background: #182234; border-color: transparent; }
+[data-sidebar="dark"] .sidebar .ws-menu { background: #141d2e; border-color: #263349; }
 .topbar__spacer { flex: 1; }
 
 .content { padding: 18px 22px 44px; max-width: 1440px; width: 100%; margin: 0 auto; }
@@ -1690,7 +1697,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
    an inline --stage-color, so any custom stage renders in its own colour. */
 .badge--dyn {
   color: color-mix(in srgb, var(--stage-color, var(--blue-500)) 82%, var(--ink));
-  background: color-mix(in srgb, var(--stage-color, var(--blue-500)) 12%, #fff);
+  background: color-mix(in srgb, var(--stage-color, var(--blue-500)) 12%, var(--surface));
   border-color: color-mix(in srgb, var(--stage-color, var(--blue-500)) 24%, var(--border));
 }
 .badge--dyn::before { background: var(--stage-color, var(--blue-500)); }
@@ -1973,7 +1980,7 @@ kbd {
   border-bottom: 1px solid var(--border);
   background:
     linear-gradient(90deg,
-      color-mix(in srgb, var(--stage-color) 9%, #fff),
+      color-mix(in srgb, var(--stage-color) 9%, var(--surface)),
       var(--surface) 46%);
 }
 .stage-row:last-child { border-bottom: 0; }
@@ -2021,7 +2028,7 @@ kbd {
   border-radius: 7px;
   display: grid;
   place-items: center;
-  background: color-mix(in srgb, var(--stage-color) 14%, #fff);
+  background: color-mix(in srgb, var(--stage-color) 14%, var(--surface));
   color: color-mix(in srgb, var(--stage-color) 80%, var(--ink));
   font-size: 11px;
   font-weight: 800;
@@ -2135,7 +2142,7 @@ kbd {
   padding: 10px;
   border: 1px dashed color-mix(in srgb, var(--stage-color) 24%, var(--border));
   border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--stage-color) 4%, #fff);
+  background: color-mix(in srgb, var(--stage-color) 4%, var(--surface));
 }
 .stage-row__cards-head {
   display: flex;
@@ -2471,7 +2478,7 @@ kbd {
   grid-template-columns: 11px minmax(0, 1fr) auto; align-items: center; gap: 9px;
   padding: 7px 9px 7px 4px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer;
 }
-.pipeline-stage-nav__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--stage-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--stage-color) 13%, #fff); }
+.pipeline-stage-nav__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--stage-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--stage-color) 13%, var(--surface)); }
 .pipeline-stage-nav__text { min-width: 0; display: grid; gap: 2px; }
 .pipeline-stage-nav__text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .pipeline-stage-nav__text small { color: var(--ink-3); font-size: 10.5px; }
@@ -2549,12 +2556,12 @@ kbd {
   border-color: color-mix(in srgb, var(--stage-color) 24%, var(--border));
   background:
     linear-gradient(180deg,
-      color-mix(in srgb, var(--stage-color) 8%, #fff) 0,
+      color-mix(in srgb, var(--stage-color) 8%, var(--surface)) 0,
       var(--surface-2) 140px);
 }
 .kanban__col-head {
   border-bottom: 1px solid color-mix(in srgb, var(--stage-color) 20%, var(--border));
-  background: color-mix(in srgb, var(--stage-color) 9%, #fff);
+  background: color-mix(in srgb, var(--stage-color) 9%, var(--surface));
   border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
 .kanban__dot { background: var(--stage-color) !important; }
@@ -2562,9 +2569,9 @@ kbd {
   border-color: color-mix(in srgb, var(--stage-color) 18%, var(--border));
   background:
     linear-gradient(135deg,
-      color-mix(in srgb, var(--stage-color) 10%, #fff) 0%,
+      color-mix(in srgb, var(--stage-color) 10%, var(--surface)) 0%,
       var(--surface) 48%);
-  box-shadow: var(--shadow-sm), inset 0 1px 0 color-mix(in srgb, var(--stage-color) 10%, #fff);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 color-mix(in srgb, var(--stage-color) 10%, var(--surface));
 }
 .kanban-card:hover {
   border-color: color-mix(in srgb, var(--stage-color) 44%, var(--blue-200));
@@ -3176,12 +3183,12 @@ kbd {
   border-color: color-mix(in srgb, var(--stage-color) 24%, var(--border));
   background:
     linear-gradient(180deg,
-      color-mix(in srgb, var(--stage-color) 8%, #fff) 0,
+      color-mix(in srgb, var(--stage-color) 8%, var(--surface)) 0,
       var(--surface-2) 140px);
 }
 .kanban__col-head {
   border-bottom: 1px solid color-mix(in srgb, var(--stage-color) 20%, var(--border));
-  background: color-mix(in srgb, var(--stage-color) 9%, #fff);
+  background: color-mix(in srgb, var(--stage-color) 9%, var(--surface));
   border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
 .kanban__dot { background: var(--stage-color) !important; }
@@ -3189,9 +3196,9 @@ kbd {
   border-color: color-mix(in srgb, var(--stage-color) 18%, var(--border));
   background:
     linear-gradient(135deg,
-      color-mix(in srgb, var(--stage-color) 10%, #fff) 0%,
+      color-mix(in srgb, var(--stage-color) 10%, var(--surface)) 0%,
       var(--surface) 48%);
-  box-shadow: var(--shadow-sm), inset 0 1px 0 color-mix(in srgb, var(--stage-color) 10%, #fff);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 color-mix(in srgb, var(--stage-color) 10%, var(--surface));
 }
 .kanban-card:hover {
   border-color: color-mix(in srgb, var(--stage-color) 44%, var(--blue-200));

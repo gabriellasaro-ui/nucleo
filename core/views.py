@@ -420,7 +420,7 @@ def custom_fields(request):
     ]
     return render(request, "core/custom_fields.html", {
         "page_title": "Campos do CRM",
-        "breadcrumb": ["Configurações", "Campos do CRM"],
+        "breadcrumb": ["Campos personalizados"],
         "groups": groups,
         "type_choices": CustomField.TYPE_CHOICES,
         "object_choices": CustomField.OBJECT_CHOICES,
@@ -638,7 +638,7 @@ def automations(request):
     ws = request.workspace
     return render(request, "core/automations.html", {
         "page_title": "Automações",
-        "breadcrumb": ["Configurações", "Automações"],
+        "breadcrumb": ["Automações"],
         "automations": _editable_automations(ws),
         "recent_runs": AutomationRun.objects.filter(workspace=ws).exclude(
             automation__trigger="facebook_lead",
@@ -2073,7 +2073,7 @@ def integrations(request):
         })
     return render(request, "core/integrations.html", {
         "page_title": "Integrações",
-        "breadcrumb": ["Configurações", "Integrações"],
+        "breadcrumb": ["Integrações"],
         "integration_cards": cards,
     })
 

@@ -64,8 +64,8 @@
       </div>
       <nav class="nav">
         {% for section in nav_sections %}
-        <div class="nav__section">
-          <div class="nav__label">{{ section.section }}</div>
+        <div class="nav__section{% if section.bottom %} nav__section--bottom{% endif %}">
+          {% if section.section %}<div class="nav__label">{{ section.section }}</div>{% endif %}
           {% for item in section.items %}
           <a href="{{ item.url }}" class="nav__item {% if request.path == item.url %}is-active{% endif %}">
             {% include "core/_icon.html" with icon=item.icon %}
@@ -102,9 +102,6 @@
           {% endfor %}
         </div>
         <div class="topbar__spacer"></div>
-        <button class="btn btn--ghost btn--sm" @click="openCmdk()">
-          {% include "core/_icon.html" with icon="command" %} Comandos
-        </button>
       </header>
 
       <main class="content">

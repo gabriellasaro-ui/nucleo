@@ -120,7 +120,16 @@ def _nav_model(request, whatsapp_unread=0):
     membership = getattr(request, "membership", None)
     if membership is not None and membership.can("admin"):
         sections.append({
-            "section": "Configurações",
+            "section": "Ferramentas",
+            "items": [
+                {"label": "Automações", "url_name": "automations", "icon": "bolt", "shortcut": ""},
+                {"label": "Integrações", "url_name": "integrations", "icon": "plug", "shortcut": ""},
+                {"label": "Campos personalizados", "url_name": "custom_fields", "icon": "hash", "shortcut": ""},
+            ],
+        })
+        sections.append({
+            "section": "",
+            "bottom": True,
             "items": [
                 {"label": "Configurações", "url_name": "settings", "icon": "sliders", "shortcut": "G S"},
             ],
@@ -143,7 +152,7 @@ def navigation(request):
             items.append(entry)
             palette.append({**entry, "section": section["section"]})
         if items:
-            sections.append({"section": section["section"], "items": items})
+            sections.append({"section": section["section"], "bottom": section.get("bottom", False), "items": items})
     # Map common breadcrumb labels -> their page, so crumbs become clickable.
     breadcrumb_urls = {}
     for section in sections:
@@ -161,8 +170,7 @@ def navigation(request):
     # Settings sub-pages stay reachable from the ⌘K palette even though the sidebar
     # now shows a single "Configurações" entry.
     if membership is not None and membership.can("admin"):
-        for label, name, icon in (("Aparência", "appearance", "palette"), ("Membros", "members", "users"),
-                                  ("Automações", "automations", "bolt"), ("Integrações", "integrations", "plug")):
+        for label, name, icon in (("Aparência", "appearance", "palette"), ("Membros", "members", "users")):
             try:
                 palette.append({"label": label, "url": reverse(name), "section": "Configurações", "icon": icon, "shortcut": ""})
             except Exception:
