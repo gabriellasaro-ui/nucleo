@@ -14,7 +14,10 @@ class Workspace(TenantMixin):
     THEME_CHOICES = [("light", "Claro"), ("dark", "Escuro")]
     SIDEBAR_CHOICES = [("light", "Clara"), ("dark", "Escura")]
     RADIUS_CHOICES = [("rounded", "Arredondado"), ("soft", "Suave"), ("sharp", "Reto")]
-    FONT_CHOICES = [("sans", "Padrão"), ("serif", "Serifada")]
+    FONT_CHOICES = [
+        ("sans", "Padrão"), ("serif", "Serifada"),
+        ("rounded", "Arredondada"), ("mono", "Técnica"),
+    ]
 
     name = models.CharField("Nome", max_length=120)
     brand_color = models.CharField("Cor da marca", max_length=7, default="#2563eb")

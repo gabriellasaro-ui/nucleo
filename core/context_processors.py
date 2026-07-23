@@ -73,6 +73,8 @@ def branding(request):
     font_map = {
         "sans": '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
         "serif": 'Georgia, "Times New Roman", "Noto Serif", serif',
+        "rounded": 'Verdana, Geneva, "Segoe UI", Tahoma, sans-serif',
+        "mono": 'ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace',
     }
     ramp["--font"] = font_map.get(font, font_map["sans"])
     brand_css = ":root{" + "".join(f"{k}:{v};" for k, v in ramp.items()) + "}"
@@ -119,10 +121,7 @@ def _nav_model(request, whatsapp_unread=0):
         sections.append({
             "section": "Configurações",
             "items": [
-                {"label": "Aparência", "url_name": "appearance", "icon": "palette", "shortcut": ""},
-                {"label": "Membros", "url_name": "members", "icon": "users", "shortcut": ""},
-                {"label": "Automações", "url_name": "automations", "icon": "bolt", "shortcut": ""},
-                {"label": "Integrações", "url_name": "integrations", "icon": "plug", "shortcut": ""},
+                {"label": "Configurações", "url_name": "settings", "icon": "sliders", "shortcut": "G S"},
             ],
         })
     return sections
@@ -149,13 +148,24 @@ def navigation(request):
     for section in sections:
         for item in section["items"]:
             breadcrumb_urls[item["label"]] = item["url"]
-    for label, name in (("Facebook", "facebook_forms"), ("Formulários", "facebook_forms"),
-                        ("Campos personalizados", "custom_fields")):
+    for label, name in (("Configurações", "settings"), ("Aparência", "appearance"),
+                        ("Membros", "members"), ("Automações", "automations"),
+                        ("Integrações", "integrations"), ("Facebook", "facebook_forms"),
+                        ("Formulários", "facebook_forms"), ("Campos personalizados", "custom_fields")):
         try:
             breadcrumb_urls.setdefault(label, reverse(name))
         except Exception:
             pass
     membership = getattr(request, "membership", None)
+    # Settings sub-pages stay reachable from the ⌘K palette even though the sidebar
+    # now shows a single "Configurações" entry.
+    if membership is not None and membership.can("admin"):
+        for label, name, icon in (("Aparência", "appearance", "palette"), ("Membros", "members", "users"),
+                                  ("Automações", "automations", "bolt"), ("Integrações", "integrations", "plug")):
+            try:
+                palette.append({"label": label, "url": reverse(name), "section": "Configurações", "icon": icon, "shortcut": ""})
+            except Exception:
+                pass
     return {
         "nav_sections": sections,
         "command_palette": palette,

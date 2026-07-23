@@ -16,6 +16,7 @@ urlpatterns = [
     path("whatsapp/send/", views.whatsapp_send, name="whatsapp_send"),
     path("workspaces/new/", views.workspace_new, name="workspace_new"),
     path("workspaces/<int:pk>/switch/", views.workspace_switch, name="workspace_switch"),
+    path("settings/", views.settings_hub, name="settings"),
     path("settings/members/", views.members, name="members"),
     path("settings/members/add/", views.member_add, name="member_add"),
     path("settings/members/<int:pk>/role/", views.member_update, name="member_update"),

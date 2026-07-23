@@ -3367,6 +3367,15 @@ _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 @login_required
 @require_role("admin")
+def settings_hub(request):
+    return render(request, "core/settings.html", {
+        "page_title": "Configurações",
+        "breadcrumb": ["Configurações"],
+    })
+
+
+@login_required
+@require_role("admin")
 def appearance(request):
     ws = request.workspace
     if request.method == "POST":
@@ -3379,6 +3388,13 @@ def appearance(request):
             messages.success(request, "Logo removida.")
             return redirect("appearance")
         ok = True
+        if "workspace_name" in request.POST:
+            new_name = request.POST.get("workspace_name", "").strip()
+            if new_name:
+                ws.name = new_name[:120]
+            else:
+                ok = False
+                messages.error(request, "O nome do workspace não pode ficar vazio.")
         if "app_theme" in request.POST:
             value = request.POST.get("app_theme")
             if value in dict(ws.THEME_CHOICES):
@@ -3405,9 +3421,9 @@ def appearance(request):
         upload = request.FILES.get("logo")
         if upload:
             import base64
-            if upload.size > 400 * 1024:
+            if upload.size > 2 * 1024 * 1024:
                 ok = False
-                messages.error(request, "A logo deve ter no máximo 400 KB.")
+                messages.error(request, "A logo deve ter no máximo 2 MB.")
             elif not (upload.content_type or "").startswith("image/"):
                 ok = False
                 messages.error(request, "Envie um arquivo de imagem (PNG, SVG ou JPG).")

@@ -8,13 +8,16 @@
   </div>
 </div>
 
-<div class="appearance-grid" x-data="{ theme: '{{ app_theme }}', color: '{{ brand_color }}', sidebar: '{{ sidebar_theme }}', radius: '{{ ui_radius }}', font: '{{ ui_font }}', fonts: { sans: '\'Inter\', system-ui, sans-serif', serif: 'Georgia, \'Times New Roman\', serif' } }">
+<div class="appearance-grid" x-data="{ theme: '{{ app_theme }}', color: '{{ brand_color }}', sidebar: '{{ sidebar_theme }}', radius: '{{ ui_radius }}', font: '{{ ui_font }}', fonts: { sans: '\'Inter\', system-ui, sans-serif', serif: 'Georgia, serif', rounded: 'Verdana, Geneva, sans-serif', mono: 'ui-monospace, Consolas, monospace' } }">
   <div class="card panel">
     <div class="panel__head"><b>Tema</b></div>
     <form method="post" class="appearance-form">
       {% csrf_token %}
 
-      <label class="appearance-label" style="margin-top:2px;">Temas prontos</label>
+      <label class="appearance-label" style="margin-top:2px;">Nome do workspace</label>
+      <input type="text" name="workspace_name" value="{{ request.workspace.name }}" maxlength="120" class="appearance-text-input" placeholder="Nome do workspace">
+
+      <label class="appearance-label">Temas prontos</label>
       <div class="theme-presets">
         <button type="button" class="theme-preset" @click="theme='light'; color='#2563eb'; sidebar='light'; radius='rounded'; font='sans'">
           <span class="theme-preset__dots"><i style="background:#2563eb"></i><i style="background:#fff;box-shadow:inset 0 0 0 1px #e7e9ee"></i></span>Clean
@@ -118,24 +121,24 @@
       <div class="appearance-form">
         {% if request.workspace.logo_data %}
         <div class="logo-preview"><img src="{{ request.workspace.logo_data }}" alt="Logo atual"></div>
-        <form method="post">
+        {% endif %}
+        <form method="post" enctype="multipart/form-data">
           {% csrf_token %}
-          <button name="remove_logo" value="1" class="btn btn--danger btn--sm" type="submit">
+          <label class="logo-dropzone">
+            <span class="logo-dropzone__icon">{% include "core/_icon.html" with icon="plus" %}</span>
+            <b>{% if request.workspace.logo_data %}Trocar logo{% else %}Enviar logo{% endif %}</b>
+            <span class="logo-dropzone__hint">PNG, SVG ou JPG · até 2 MB · fundo transparente fica melhor</span>
+            <input type="file" name="logo" accept="image/*" required onchange="this.form.submit()">
+          </label>
+        </form>
+        {% if request.workspace.logo_data %}
+        <form method="post" class="logo-remove-form">
+          {% csrf_token %}
+          <button name="remove_logo" value="1" class="btn btn--ghost btn--sm" type="submit">
             {% include "core/_icon.html" with icon="trash" %} Remover logo
           </button>
         </form>
-        {% else %}
-        <div class="logo-empty">
-          <span class="brand-mark">N</span>
-          <div>Sem logo — usando o padrão “Núcleo”.</div>
-        </div>
         {% endif %}
-        <form method="post" enctype="multipart/form-data" class="logo-upload">
-          {% csrf_token %}
-          <input type="file" name="logo" accept="image/*" required>
-          <button class="btn btn--primary btn--sm" type="submit">Enviar logo</button>
-        </form>
-        <div class="appearance-hint">PNG ou SVG com fundo transparente fica melhor. Aparece no topo do menu lateral.</div>
       </div>
     </div>
   </div>
