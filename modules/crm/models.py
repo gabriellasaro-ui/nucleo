@@ -3,6 +3,7 @@ from django.core.validators import MaxValueValidator
 from django.db import models
 from django.urls import reverse
 
+from core.privacy import BASIS_CHOICES, CONSENT_STATUS_CHOICES, CONSENT_UNKNOWN
 from core.tenancy import TenantManager
 
 
@@ -123,6 +124,15 @@ class Contact(TimestampedModel):
         settings.AUTH_USER_MODEL, blank=True, related_name="assigned_contacts",
         verbose_name="Responsáveis",
     )
+    # LGPD — legal basis / consent + anonymisation state.
+    consent_status = models.CharField(
+        "Consentimento", max_length=12, choices=CONSENT_STATUS_CHOICES, default=CONSENT_UNKNOWN,
+    )
+    consent_basis = models.CharField("Base legal", max_length=20, choices=BASIS_CHOICES, blank=True, default="")
+    consent_source = models.CharField("Origem do consentimento", max_length=180, blank=True, default="")
+    consent_at = models.DateTimeField("Consentido em", null=True, blank=True)
+    is_anonymized = models.BooleanField("Anonimizado", default=False)
+    anonymized_at = models.DateTimeField(null=True, blank=True)
 
     objects = TenantManager()
     all_objects = models.Manager()
@@ -505,6 +515,8 @@ class AuditLog(models.Model):
         ("create", "Criou"),
         ("update", "Atualizou"),
         ("delete", "Excluiu"),
+        ("anonymize", "Anonimizou"),
+        ("consent", "Consentimento"),
         ("export", "Exportou"),
         ("login", "Entrou"),
         ("logout", "Saiu"),

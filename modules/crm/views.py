@@ -5,15 +5,17 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Max, Q, Sum
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.text import slugify
 
 from core import audit
 from core.customfields import get_fields, read_from_post, with_values
 from core.events import emit
 from core.models import CustomField, IntegrationConnection
+from core.privacy import BASIS_CHOICES, CONSENT_STATUS_CHOICES
 from core.rbac import can_edit
 from core.whatsapp_inbox import apply_whatsapp_directory_names
 
@@ -1205,9 +1207,37 @@ def contact_detail(request, pk):
         "deals": contact.deals.all(),
         "attachments": contact.attachments.all(),
         "custom_fields": with_values(get_fields(request.workspace, "contact"), contact),
+        "basis_choices": BASIS_CHOICES,
         **_timeline_context("contact", contact),
     }
     return render(request, "crm/contact_detail.html", context)
+
+
+@login_required
+def contact_privacy(request, pk):
+    """Register or withdraw a contact's consent (LGPD legal basis)."""
+    if not can_edit(request):
+        return HttpResponseForbidden()
+    contact = get_object_or_404(Contact, pk=pk, workspace=request.workspace)
+    if request.method == "POST" and not contact.is_anonymized:
+        status = request.POST.get("status")
+        basis = request.POST.get("basis") or ""
+        if status in dict(CONSENT_STATUS_CHOICES):
+            contact.consent_status = status
+            if basis in dict(BASIS_CHOICES):
+                contact.consent_basis = basis
+            if status == "granted":
+                contact.consent_source = contact.consent_source or "Registrado manualmente"
+                contact.consent_at = timezone.now()
+            contact.save(update_fields=[
+                "consent_status", "consent_basis", "consent_source", "consent_at", "updated_at",
+            ])
+            audit.record(
+                "consent", object_type="contact", object_id=contact.pk,
+                object_repr=str(contact), changes={"status": status, "basis": basis},
+            )
+            messages.success(request, "Consentimento atualizado.")
+    return redirect(contact.get_absolute_url())
 
 
 @login_required

@@ -49,4 +49,5 @@ urlpatterns = [
     path("settings/appearance/", views.appearance, name="appearance"),
     path("settings/dashboard/", views.dashboard_settings, name="dashboard_settings"),
     path("settings/audit/", views.audit_log, name="audit_log"),
+    path("settings/privacy/", views.privacy_settings, name="privacy_settings"),
 ]

@@ -36,6 +36,9 @@ class Workspace(TenantMixin):
     # Ordered list of dashboard widget keys the workspace wants shown, e.g.
     # ["kpis", "funnel", ...]. Empty = the default layout (all widgets).
     dashboard_layout = models.JSONField("Painel", default=list, blank=True)
+    # LGPD retention: anonymize contacts untouched for this many months.
+    # 0 = disabled (keep indefinitely).
+    retention_months = models.PositiveSmallIntegerField("Retenção (meses)", default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Create/drop the Postgres schema automatically with the workspace.

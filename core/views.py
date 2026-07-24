@@ -3402,6 +3402,45 @@ def settings_hub(request):
 
 @login_required
 @require_role("admin")
+def privacy_settings(request):
+    """LGPD: retention window + a consent overview for the workspace."""
+    from core.privacy import anonymize_contact, expired_contacts
+
+    ws = request.workspace
+    if request.method == "POST":
+        if "apply_retention" in request.POST:
+            done = sum(1 for c in list(expired_contacts(ws))
+                       if anonymize_contact(c, reason="retention", source="user"))
+            messages.success(request, f"{done} contato(s) anonimizado(s) pela retenção.")
+        else:
+            try:
+                months = int(request.POST.get("retention_months") or 0)
+            except (TypeError, ValueError):
+                months = 0
+            ws.retention_months = max(0, min(months, 600))
+            ws.save(update_fields=["retention_months"])
+            messages.success(request, "Configurações de privacidade salvas.")
+        return redirect("privacy_settings")
+
+    contacts = Contact.objects.filter(workspace=ws)
+    summary = {
+        "total": contacts.count(),
+        "granted": contacts.filter(consent_status="granted").count(),
+        "withdrawn": contacts.filter(consent_status="withdrawn").count(),
+        "unknown": contacts.filter(consent_status="unknown").count(),
+        "anonymized": contacts.filter(is_anonymized=True).count(),
+    }
+    return render(request, "core/privacy_settings.html", {
+        "page_title": "Privacidade",
+        "breadcrumb": ["Configurações", "Privacidade"],
+        "retention_months": ws.retention_months,
+        "expired_now": expired_contacts(ws).count(),
+        "summary": summary,
+    })
+
+
+@login_required
+@require_role("admin")
 def audit_log(request):
     """LGPD audit trail for this workspace (tenant-scoped)."""
     ws = request.workspace

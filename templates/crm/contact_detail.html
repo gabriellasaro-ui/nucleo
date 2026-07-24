@@ -87,6 +87,38 @@
   </div>
 
   <div class="record__side">
+    <div class="card panel privacy-panel">
+      <div class="panel__head">{% include "core/_icon.html" with icon="shield" %}<b>Privacidade (LGPD)</b></div>
+      <div class="panel__pad">
+        {% if contact.is_anonymized %}
+        <div class="privacy-anon">
+          {% include "core/_icon.html" with icon="shield" %}
+          Contato anonimizado{% if contact.anonymized_at %} em {{ contact.anonymized_at|date:date_fmt }}{% endif %}.
+        </div>
+        {% else %}
+        <div class="privacy-rows">
+          <div class="privacy-row"><span>Consentimento</span><span class="consent-badge consent-{{ contact.consent_status }}">{{ contact.get_consent_status_display }}</span></div>
+          <div class="privacy-row"><span>Base legal</span><b>{{ contact.get_consent_basis_display|default:"—" }}</b></div>
+          <div class="privacy-row"><span>Origem</span><b>{{ contact.consent_source|default:"—" }}</b></div>
+          <div class="privacy-row"><span>Data</span><b>{{ contact.consent_at|date:datetime_fmt|default:"—" }}</b></div>
+        </div>
+        {% if can_edit %}
+        <form method="post" action="{% url 'crm:contact_privacy' contact.pk %}" class="privacy-form">
+          {% csrf_token %}
+          <select name="basis" class="region-select">
+            {% for value, label in basis_choices %}
+            <option value="{{ value }}" {% if value == contact.consent_basis %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <div class="privacy-actions">
+            <button name="status" value="granted" class="btn btn--sm btn--primary" type="submit">Registrar consentimento</button>
+            <button name="status" value="withdrawn" class="btn btn--sm btn--ghost" type="submit">Revogar</button>
+          </div>
+        </form>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
     <div class="card panel">
       <div class="panel__head"><b>Atividades</b></div>
       <div class="panel__pad">

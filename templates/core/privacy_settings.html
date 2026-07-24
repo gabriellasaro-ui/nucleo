@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Privacidade</h1>
+    <p>Base legal, consentimento e retenção de dados pessoais em <b>{{ request.workspace.name }}</b> (LGPD).</p>
+  </div>
+</div>
+
+<div class="privacy-grid">
+  <div class="card panel">
+    <div class="panel__head"><b>Consentimento dos contatos</b></div>
+    <div class="panel__pad">
+      <div class="consent-stats">
+        <div class="consent-stat"><b>{{ summary.total }}</b><span>Total</span></div>
+        <div class="consent-stat consent-stat--ok"><b>{{ summary.granted }}</b><span>Consentido</span></div>
+        <div class="consent-stat consent-stat--warn"><b>{{ summary.unknown }}</b><span>Não informado</span></div>
+        <div class="consent-stat consent-stat--bad"><b>{{ summary.withdrawn }}</b><span>Revogado</span></div>
+        <div class="consent-stat"><b>{{ summary.anonymized }}</b><span>Anonimizados</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card panel">
+    <div class="panel__head"><b>Retenção de dados</b></div>
+    <div class="panel__pad">
+      <p class="privacy-hint">Contatos sem nenhuma atualização por mais tempo que a janela abaixo são
+      <b>anonimizados automaticamente</b> — exceto quem tem negócio aberto ou ganho. Deixe <b>0</b> para nunca expirar.</p>
+      <form method="post" class="privacy-retention">
+        {% csrf_token %}
+        <label class="region-field__cap" for="retention_months">Janela de retenção (meses)</label>
+        <div class="retention-row">
+          <input type="number" id="retention_months" name="retention_months" min="0" max="600"
+                 value="{{ retention_months }}" class="region-select retention-input">
+          <button class="btn btn--primary" type="submit">Salvar</button>
+        </div>
+      </form>
+
+      <div class="retention-apply">
+        <div>
+          <b>{{ expired_now }}</b> contato(s) já passaram da janela atual.
+        </div>
+        {% if expired_now %}
+        <form method="post" onsubmit="return confirm('Anonimizar {{ expired_now }} contato(s) agora? Esta ação não pode ser desfeita.');">
+          {% csrf_token %}
+          <button name="apply_retention" value="1" class="btn btn--ghost btn--sm" type="submit">
+            {% include "core/_icon.html" with icon="shield" %} Aplicar retenção agora
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

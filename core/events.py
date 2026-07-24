@@ -799,6 +799,15 @@ def _create_contact(auto, obj, action, event=None):
         "stage": action.get("contact_stage") or "lead",
         "company": company,
     }
+    # A lead that arrives via a form gave consent at that form (LGPD legal basis).
+    if event is not None:
+        from django.utils import timezone
+        defaults.update({
+            "consent_status": "granted",
+            "consent_basis": "consentimento",
+            "consent_source": "Lead (formulário)",
+            "consent_at": timezone.now(),
+        })
     if email:
         contact, created = Contact.all_objects.get_or_create(
             workspace=auto.workspace,

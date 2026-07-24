@@ -19,6 +19,7 @@ urlpatterns = [
     path("contacts/<int:pk>/", views.contact_detail, name="contact_detail"),
     path("contacts/<int:pk>/edit/", views.contact_form, name="contact_edit"),
     path("contacts/<int:pk>/delete/", views.contact_delete, name="contact_delete"),
+    path("contacts/<int:pk>/privacy/", views.contact_privacy, name="contact_privacy"),
     # Deals (kanban)
     path("deals/", views.deal_board, name="deal_board"),
     path("deals/cards/", views.deal_board_cards, name="deal_cards"),

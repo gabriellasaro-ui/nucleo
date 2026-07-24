@@ -1078,3 +1078,86 @@ class AuditTrailTests(TransactionTestCase):
             row = AuditLog.all_objects.filter(action="login").first()
         self.assertIsNotNone(row)
         self.assertEqual(row.actor_label, "ana")
+
+
+class PrivacyRetentionTests(TransactionTestCase):
+    """LGPD Fase 3: anonymisation wipes PII (keeping the row), and the retention
+    query only catches untouched contacts with no active relationship."""
+
+    def setUp(self):
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_privacy", name="PrivacyCo")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="privacy.test")
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        clear_current_workspace()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    def test_anonymize_wipes_pii_records_audit_and_is_idempotent(self):
+        from core.privacy import anonymize_contact
+        from modules.crm.models import AuditLog, Contact
+        set_current_workspace(self.ws)
+        with tenant_context(self.ws):
+            c = Contact.objects.create(
+                workspace=self.ws, first_name="Maria", last_name="Silva",
+                email="maria@ex.com", phone="+5511999", city="SP",
+            )
+            changed = anonymize_contact(c, reason="erasure")
+            c.refresh_from_db()
+            again = anonymize_contact(c, reason="erasure")
+            has_audit = AuditLog.all_objects.filter(action="anonymize", object_type="contact").exists()
+        self.assertTrue(changed)
+        self.assertFalse(again)  # idempotent — already anonymised
+        self.assertTrue(c.is_anonymized)
+        self.assertIsNotNone(c.anonymized_at)
+        self.assertEqual(c.first_name, "[removido]")
+        self.assertEqual(c.email, "")
+        self.assertEqual(c.phone, "")
+        self.assertEqual(c.city, "")
+        self.assertEqual(c.consent_status, "withdrawn")
+        self.assertTrue(has_audit)
+
+    def test_expired_contacts_respects_window_and_skips_active_deals(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from core.privacy import expired_contacts
+        from modules.crm.models import Contact, Deal
+        self.ws.retention_months = 6
+        self.ws.save(update_fields=["retention_months"])
+        old = timezone.now() - timedelta(days=400)
+        recent = timezone.now() - timedelta(days=10)
+        set_current_workspace(self.ws)
+        with tenant_context(self.ws):
+            c_old = Contact.objects.create(workspace=self.ws, first_name="Velho")
+            c_recent = Contact.objects.create(workspace=self.ws, first_name="Novo")
+            c_active = Contact.objects.create(workspace=self.ws, first_name="Ativo")
+            d = Deal.objects.create(workspace=self.ws, title="Negócio", contact=c_active)
+            Deal.all_objects.filter(pk=d.pk).update(stage_kind="open")
+            Contact.all_objects.filter(pk__in=[c_old.pk, c_active.pk]).update(updated_at=old)
+            Contact.all_objects.filter(pk=c_recent.pk).update(updated_at=recent)
+            ids = set(expired_contacts(self.ws).values_list("pk", flat=True))
+        self.assertIn(c_old.pk, ids)
+        self.assertNotIn(c_recent.pk, ids)   # still inside the window
+        self.assertNotIn(c_active.pk, ids)   # tied to an open deal
+
+    def test_retention_disabled_never_expires(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from core.privacy import expired_contacts
+        from modules.crm.models import Contact
+        self.ws.retention_months = 0
+        self.ws.save(update_fields=["retention_months"])
+        set_current_workspace(self.ws)
+        with tenant_context(self.ws):
+            c = Contact.objects.create(workspace=self.ws, first_name="X")
+            Contact.all_objects.filter(pk=c.pk).update(updated_at=timezone.now() - timedelta(days=9999))
+            self.assertEqual(expired_contacts(self.ws).count(), 0)
