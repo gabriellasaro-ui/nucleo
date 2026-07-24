@@ -15,7 +15,7 @@
     <div class="task-row__meta">
       {% if task.due_date %}
       <span class="task-chip task-due{% if not task.done and task.due_date < today %} is-overdue{% endif %}">
-        {% include "core/_icon.html" with icon="calendar" %} {{ task.due_date|date:"d/m/Y" }}
+        {% include "core/_icon.html" with icon="calendar" %} {{ task.due_date|date:date_fmt }}
       </span>
       {% endif %}
       {% if task.rec %}

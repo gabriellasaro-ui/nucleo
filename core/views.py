@@ -29,6 +29,7 @@ from core.tenancy import clear_current_workspace, set_current_workspace
 
 from .forms import WhatsAppPromotionForm, WorkspaceForm
 from .models import EVENT_CHOICES, Automation, AutomationRun, CustomField, Domain, Event, IntegrationConnection, Membership
+from .money import format_money
 from .rbac import require_role
 from .whatsapp_inbox import (
     WHATSAPP_DIRECTORY_SYNC_VERSION,
@@ -156,6 +157,7 @@ _AUTOMATION_IDEAS = [
 @login_required
 def dashboard(request):
     ws = request.workspace
+    cur = getattr(ws, "currency", None) or "BRL"
     pipelines = list(Pipeline.objects.filter(workspace=ws).order_by("order", "id"))
 
     # Which pipeline is the dashboard looking at? ?pipeline=<pk>, else the
@@ -216,9 +218,9 @@ def dashboard(request):
         "pipelines": pipelines,
         "current_pipeline": current,
         "kpis": [
-            {"label": "Pipeline aberto", "value": f"R$ {open_value:,.0f}", "accent": True},
-            {"label": "Ganho", "value": f"R$ {won_value:,.0f}"},
-            {"label": "Ticket médio", "value": f"R$ {avg_ticket:,.0f}"},
+            {"label": "Pipeline aberto", "value": format_money(open_value, cur), "accent": True},
+            {"label": "Ganho", "value": format_money(won_value, cur)},
+            {"label": "Ticket médio", "value": format_money(avg_ticket, cur)},
             {"label": "Taxa de conversão", "value": f"{conversion:.0f}%"},
         ],
         "funnel": funnel,
@@ -3418,6 +3420,14 @@ def appearance(request):
             value = request.POST.get("ui_font")
             if value in dict(ws.FONT_CHOICES):
                 ws.ui_font = value
+        if "currency" in request.POST:
+            value = request.POST.get("currency")
+            if value in dict(ws.CURRENCY_CHOICES):
+                ws.currency = value
+        if "date_format" in request.POST:
+            value = request.POST.get("date_format")
+            if value in dict(ws.DATE_FORMAT_CHOICES):
+                ws.date_format = value
         upload = request.FILES.get("logo")
         if upload:
             import base64
@@ -3442,4 +3452,6 @@ def appearance(request):
         "sidebar_choices": ws.SIDEBAR_CHOICES,
         "radius_choices": ws.RADIUS_CHOICES,
         "font_choices": ws.FONT_CHOICES,
+        "currency_choices": ws.CURRENCY_CHOICES,
+        "date_format_choices": ws.DATE_FORMAT_CHOICES,
     })

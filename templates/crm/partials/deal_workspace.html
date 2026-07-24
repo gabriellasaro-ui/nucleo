@@ -1,4 +1,5 @@
 {% load humanize %}
+{% load nucleo_extras %}
 <div class="modal modal--drawer deal-workspace">
   <div class="modal__head deal-workspace__head">
     <div>
@@ -88,7 +89,7 @@
         {% endfor %}
       </div>
       <div class="deal-workspace__form-foot">
-        <span class="deal-workspace__value">R$ {{ deal.value|floatformat:2|intcomma }}</span>
+        <span class="deal-workspace__value">{{ deal.value|money:currency_code }}</span>
         <button type="submit" class="btn btn--primary" {% if not can_edit %}disabled{% endif %}>Salvar negócio</button>
       </div>
     </form>

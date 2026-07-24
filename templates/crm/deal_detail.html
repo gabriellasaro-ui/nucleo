@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load humanize %}
+{% load nucleo_extras %}
 
 {% block content %}
 <a href="{% url 'crm:deal_board' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Negócios</a>
@@ -15,7 +16,7 @@
       {% for u in deal.assignees.all %}<span class="assignee-ava" title="Responsável: {{ u.get_username }}">{{ u.username|slice:":2"|upper }}</span>{% endfor %}
     </div>
   </div>
-  <div class="record__value">R$ {{ deal.value|floatformat:0|intcomma }}</div>
+  <div class="record__value">{{ deal.value|money:currency_code }}</div>
   {% if can_edit %}
   <button class="btn btn--ghost" hx-get="{% url 'crm:deal_edit' deal.pk %}"
           hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
@@ -29,12 +30,12 @@
     <div class="card panel">
       <div class="panel__head"><b>Detalhes</b></div>
       <div class="detail-rows">
-        <div class="detail-row"><span>Valor</span><b>R$ {{ deal.value|floatformat:0|intcomma }}</b></div>
+        <div class="detail-row"><span>Valor</span><b>{{ deal.value|money:currency_code }}</b></div>
         <div class="detail-row"><span>Estágio</span><span class="badge badge--dyn" style="--stage-color: {{ deal.stage_color }}">{{ deal.stage_display }}</span></div>
         <div class="detail-row"><span>Empresa</span><b>{% if deal.company %}<a href="{{ deal.company.get_absolute_url }}" class="link">{{ deal.company.name }}</a>{% else %}—{% endif %}</b></div>
         <div class="detail-row"><span>Contato</span><b>{% if deal.contact %}<a href="{{ deal.contact.get_absolute_url }}" class="link">{{ deal.contact.full_name }}</a>{% else %}—{% endif %}</b></div>
         <div class="detail-row"><span>Responsável</span><b>{% if deal.owner %}{{ deal.owner.get_username }}{% else %}—{% endif %}</b></div>
-        <div class="detail-row"><span>Previsão</span><b>{{ deal.expected_close|date:"d/m/Y"|default:"—" }}</b></div>
+        <div class="detail-row"><span>Previsão</span><b>{{ deal.expected_close|date:date_fmt|default:"—" }}</b></div>
       </div>
     </div>
     {% include "crm/partials/custom_fields_display.html" %}

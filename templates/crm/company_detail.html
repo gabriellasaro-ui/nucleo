@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load humanize %}
+{% load nucleo_extras %}
 
 {% block content %}
 <a href="{% url 'crm:company_list' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Empresas</a>
@@ -45,7 +46,7 @@
         <a href="{{ d.get_absolute_url }}" class="mini-item">
           <span class="mini-item__title">{{ d.title }}</span>
           <span class="badge badge--dyn" style="--stage-color: {{ d.stage_color }}">{{ d.stage_display }}</span>
-          <span class="mini-item__value">R$ {{ d.value|floatformat:0|intcomma }}</span>
+          <span class="mini-item__value">{{ d.value|money:currency_code }}</span>
         </a>
         {% empty %}<div class="mini-empty">Nenhum negócio ainda.</div>{% endfor %}
       </div>

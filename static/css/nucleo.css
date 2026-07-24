@@ -1127,6 +1127,14 @@ button { font-family: inherit; }
 .logo-upload input[type="file"] { font-size: 13px; color: var(--ink-2); }
 .appearance-text-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--ink); font: inherit; font-size: 13.5px; margin-bottom: 2px; }
 .appearance-text-input:focus { outline: none; border-color: var(--blue-600); box-shadow: var(--ring); }
+.region-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.region-field { display: flex; flex-direction: column; gap: 5px; }
+.region-field__cap { font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.region-select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--ink); font: inherit; font-size: 13.5px; cursor: pointer; }
+.region-select:focus { outline: none; border-color: var(--blue-600); box-shadow: var(--ring); }
+.region-example { margin-top: 10px; font-size: 13px; color: var(--ink-3); }
+.region-example b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) { .region-row { grid-template-columns: 1fr; } }
 .logo-dropzone { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; padding: 22px 16px; border: 1.5px dashed var(--border-strong); border-radius: var(--r-lg); background: var(--surface-2); cursor: pointer; transition: border-color .15s, background .15s; }
 .logo-dropzone:hover { border-color: var(--blue-600); background: var(--blue-50); }
 .logo-dropzone__icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: var(--r-full); background: var(--surface); color: var(--blue-600); box-shadow: var(--shadow-sm); }

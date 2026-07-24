@@ -27,10 +27,10 @@
       {% if a.source == "automation" %}<span class="activity__auto">{% include "core/_icon.html" with icon="bolt" %} Automação</span>{% endif %}
       <span>{{ a.author.get_username|default:"automação" }}</span>
       <span class="dot">·</span>
-      <span>{{ a.created_at|date:"d/m/Y H:i" }}</span>
+      <span>{{ a.created_at|date:datetime_fmt }}</span>
       {% if a.is_task and a.due_date %}
         <span class="due {% if a.is_overdue %}is-overdue{% endif %}">
-          {% include "core/_icon.html" with icon="clock" %} {{ a.due_date|date:"d/m/Y" }}
+          {% include "core/_icon.html" with icon="clock" %} {{ a.due_date|date:date_fmt }}
         </span>
       {% endif %}
     </div>

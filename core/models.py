@@ -18,6 +18,8 @@ class Workspace(TenantMixin):
         ("sans", "Padrão"), ("serif", "Serifada"),
         ("rounded", "Arredondada"), ("mono", "Técnica"),
     ]
+    CURRENCY_CHOICES = [("BRL", "Real (R$)"), ("USD", "Dólar (US$)"), ("EUR", "Euro (€)")]
+    DATE_FORMAT_CHOICES = [("dmy", "dd/mm/aaaa"), ("mdy", "mm/dd/aaaa")]
 
     name = models.CharField("Nome", max_length=120)
     brand_color = models.CharField("Cor da marca", max_length=7, default="#2563eb")
@@ -29,6 +31,8 @@ class Workspace(TenantMixin):
     sidebar_theme = models.CharField("Menu lateral", max_length=10, choices=SIDEBAR_CHOICES, default="light")
     ui_radius = models.CharField("Cantos", max_length=10, choices=RADIUS_CHOICES, default="rounded")
     ui_font = models.CharField("Fonte", max_length=10, choices=FONT_CHOICES, default="sans")
+    currency = models.CharField("Moeda", max_length=3, choices=CURRENCY_CHOICES, default="BRL")
+    date_format = models.CharField("Formato de data", max_length=4, choices=DATE_FORMAT_CHOICES, default="dmy")
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Create/drop the Postgres schema automatically with the workspace.

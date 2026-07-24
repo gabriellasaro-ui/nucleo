@@ -1,4 +1,5 @@
 {% load humanize %}
+{% load nucleo_extras %}
 <div class="kanban-board" data-can-edit="{{ can_edit|yesno:'1,0' }}">
   {% for col in columns %}
   <div class="kanban__col" data-stage-id="{{ col.stage_id }}" style="--stage-color: {{ col.color }};">
@@ -6,7 +7,7 @@
       <span class="kanban__dot" style="background: {{ col.color }}"></span>
       <b>{{ col.label }}</b>
       <span class="kanban__count">{{ col.count }}</span>
-      <span class="kanban__col-total">R$ {{ col.total|floatformat:0|intcomma }}</span>
+      <span class="kanban__col-total">{{ col.total|money:currency_code }}</span>
     </div>
     <div class="kanban__cards" data-stage="{{ col.key }}">
       {% for deal in col.deals %}

@@ -79,6 +79,7 @@ def branding(request):
     ramp["--font"] = font_map.get(font, font_map["sans"])
     brand_css = ":root{" + "".join(f"{k}:{v};" for k, v in ramp.items()) + "}"
     logo_uri = (getattr(ws, "logo_data", "") or "").strip()
+    date_fmt = "m/d/Y" if (getattr(ws, "date_format", None) or "dmy") == "mdy" else "d/m/Y"
     return {
         "brand_css": brand_css,
         "brand_color": color,
@@ -87,6 +88,10 @@ def branding(request):
         "sidebar_theme": getattr(ws, "sidebar_theme", None) or "light",
         "ui_radius": radius,
         "ui_font": font,
+        "currency_code": getattr(ws, "currency", None) or "BRL",
+        "date_format": getattr(ws, "date_format", None) or "dmy",
+        "date_fmt": date_fmt,
+        "datetime_fmt": date_fmt + " H:i",
     }
 
 

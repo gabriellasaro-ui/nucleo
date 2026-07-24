@@ -15,7 +15,7 @@
       <span class="attach-ext">{{ a.extension|default:"file" }}</span>
       <div class="attach-info">
         <a href="{{ a.file.url }}" target="_blank" rel="noopener" class="attach-name">{{ a.name }}</a>
-        <div class="attach-meta">{{ a.size_kb }} KB · {{ a.created_at|date:"d/m/Y" }}{% if a.uploaded_by %} · {{ a.uploaded_by.get_username }}{% endif %}</div>
+        <div class="attach-meta">{{ a.size_kb }} KB · {{ a.created_at|date:date_fmt }}{% if a.uploaded_by %} · {{ a.uploaded_by.get_username }}{% endif %}</div>
       </div>
       {% if can_edit %}
       <form method="post" action="{% url 'crm:attachment_delete' a.pk %}" class="inline-form"

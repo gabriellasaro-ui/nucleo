@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load humanize %}
+{% load nucleo_extras %}
 
 {% block content %}
 <div class="page-head">
@@ -34,10 +35,10 @@
     <div class="panel__head"><b>Funil de vendas</b><span class="panel__count">valor por etapa</span></div>
     <div class="bar-list">
       {% for row in funnel %}
-      <div class="bar-row" title="{{ row.label }}: R$ {{ row.value|floatformat:0|intcomma }} · {{ row.count }} negócio{{ row.count|pluralize }}">
+      <div class="bar-row" title="{{ row.label }}: {{ row.value|money:currency_code }} · {{ row.count }} negócio{{ row.count|pluralize }}">
         <div class="bar-row__label">{{ row.label }}</div>
         <div class="bar-row__track"><div class="bar-row__fill" style="width: {{ row.pct }}%; background: {{ row.color }}"></div></div>
-        <div class="bar-row__val">R$ {{ row.value|floatformat:0|intcomma }} <span class="bar-row__count">· {{ row.count }}</span></div>
+        <div class="bar-row__val">{{ row.value|money:currency_code }} <span class="bar-row__count">· {{ row.count }}</span></div>
       </div>
       {% empty %}
       <div class="cf-empty" style="padding:34px 16px;">{% include "core/_icon.html" with icon="pipeline" %}<div>Sem negócios nesta pipeline ainda.</div></div>
@@ -85,7 +86,7 @@
           <td><div class="cell-primary"><span class="avatar">{{ c.initials }}</span><a href="{{ c.get_absolute_url }}" class="row-link">{{ c.name }}</a></div></td>
           <td>{{ c.industry|default:"—" }}</td>
           <td>{{ c.city|default:"—" }}</td>
-          <td class="cell-sub">{{ c.created_at|date:"d/m/Y" }}</td>
+          <td class="cell-sub">{{ c.created_at|date:date_fmt }}</td>
         </tr>
         {% empty %}
         <tr><td colspan="4" class="empty">

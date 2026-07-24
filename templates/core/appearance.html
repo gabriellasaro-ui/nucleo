@@ -8,7 +8,7 @@
   </div>
 </div>
 
-<div class="appearance-grid" x-data="{ theme: '{{ app_theme }}', color: '{{ brand_color }}', sidebar: '{{ sidebar_theme }}', radius: '{{ ui_radius }}', font: '{{ ui_font }}', fonts: { sans: '\'Inter\', system-ui, sans-serif', serif: 'Georgia, serif', rounded: 'Verdana, Geneva, sans-serif', mono: 'ui-monospace, Consolas, monospace' } }">
+<div class="appearance-grid" x-data="{ theme: '{{ app_theme }}', color: '{{ brand_color }}', sidebar: '{{ sidebar_theme }}', radius: '{{ ui_radius }}', font: '{{ ui_font }}', currency: '{{ currency_code }}', dateFormat: '{{ date_format }}', fonts: { sans: '\'Inter\', system-ui, sans-serif', serif: 'Georgia, serif', rounded: 'Verdana, Geneva, sans-serif', mono: 'ui-monospace, Consolas, monospace' } }">
   <div class="card panel">
     <div class="panel__head"><b>Tema</b></div>
     <form method="post" class="appearance-form">
@@ -89,9 +89,33 @@
         {% endfor %}
       </div>
 
+      <label class="appearance-label">Região</label>
+      <div class="region-row">
+        <div class="region-field">
+          <span class="region-field__cap">Moeda</span>
+          <select name="currency" x-model="currency" class="region-select">
+            {% for value, label in currency_choices %}
+            <option value="{{ value }}" {% if value == currency_code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="region-field">
+          <span class="region-field__cap">Formato de data</span>
+          <select name="date_format" x-model="dateFormat" class="region-select">
+            {% for value, label in date_format_choices %}
+            <option value="{{ value }}" {% if value == date_format %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="region-example">
+        Exemplo: <b x-text="({BRL:'R$ 1.234',USD:'$1,234',EUR:'€ 1.234'})[currency] || 'R$ 1.234'"></b>
+        · <b x-text="dateFormat === 'mdy' ? '07/23/2026' : '23/07/2026'"></b>
+      </div>
+
       <div class="appearance-actions">
         <button class="btn btn--primary" type="submit">Salvar tema</button>
-        <span class="appearance-hint">Cor, menu e cantos valem em todo o app.</span>
+        <span class="appearance-hint">Cor, menu, moeda e data valem em todo o app.</span>
       </div>
     </form>
   </div>
