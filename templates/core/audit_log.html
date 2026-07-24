@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Auditoria</h1>
+    <p>Registro de acesso e alterações de dados pessoais em <b>{{ request.workspace.name }}</b> (LGPD).</p>
+  </div>
+</div>
+
+<form method="get" class="audit-filters">
+  <input type="search" name="q" value="{{ q }}" placeholder="Buscar por pessoa, registro ou tipo…" class="audit-search">
+  <div class="audit-chips">
+    <a href="{% url 'audit_log' %}{% if q %}?q={{ q|urlencode }}{% endif %}" class="audit-chip{% if not current_action %} is-active{% endif %}">Tudo</a>
+    {% for value, label in action_choices %}
+    <a href="?action={{ value }}{% if q %}&q={{ q|urlencode }}{% endif %}" class="audit-chip{% if current_action == value %} is-active{% endif %}">{{ label }}</a>
+    {% endfor %}
+  </div>
+</form>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="tbl">
+      <thead>
+        <tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Registro</th><th>Origem</th><th>IP</th></tr>
+      </thead>
+      <tbody>
+        {% for row in page_obj %}
+        <tr>
+          <td class="cell-sub" title="{{ row.created_at|date:'c' }}">{{ row.created_at|date:datetime_fmt }}</td>
+          <td>{% if row.actor_label %}<div class="cell-primary"><span class="avatar avatar--xs">{{ row.actor_label|slice:':2'|upper }}</span>{{ row.actor_label }}</div>{% else %}<span class="audit-system">Sistema</span>{% endif %}</td>
+          <td><span class="audit-act audit-act--{{ row.action }}">{{ row.get_action_display }}</span></td>
+          <td>{% if row.object_type %}<span class="audit-obj">{{ row.object_type }}</span> {{ row.object_repr|default:'—' }}{% else %}—{% endif %}</td>
+          <td class="cell-sub">{{ row.source }}</td>
+          <td class="cell-sub">{{ row.ip|default:'—' }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="empty">
+          {% include "core/_icon.html" with icon="shield" %}
+          <h3>Nenhum registro ainda</h3><div>As ações sobre dados pessoais aparecerão aqui.</div>
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="pager">
+  {% if page_obj.has_previous %}<a class="btn btn--ghost btn--sm" href="?page={{ page_obj.previous_page_number }}{% if current_action %}&action={{ current_action }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">Anterior</a>{% endif %}
+  <span class="pager__at">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+  {% if page_obj.has_next %}<a class="btn btn--ghost btn--sm" href="?page={{ page_obj.next_page_number }}{% if current_action %}&action={{ current_action }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">Próxima</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

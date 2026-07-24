@@ -12,6 +12,7 @@ from django.db import connection
 from django.shortcuts import redirect
 from django.urls import reverse
 
+from . import audit
 from .models import Membership
 from .tenancy import clear_current_workspace, set_current_workspace
 
@@ -43,6 +44,10 @@ class WorkspaceMiddleware:
                 return redirect("workspace_new")
 
         set_current_workspace(request.workspace)
+        # Remember who is acting (+ their IP) so the audit trail can attribute
+        # model changes without threading the request through every save.
+        audit.set_actor(user if (user is not None and user.is_authenticated) else None,
+                        audit.client_ip(request))
         if request.workspace is not None:
             # Route every query in this request to the workspace's own schema.
             connection.set_tenant(request.workspace)
@@ -50,6 +55,7 @@ class WorkspaceMiddleware:
             return self.get_response(request)
         finally:
             clear_current_workspace()
+            audit.clear_actor()
             connection.set_schema_to_public()
 
     @staticmethod

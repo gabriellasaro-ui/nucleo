@@ -16,9 +16,11 @@ from django_tenants.utils import tenant_context
 
 from modules.crm.models import Company, Contact, Deal
 
+from . import audit
 from .dashboard import DASHBOARD_KEYS, enabled_keys, resolve_layout
 from .events import _coerce_custom_value, _create_contact, _norm_key, run_automation_for_event
 from .money import format_money
+from .tenancy import clear_current_workspace, set_current_workspace
 from .models import Automation, CustomField, Domain, Event, IntegrationConnection, Membership, Workspace
 from .rbac import can_edit, require_role
 from .whatsapp_service import connect_instance, create_instance, get_avatar
@@ -1007,3 +1009,72 @@ class SecurityHardeningTests(SimpleTestCase):
         self.assertTrue(settings.SESSION_COOKIE_HTTPONLY)
         self.assertEqual(settings.SESSION_COOKIE_SAMESITE, "Lax")
         self.assertEqual(settings.CSRF_COOKIE_SAMESITE, "Lax")
+
+
+class AuditTrailTests(TransactionTestCase):
+    """LGPD Fase 2: personal-data CRUD and login are recorded per workspace,
+    with the acting user + IP, and auditing never breaks the operation."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_audit", name="AuditCo")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="audit.test")
+        self.user = get_user_model().objects.create_user("ana", password="x")
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        audit.clear_actor()
+        clear_current_workspace()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    def test_contact_crud_is_audited_with_actor_and_ip(self):
+        from modules.crm.models import AuditLog, Contact
+        audit.set_actor(self.user, "203.0.113.7")
+        set_current_workspace(self.ws)
+        with tenant_context(self.ws):
+            c = Contact.objects.create(workspace=self.ws, first_name="Maria")
+            cid = c.pk
+            c.first_name = "Maria Silva"
+            c.save()
+            c.delete()
+            rows = list(
+                AuditLog.all_objects.filter(object_type="contact", object_id=str(cid))
+                .values_list("action", flat=True)
+            )
+            created = AuditLog.all_objects.filter(object_type="contact", action="create").first()
+        self.assertIn("create", rows)
+        self.assertIn("update", rows)
+        self.assertIn("delete", rows)
+        self.assertEqual(created.actor_label, "ana")
+        self.assertEqual(created.ip, "203.0.113.7")
+        self.assertEqual(created.source, "user")
+
+    def test_system_source_when_there_is_no_actor(self):
+        from modules.crm.models import AuditLog, Contact
+        audit.clear_actor()
+        set_current_workspace(self.ws)
+        with tenant_context(self.ws):
+            Contact.objects.create(workspace=self.ws, first_name="Bot")
+            row = AuditLog.all_objects.filter(object_type="contact", action="create").order_by("-id").first()
+        self.assertEqual(row.source, "system")
+        self.assertEqual(row.actor_label, "")
+
+    def test_record_without_workspace_is_a_silent_noop(self):
+        # No workspace context: must not raise (auditing never breaks the CRM).
+        clear_current_workspace()
+        audit.clear_actor()
+        audit.record("view", object_type="contact", object_id="1")
+
+    def test_login_is_recorded_in_the_users_workspace(self):
+        from modules.crm.models import AuditLog
+        Membership.objects.create(user=self.user, workspace=self.ws, role=Membership.ROLE_ADMIN)
+        audit.record_auth(self.user, "login", None)
+        with tenant_context(self.ws):
+            row = AuditLog.all_objects.filter(action="login").first()
+        self.assertIsNotNone(row)
+        self.assertEqual(row.actor_label, "ana")

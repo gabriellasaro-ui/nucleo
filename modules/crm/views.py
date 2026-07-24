@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.text import slugify
 
+from core import audit
 from core.customfields import get_fields, read_from_post, with_values
 from core.events import emit
 from core.models import CustomField, IntegrationConnection
@@ -1178,6 +1179,7 @@ def _scope_deal_fields(form, request):
 @login_required
 def company_detail(request, pk):
     company = get_object_or_404(Company, pk=pk, workspace=request.workspace)
+    audit.record("view", object_type="company", object_id=company.pk, object_repr=str(company))
     context = {
         "page_title": company.name,
         "breadcrumb": ["CRM", "Empresas", company.name],
@@ -1195,6 +1197,7 @@ def company_detail(request, pk):
 @login_required
 def contact_detail(request, pk):
     contact = get_object_or_404(Contact.objects.select_related("company"), pk=pk, workspace=request.workspace)
+    audit.record("view", object_type="contact", object_id=contact.pk, object_repr=str(contact))
     context = {
         "page_title": contact.full_name,
         "breadcrumb": ["CRM", "Contatos", contact.full_name],
@@ -1210,6 +1213,7 @@ def contact_detail(request, pk):
 @login_required
 def deal_detail(request, pk):
     deal = get_object_or_404(Deal.objects.select_related("company", "contact"), pk=pk, workspace=request.workspace)
+    audit.record("view", object_type="deal", object_id=deal.pk, object_repr=str(deal))
     stage_fields = _stage_custom_fields(request.workspace, deal.pipeline, deal.stage) if deal.pipeline_id else get_fields(request.workspace, "deal")
     context = {
         "page_title": deal.title,

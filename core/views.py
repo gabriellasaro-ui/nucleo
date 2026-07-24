@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 from django.core.validators import validate_email
 from django.http import HttpResponse, JsonResponse
 from django.db import transaction
@@ -21,7 +22,7 @@ from django.views.decorators.http import require_POST
 from django_tenants.utils import get_public_schema_name, schema_context, tenant_context
 
 from modules.crm.models import (
-    Activity, Company, Contact, Deal, Pipeline, WhatsAppConversation,
+    Activity, AuditLog, Company, Contact, Deal, Pipeline, WhatsAppConversation,
 )
 
 from core.events import emit, run_automation_for_event, CONDITION_OPERATORS
@@ -3396,6 +3397,33 @@ def settings_hub(request):
     return render(request, "core/settings.html", {
         "page_title": "Configurações",
         "breadcrumb": ["Configurações"],
+    })
+
+
+@login_required
+@require_role("admin")
+def audit_log(request):
+    """LGPD audit trail for this workspace (tenant-scoped)."""
+    ws = request.workspace
+    logs = AuditLog.objects.filter(workspace=ws).select_related("actor")
+    current_action = request.GET.get("action") or ""
+    if current_action in dict(AuditLog.ACTION_CHOICES):
+        logs = logs.filter(action=current_action)
+    else:
+        current_action = ""
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        logs = logs.filter(
+            Q(actor_label__icontains=q) | Q(object_repr__icontains=q) | Q(object_type__icontains=q)
+        )
+    page = Paginator(logs, 50).get_page(request.GET.get("page"))
+    return render(request, "core/audit_log.html", {
+        "page_title": "Auditoria",
+        "breadcrumb": ["Configurações", "Auditoria"],
+        "page_obj": page,
+        "action_choices": AuditLog.ACTION_CHOICES,
+        "current_action": current_action,
+        "q": q,
     })
 
 

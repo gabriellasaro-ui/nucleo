@@ -6,3 +6,7 @@ class CrmConfig(AppConfig):
     name = "modules.crm"
     label = "crm"
     verbose_name = "CRM"
+
+    def ready(self):
+        from . import signals
+        signals.connect()

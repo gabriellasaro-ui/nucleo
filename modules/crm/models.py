@@ -494,3 +494,50 @@ class Attachment(TimestampedModel):
             return round(self.file.size / 1024)
         except Exception:
             return 0
+
+
+class AuditLog(models.Model):
+    """LGPD audit trail: who did what to personal data, within this workspace.
+    Lives in the tenant schema, so each workspace's trail is isolated. Written
+    best-effort by core.audit — never blocks the operation it records."""
+    ACTION_CHOICES = [
+        ("view", "Visualizou"),
+        ("create", "Criou"),
+        ("update", "Atualizou"),
+        ("delete", "Excluiu"),
+        ("export", "Exportou"),
+        ("login", "Entrou"),
+        ("logout", "Saiu"),
+        ("login_failed", "Falha de login"),
+    ]
+
+    workspace = models.ForeignKey("core.Workspace", on_delete=models.CASCADE, related_name="audit_logs")
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="audit_events",
+    )
+    actor_label = models.CharField(max_length=180, blank=True)  # snapshot, survives user deletion
+    action = models.CharField("Ação", max_length=16, choices=ACTION_CHOICES)
+    object_type = models.CharField(max_length=40, blank=True)   # contact / company / deal
+    object_id = models.CharField(max_length=40, blank=True)
+    object_repr = models.CharField(max_length=200, blank=True)  # snapshot label at the time
+    changes = models.JSONField(default=dict, blank=True)        # room for field diffs / extra meta
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    source = models.CharField(max_length=20, default="user")    # user / system / automation
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = TenantManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        ordering = ["-created_at"]
+        verbose_name = "Registro de auditoria"
+        verbose_name_plural = "Registros de auditoria"
+        indexes = [
+            models.Index(fields=["workspace", "-created_at"]),
+            models.Index(fields=["object_type", "object_id"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_action_display()} {self.object_type} #{self.object_id} por {self.actor_label or 'sistema'}"
