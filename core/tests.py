@@ -1161,3 +1161,66 @@ class PrivacyRetentionTests(TransactionTestCase):
             c = Contact.objects.create(workspace=self.ws, first_name="X")
             Contact.all_objects.filter(pk=c.pk).update(updated_at=timezone.now() - timedelta(days=9999))
             self.assertEqual(expired_contacts(self.ws).count(), 0)
+
+
+class ErasureExportTests(TransactionTestCase):
+    """LGPD Fase 4: an admin can export a data subject's data and erase it;
+    a plain member cannot erase. Exercised through the real request path."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_erasure", name="ErasureCo")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="erasure.test")
+        User = get_user_model()
+        self.admin = User.objects.create_user("adm", password="x")
+        Membership.objects.create(user=self.admin, workspace=self.ws, role=Membership.ROLE_ADMIN)
+        self.member = User.objects.create_user("mem", password="x")
+        Membership.objects.create(user=self.member, workspace=self.ws, role=Membership.ROLE_MEMBER)
+        with tenant_context(self.ws):
+            set_current_workspace(self.ws)
+            from modules.crm.models import Contact
+            self.contact = Contact.objects.create(
+                workspace=self.ws, first_name="Maria", email="maria@ex.com", phone="+5511",
+            )
+            clear_current_workspace()
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        clear_current_workspace()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    def test_admin_can_export_the_data_subject(self):
+        from django.urls import reverse
+        from modules.crm.models import AuditLog
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("crm:contact_export", args=[self.contact.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("attachment", resp["Content-Disposition"])
+        self.assertIn("maria@ex.com", resp.content.decode("utf-8"))
+        with tenant_context(self.ws):
+            self.assertTrue(AuditLog.all_objects.filter(action="export", object_type="contact").exists())
+
+    def test_admin_forget_anonymizes_the_contact(self):
+        from django.urls import reverse
+        self.client.force_login(self.admin)
+        resp = self.client.post(reverse("crm:contact_forget", args=[self.contact.pk]))
+        self.assertEqual(resp.status_code, 302)
+        with tenant_context(self.ws):
+            self.contact.refresh_from_db()
+        self.assertTrue(self.contact.is_anonymized)
+        self.assertEqual(self.contact.email, "")
+        self.assertEqual(self.contact.first_name, "[removido]")
+
+    def test_member_cannot_forget(self):
+        from django.urls import reverse
+        self.client.force_login(self.member)
+        resp = self.client.post(reverse("crm:contact_forget", args=[self.contact.pk]))
+        self.assertEqual(resp.status_code, 403)
+        with tenant_context(self.ws):
+            self.contact.refresh_from_db()
+        self.assertFalse(self.contact.is_anonymized)

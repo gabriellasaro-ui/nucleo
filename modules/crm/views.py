@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Max, Q, Sum
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
@@ -1238,6 +1238,79 @@ def contact_privacy(request, pk):
             )
             messages.success(request, "Consentimento atualizado.")
     return redirect(contact.get_absolute_url())
+
+
+def _is_admin(request):
+    return bool(getattr(request, "membership", None) and request.membership.can("admin"))
+
+
+@login_required
+def contact_forget(request, pk):
+    """LGPD right to erasure: anonymise the data subject on request. Keeps the
+    row (and deal history/metrics) but wipes every personal field."""
+    if not _is_admin(request):
+        return HttpResponseForbidden()
+    contact = get_object_or_404(Contact, pk=pk, workspace=request.workspace)
+    if request.method == "POST":
+        from core.privacy import anonymize_contact
+        if anonymize_contact(contact, reason="erasure", source="user"):
+            messages.success(request, "Dados pessoais anonimizados (direito ao esquecimento).")
+        else:
+            messages.info(request, "Este contato já estava anonimizado.")
+    return redirect(contact.get_absolute_url())
+
+
+@login_required
+def contact_export(request, pk):
+    """LGPD right of access/portability: download everything we hold on this
+    data subject as JSON. Logged as an export."""
+    if not _is_admin(request):
+        return HttpResponseForbidden()
+    contact = get_object_or_404(Contact.objects.select_related("company"), pk=pk, workspace=request.workspace)
+    data = {
+        "exportado_em": timezone.now().isoformat(),
+        "workspace": request.workspace.name,
+        "titular": {
+            "id": contact.pk,
+            "nome": contact.first_name,
+            "sobrenome": contact.last_name,
+            "email": contact.email,
+            "telefone": contact.phone,
+            "cargo": contact.job_title,
+            "empresa": contact.company.name if contact.company else None,
+            "endereco": {
+                "logradouro": contact.address_street,
+                "numero": contact.address_number,
+                "complemento": contact.address_complement,
+                "bairro": contact.district,
+                "cidade": contact.city,
+                "uf": contact.state,
+                "cep": contact.zipcode,
+            },
+            "estagio": contact.get_stage_display(),
+            "campos_personalizados": contact.custom or {},
+            "consentimento": {
+                "status": contact.get_consent_status_display(),
+                "base_legal": contact.get_consent_basis_display(),
+                "origem": contact.consent_source,
+                "data": contact.consent_at.isoformat() if contact.consent_at else None,
+            },
+            "criado_em": contact.created_at.isoformat() if contact.created_at else None,
+        },
+        "negocios": [
+            {"titulo": d.title, "valor": float(d.value or 0), "estagio": d.get_stage_display()}
+            for d in contact.deals.all()
+        ],
+        "atividades": [
+            {"tipo": a.get_kind_display(), "conteudo": a.body,
+             "data": a.created_at.isoformat() if a.created_at else None}
+            for a in contact.activities.all()
+        ],
+    }
+    audit.record("export", object_type="contact", object_id=contact.pk, object_repr=str(contact))
+    resp = JsonResponse(data, json_dumps_params={"ensure_ascii": False, "indent": 2})
+    resp["Content-Disposition"] = f'attachment; filename="titular_{contact.pk}.json"'
+    return resp
 
 
 @login_required

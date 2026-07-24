@@ -116,6 +116,21 @@
           </div>
         </form>
         {% endif %}
+        {% if can_admin %}
+        <div class="privacy-rights">
+          <span class="privacy-rights__cap">Direitos do titular</span>
+          <div class="privacy-rights__row">
+            <a href="{% url 'crm:contact_export' contact.pk %}" class="btn btn--sm btn--ghost">
+              {% include "core/_icon.html" with icon="download" %} Exportar dados
+            </a>
+            <form method="post" action="{% url 'crm:contact_forget' contact.pk %}"
+                  onsubmit="return confirm('Anonimizar permanentemente os dados pessoais deste contato? Não é possível desfazer.');">
+              {% csrf_token %}
+              <button class="btn btn--sm btn--danger" type="submit">Esquecer</button>
+            </form>
+          </div>
+        </div>
+        {% endif %}
         {% endif %}
       </div>
     </div>
