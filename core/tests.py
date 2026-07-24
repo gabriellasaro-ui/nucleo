@@ -992,3 +992,18 @@ class DashboardLayoutTests(SimpleTestCase):
     def test_non_list_layout_is_treated_as_empty(self):
         ws = SimpleNamespace(dashboard_layout=None)
         self.assertEqual(enabled_keys(ws), DASHBOARD_KEYS)
+
+
+class SecurityHardeningTests(SimpleTestCase):
+    """The always-on hardening headers must stay set (LGPD/infra baseline).
+    The DEBUG-gated bits (SSL redirect, Secure cookies, HSTS, SECRET_KEY guard)
+    are exercised via `manage.py check --deploy` in a prod-like env, not here."""
+
+    def test_safe_headers_are_always_on(self):
+        from django.conf import settings
+        self.assertTrue(settings.SECURE_CONTENT_TYPE_NOSNIFF)
+        self.assertEqual(settings.X_FRAME_OPTIONS, "DENY")
+        self.assertEqual(settings.SECURE_REFERRER_POLICY, "same-origin")
+        self.assertTrue(settings.SESSION_COOKIE_HTTPONLY)
+        self.assertEqual(settings.SESSION_COOKIE_SAMESITE, "Lax")
+        self.assertEqual(settings.CSRF_COOKIE_SAMESITE, "Lax")

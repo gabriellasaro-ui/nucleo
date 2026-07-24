@@ -42,6 +42,40 @@ CSRF_TRUSTED_ORIGINS += ["https://*.easypanel.host", "http://*.easypanel.host"]
 # Django knows requests are HTTPS — needed for OAuth redirect URIs to come out https://.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+# --------------------------------------------------------------------------- #
+# Security hardening (LGPD / infra).
+# Everything that could break local work is gated on `not DEBUG`, so development
+# (DEBUG=1) is untouched. In production set DJANGO_DEBUG=0 to switch these on.
+# --------------------------------------------------------------------------- #
+# Always safe — cheap headers that never hurt, even in dev.
+SECURE_CONTENT_TYPE_NOSNIFF = True          # no MIME sniffing
+SECURE_REFERRER_POLICY = "same-origin"      # don't leak URLs to other sites
+X_FRAME_OPTIONS = "DENY"                     # anti-clickjacking (no framing)
+SESSION_COOKIE_HTTPONLY = True               # session cookie unreadable by JS
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
+if not DEBUG:
+    # A live CRM holding personal data must not run on the public dev key —
+    # a known SECRET_KEY lets anyone forge sessions. Refuse to boot without one.
+    if SECRET_KEY == "dev-insecure-change-me":
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY não definido em produção. Gere um "
+            "(python -c \"from django.core.management.utils import get_random_secret_key as g; print(g())\") "
+            "e configure a variável de ambiente antes de subir."
+        )
+    # Force HTTPS + mark cookies Secure (the proxy header above tells Django the
+    # request is really HTTPS). SSL redirect can be turned off via env if needed.
+    SECURE_SSL_REDIRECT = env("DJANGO_SSL_REDIRECT", "1") == "1"
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # HSTS is semi-permanent (browsers cache max-age). Off by default; opt in
+    # deliberately once HTTPS is confirmed, ramping DJANGO_HSTS_SECONDS up.
+    SECURE_HSTS_SECONDS = int(env("DJANGO_HSTS_SECONDS", "0") or "0")
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env("DJANGO_HSTS_SUBDOMAINS", "0") == "1"
+    SECURE_HSTS_PRELOAD = env("DJANGO_HSTS_PRELOAD", "0") == "1"
+
 # Multi-tenant (schema-per-workspace via django-tenants).
 # SHARED_APPS live in the `public` schema (auth, the tenant model, shared config).
 # TENANT_APPS get their tables created inside each workspace's own schema.
