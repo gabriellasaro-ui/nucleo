@@ -164,6 +164,7 @@ def navigation(request):
         for item in section["items"]:
             breadcrumb_urls[item["label"]] = item["url"]
     for label, name in (("Configurações", "settings"), ("Aparência", "appearance"),
+                        ("Painel", "dashboard_settings"),
                         ("Membros", "members"), ("Automações", "automations"),
                         ("Integrações", "integrations"), ("Facebook", "facebook_forms"),
                         ("Formulários", "facebook_forms"), ("Campos personalizados", "custom_fields")):
@@ -175,7 +176,7 @@ def navigation(request):
     # Settings sub-pages stay reachable from the ⌘K palette even though the sidebar
     # now shows a single "Configurações" entry.
     if membership is not None and membership.can("admin"):
-        for label, name, icon in (("Aparência", "appearance", "palette"), ("Membros", "members", "users")):
+        for label, name, icon in (("Aparência", "appearance", "palette"), ("Painel", "dashboard_settings", "sliders"), ("Membros", "members", "users")):
             try:
                 palette.append({"label": label, "url": reverse(name), "section": "Configurações", "icon": icon, "shortcut": ""})
             except Exception:

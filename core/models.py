@@ -33,6 +33,9 @@ class Workspace(TenantMixin):
     ui_font = models.CharField("Fonte", max_length=10, choices=FONT_CHOICES, default="sans")
     currency = models.CharField("Moeda", max_length=3, choices=CURRENCY_CHOICES, default="BRL")
     date_format = models.CharField("Formato de data", max_length=4, choices=DATE_FORMAT_CHOICES, default="dmy")
+    # Ordered list of dashboard widget keys the workspace wants shown, e.g.
+    # ["kpis", "funnel", ...]. Empty = the default layout (all widgets).
+    dashboard_layout = models.JSONField("Painel", default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Create/drop the Postgres schema automatically with the workspace.

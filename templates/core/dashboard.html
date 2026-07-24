@@ -8,9 +8,16 @@
     <h1>Olá, {{ user.get_username }}</h1>
     <p>Visão geral de <b>{{ request.workspace.name }}</b>{% if current_pipeline %} · pipeline <b>{{ current_pipeline.name }}</b>{% endif %}.</p>
   </div>
-  <a href="{% url 'crm:deal_board' %}{% if current_pipeline %}?pipeline={{ current_pipeline.pk }}{% endif %}" class="btn btn--primary">
-    {% include "core/_icon.html" with icon="pipeline" %} Ver pipeline
-  </a>
+  <div class="page-head__actions">
+    {% if can_admin %}
+    <a href="{% url 'dashboard_settings' %}" class="btn btn--ghost" title="Personalizar painel">
+      {% include "core/_icon.html" with icon="sliders" %} Personalizar
+    </a>
+    {% endif %}
+    <a href="{% url 'crm:deal_board' %}{% if current_pipeline %}?pipeline={{ current_pipeline.pk }}{% endif %}" class="btn btn--primary">
+      {% include "core/_icon.html" with icon="pipeline" %} Ver pipeline
+    </a>
+  </div>
 </div>
 
 {% if pipelines|length > 1 %}
@@ -21,81 +28,23 @@
 </div>
 {% endif %}
 
-<div class="stat-grid">
-  {% for kpi in kpis %}
-  <div class="card stat">
-    <div class="stat__label">{{ kpi.label }}</div>
-    <div class="stat__value">{% if kpi.accent %}<span class="accent">{{ kpi.value }}</span>{% else %}{{ kpi.value }}{% endif %}</div>
+<div class="dash-stack">
+  {% for key in dashboard_order %}
+    {% if key == "kpis" %}{% include "core/dash/_kpis.html" %}
+    {% elif key == "funnel" %}{% include "core/dash/_funnel.html" %}
+    {% elif key == "contacts" %}{% include "core/dash/_contacts.html" %}
+    {% elif key == "tasks" %}{% include "core/dash/_tasks.html" %}
+    {% elif key == "recent_deals" %}{% include "core/dash/_recent_deals.html" %}
+    {% elif key == "companies" %}{% include "core/dash/_companies.html" %}
+    {% endif %}
+  {% empty %}
+  <div class="card">
+    <div class="cf-empty" style="padding:48px 16px;">
+      {% include "core/_icon.html" with icon="sliders" %}
+      <div>Seu painel está vazio.</div>
+      {% if can_admin %}<a href="{% url 'dashboard_settings' %}" class="btn btn--ghost btn--sm" style="margin-top:10px;">Escolher o que mostrar</a>{% endif %}
+    </div>
   </div>
   {% endfor %}
-</div>
-
-<div class="chart-grid">
-  <div class="card panel">
-    <div class="panel__head"><b>Funil de vendas</b><span class="panel__count">valor por etapa</span></div>
-    <div class="bar-list">
-      {% for row in funnel %}
-      <div class="bar-row" title="{{ row.label }}: {{ row.value|money:currency_code }} · {{ row.count }} negócio{{ row.count|pluralize }}">
-        <div class="bar-row__label">{{ row.label }}</div>
-        <div class="bar-row__track"><div class="bar-row__fill" style="width: {{ row.pct }}%; background: {{ row.color }}"></div></div>
-        <div class="bar-row__val">{{ row.value|money:currency_code }} <span class="bar-row__count">· {{ row.count }}</span></div>
-      </div>
-      {% empty %}
-      <div class="cf-empty" style="padding:34px 16px;">{% include "core/_icon.html" with icon="pipeline" %}<div>Sem negócios nesta pipeline ainda.</div></div>
-      {% endfor %}
-    </div>
-  </div>
-
-  <div class="card panel">
-    <div class="panel__head"><b>Contatos por estágio</b></div>
-    {% if total_contacts %}
-    <div class="donut">
-      <div class="donut__ring" style="background: {{ donut_gradient }}">
-        <div class="donut__hole">
-          <div class="donut__total">{{ total_contacts }}</div>
-          <div class="donut__cap">contatos</div>
-        </div>
-      </div>
-      <div class="donut__legend">
-        {% for s in donut_segments %}
-        <div class="donut__leg" title="{{ s.label }}: {{ s.count }} ({{ s.pct }}%)">
-          <span class="donut__dot" style="background: {{ s.color }}"></span>
-          <span class="donut__leg-label">{{ s.label }}</span>
-          <span class="donut__leg-val">{{ s.count }} · {{ s.pct }}%</span>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-    {% else %}
-    <div class="cf-empty" style="padding:34px 16px;">{% include "core/_icon.html" with icon="users" %}<div>Nenhum contato ainda.</div></div>
-    {% endif %}
-  </div>
-</div>
-
-<div class="card">
-  <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--border);">
-    <b style="font-size:14px;">Empresas recentes</b>
-    <a href="{% url 'crm:company_list' %}" class="btn btn--ghost btn--sm">Ver todas</a>
-  </div>
-  <div class="table-wrap">
-    <table class="tbl">
-      <thead><tr><th>Empresa</th><th>Segmento</th><th>Cidade</th><th>Criada</th></tr></thead>
-      <tbody>
-        {% for c in recent_companies %}
-        <tr>
-          <td><div class="cell-primary"><span class="avatar">{{ c.initials }}</span><a href="{{ c.get_absolute_url }}" class="row-link">{{ c.name }}</a></div></td>
-          <td>{{ c.industry|default:"—" }}</td>
-          <td>{{ c.city|default:"—" }}</td>
-          <td class="cell-sub">{{ c.created_at|date:date_fmt }}</td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="4" class="empty">
-          {% include "core/_icon.html" with icon="building" %}
-          <h3>Nenhuma empresa ainda</h3><div>Cadastre a primeira no CRM.</div>
-        </td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
 </div>
 {% endblock %}

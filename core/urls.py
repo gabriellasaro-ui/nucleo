@@ -47,4 +47,5 @@ urlpatterns = [
     path("webhooks/facebook/leadgen/", views.facebook_leadgen, name="facebook_leadgen"),
     path("webhooks/whatsapp/<str:secret>/", views.whatsapp_webhook, name="whatsapp_webhook"),
     path("settings/appearance/", views.appearance, name="appearance"),
+    path("settings/dashboard/", views.dashboard_settings, name="dashboard_settings"),
 ]

@@ -1,0 +1,24 @@
+<div class="card panel">
+  <div class="dash-card__head">
+    <b>Tarefas pendentes</b>
+    <a href="{% url 'crm:tasks' %}" class="btn btn--ghost btn--sm">Ver todas</a>
+  </div>
+  <div class="dash-list">
+    {% for t in pending_tasks %}
+    <div class="dash-task">
+      <span class="dash-task__dot{% if t.due_date and t.due_date < today %} is-overdue{% endif %}"></span>
+      <div class="dash-task__body">
+        <div class="dash-task__text">{{ t.body }}</div>
+        <div class="dash-task__meta">
+          {% if t.due_date %}<span class="dash-task__due{% if t.due_date < today %} is-overdue{% endif %}">{% include "core/_icon.html" with icon="calendar" %} {{ t.due_date|date:date_fmt }}</span>{% endif %}
+          {% if t.deal %}<a href="{{ t.deal.get_absolute_url }}" class="dash-task__rec">{% include "core/_icon.html" with icon="briefcase" %} {{ t.deal.title }}</a>
+          {% elif t.contact %}<a href="{{ t.contact.get_absolute_url }}" class="dash-task__rec">{% include "core/_icon.html" with icon="users" %} {{ t.contact.full_name }}</a>
+          {% elif t.company %}<a href="{{ t.company.get_absolute_url }}" class="dash-task__rec">{% include "core/_icon.html" with icon="building" %} {{ t.company.name }}</a>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% empty %}
+    <div class="cf-empty" style="padding:28px 16px;">{% include "core/_icon.html" with icon="task" %}<div>Nenhuma tarefa pendente.</div></div>
+    {% endfor %}
+  </div>
+</div>

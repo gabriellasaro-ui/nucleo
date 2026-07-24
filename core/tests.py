@@ -16,7 +16,9 @@ from django_tenants.utils import tenant_context
 
 from modules.crm.models import Company, Contact, Deal
 
+from .dashboard import DASHBOARD_KEYS, enabled_keys, resolve_layout
 from .events import _coerce_custom_value, _create_contact, _norm_key, run_automation_for_event
+from .money import format_money
 from .models import Automation, CustomField, Domain, Event, IntegrationConnection, Membership, Workspace
 from .rbac import can_edit, require_role
 from .whatsapp_service import connect_instance, create_instance, get_avatar
@@ -935,3 +937,58 @@ class FacebookFlowGeneratorTests(TransactionTestCase):
             {"create_contact": False, "create_company": False, "create_deal": False},
         )
         self.assertFalse(auto.active)
+
+
+class MoneyFormatTests(SimpleTestCase):
+    """The workspace currency drives symbol and thousands grouping."""
+
+    def test_brl_uses_dot_thousands_with_symbol_and_space(self):
+        self.assertEqual(format_money(1234, "BRL"), "R$ 1.234")
+        self.assertEqual(format_money(1234567, "BRL"), "R$ 1.234.567")
+
+    def test_usd_uses_comma_thousands_no_space(self):
+        self.assertEqual(format_money(1234567, "USD"), "$1,234,567")
+
+    def test_euro_symbol_and_dot_thousands(self):
+        self.assertEqual(format_money(1234, "EUR"), "€ 1.234")
+
+    def test_negatives_and_blanks_never_crash(self):
+        self.assertEqual(format_money(-500, "BRL"), "-R$ 500")
+        self.assertEqual(format_money(None, "BRL"), "R$ 0")
+        self.assertEqual(format_money("", "USD"), "$0")
+        # Unparseable input is returned untouched rather than raising.
+        self.assertEqual(format_money("sob consulta", "USD"), "sob consulta")
+
+    def test_unknown_code_falls_back_to_brl_symbol(self):
+        self.assertEqual(format_money(10, "XYZ"), "R$ 10")
+
+
+class DashboardLayoutTests(SimpleTestCase):
+    """Saved layout merges against the catalog: order honoured, unknown keys
+    dropped, and a first-run (nothing saved) shows every widget."""
+
+    def test_first_run_shows_all_widgets_in_catalog_order(self):
+        ws = SimpleNamespace(dashboard_layout=[])
+        rows = resolve_layout(ws)
+        self.assertEqual([r["key"] for r in rows], DASHBOARD_KEYS)
+        self.assertTrue(all(r["on"] for r in rows))
+        self.assertEqual(enabled_keys(ws), DASHBOARD_KEYS)
+
+    def test_saved_subset_keeps_order_and_turns_the_rest_off(self):
+        ws = SimpleNamespace(dashboard_layout=["funnel", "kpis"])
+        rows = resolve_layout(ws)
+        # Saved ones come first, in saved order, and are on.
+        self.assertEqual(rows[0]["key"], "funnel")
+        self.assertEqual(rows[1]["key"], "kpis")
+        self.assertTrue(rows[0]["on"] and rows[1]["on"])
+        # Everything not saved is appended and off.
+        self.assertTrue(all(not r["on"] for r in rows[2:]))
+        self.assertEqual(enabled_keys(ws), ["funnel", "kpis"])
+
+    def test_unknown_keys_are_ignored(self):
+        ws = SimpleNamespace(dashboard_layout=["funnel", "bogus", "kpis"])
+        self.assertEqual(enabled_keys(ws), ["funnel", "kpis"])
+
+    def test_non_list_layout_is_treated_as_empty(self):
+        ws = SimpleNamespace(dashboard_layout=None)
+        self.assertEqual(enabled_keys(ws), DASHBOARD_KEYS)

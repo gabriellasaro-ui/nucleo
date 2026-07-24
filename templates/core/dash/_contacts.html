@@ -1,0 +1,24 @@
+<div class="card panel">
+  <div class="panel__head"><b>Contatos por estágio</b></div>
+  {% if total_contacts %}
+  <div class="donut">
+    <div class="donut__ring" style="background: {{ donut_gradient }}">
+      <div class="donut__hole">
+        <div class="donut__total">{{ total_contacts }}</div>
+        <div class="donut__cap">contatos</div>
+      </div>
+    </div>
+    <div class="donut__legend">
+      {% for s in donut_segments %}
+      <div class="donut__leg" title="{{ s.label }}: {{ s.count }} ({{ s.pct }}%)">
+        <span class="donut__dot" style="background: {{ s.color }}"></span>
+        <span class="donut__leg-label">{{ s.label }}</span>
+        <span class="donut__leg-val">{{ s.count }} · {{ s.pct }}%</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="cf-empty" style="padding:34px 16px;">{% include "core/_icon.html" with icon="users" %}<div>Nenhum contato ainda.</div></div>
+  {% endif %}
+</div>

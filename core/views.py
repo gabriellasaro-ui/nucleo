@@ -21,7 +21,7 @@ from django.views.decorators.http import require_POST
 from django_tenants.utils import get_public_schema_name, schema_context, tenant_context
 
 from modules.crm.models import (
-    Company, Contact, Deal, Pipeline, WhatsAppConversation,
+    Activity, Company, Contact, Deal, Pipeline, WhatsAppConversation,
 )
 
 from core.events import emit, run_automation_for_event, CONDITION_OPERATORS
@@ -29,6 +29,7 @@ from core.tenancy import clear_current_workspace, set_current_workspace
 
 from .forms import WhatsAppPromotionForm, WorkspaceForm
 from .models import EVENT_CHOICES, Automation, AutomationRun, CustomField, Domain, Event, IntegrationConnection, Membership
+from .dashboard import DASHBOARD_KEYS, enabled_keys as dashboard_enabled_keys, resolve_layout
 from .money import format_money
 from .rbac import require_role
 from .whatsapp_inbox import (
@@ -212,9 +213,31 @@ def dashboard(request):
         acc += frac
     donut_gradient = "conic-gradient(" + ", ".join(stops) + ")" if stops else "conic-gradient(#e7e9ee 0% 100%)"
 
+    # Which widgets does this workspace want, and in what order?
+    dashboard_order = dashboard_enabled_keys(ws)
+
+    # Data for the optional widgets (cheap; only used when the widget is on).
+    pending_tasks = recent_deals = []
+    if "tasks" in dashboard_order:
+        pending_tasks = list(
+            Activity.objects.filter(workspace=ws, kind="task", done=False)
+            .select_related("author", "deal", "contact", "company")
+            .order_by("due_date", "-created_at")[:6]
+        )
+    if "recent_deals" in dashboard_order:
+        recent_deals = list(
+            Deal.objects.filter(workspace=ws)
+            .select_related("company", "contact")
+            .order_by("-created_at")[:6]
+        )
+
     context = {
         "page_title": "Dashboard",
         "breadcrumb": ["Workspace", "Dashboard"],
+        "dashboard_order": dashboard_order,
+        "pending_tasks": pending_tasks,
+        "recent_deals": recent_deals,
+        "today": timezone.localdate(),
         "pipelines": pipelines,
         "current_pipeline": current,
         "kpis": [
@@ -3373,6 +3396,29 @@ def settings_hub(request):
     return render(request, "core/settings.html", {
         "page_title": "Configurações",
         "breadcrumb": ["Configurações"],
+    })
+
+
+@login_required
+@require_role("admin")
+def dashboard_settings(request):
+    ws = request.workspace
+    if request.method == "POST":
+        raw = request.POST.get("layout", "")
+        seen, ordered = set(), []
+        for key in raw.split(","):
+            key = key.strip()
+            if key in DASHBOARD_KEYS and key not in seen:
+                seen.add(key)
+                ordered.append(key)
+        ws.dashboard_layout = ordered
+        ws.save(update_fields=["dashboard_layout"])
+        messages.success(request, "Painel atualizado.")
+        return redirect("dashboard_settings")
+    return render(request, "core/dashboard_settings.html", {
+        "page_title": "Painel",
+        "breadcrumb": ["Configurações", "Painel"],
+        "widgets": resolve_layout(ws),
     })
 
 

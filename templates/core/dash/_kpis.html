@@ -1,0 +1,8 @@
+<div class="stat-grid">
+  {% for kpi in kpis %}
+  <div class="card stat">
+    <div class="stat__label">{{ kpi.label }}</div>
+    <div class="stat__value">{% if kpi.accent %}<span class="accent">{{ kpi.value }}</span>{% else %}{{ kpi.value }}{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>

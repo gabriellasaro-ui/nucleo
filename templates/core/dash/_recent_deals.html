@@ -1,0 +1,19 @@
+{% load nucleo_extras %}
+<div class="card panel">
+  <div class="dash-card__head">
+    <b>Negócios recentes</b>
+    <a href="{% url 'crm:deal_board' %}" class="btn btn--ghost btn--sm">Ver pipeline</a>
+  </div>
+  <div class="dash-list">
+    {% for d in recent_deals %}
+    <a href="{{ d.get_absolute_url }}" class="dash-deal">
+      <span class="dash-deal__stage" style="--stage-color: {{ d.stage_color }}"></span>
+      <span class="dash-deal__title">{{ d.title }}</span>
+      {% if d.company %}<span class="dash-deal__sub">{{ d.company.name }}</span>{% endif %}
+      <span class="dash-deal__value">{{ d.value|money:currency_code }}</span>
+    </a>
+    {% empty %}
+    <div class="cf-empty" style="padding:28px 16px;">{% include "core/_icon.html" with icon="briefcase" %}<div>Nenhum negócio ainda.</div></div>
+    {% endfor %}
+  </div>
+</div>

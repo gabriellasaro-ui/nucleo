@@ -1,0 +1,15 @@
+{% load nucleo_extras %}
+<div class="card panel">
+  <div class="panel__head"><b>Funil de vendas</b><span class="panel__count">valor por etapa</span></div>
+  <div class="bar-list">
+    {% for row in funnel %}
+    <div class="bar-row" title="{{ row.label }}: {{ row.value|money:currency_code }} · {{ row.count }} negócio{{ row.count|pluralize }}">
+      <div class="bar-row__label">{{ row.label }}</div>
+      <div class="bar-row__track"><div class="bar-row__fill" style="width: {{ row.pct }}%; background: {{ row.color }}"></div></div>
+      <div class="bar-row__val">{{ row.value|money:currency_code }} <span class="bar-row__count">· {{ row.count }}</span></div>
+    </div>
+    {% empty %}
+    <div class="cf-empty" style="padding:34px 16px;">{% include "core/_icon.html" with icon="pipeline" %}<div>Sem negócios nesta pipeline ainda.</div></div>
+    {% endfor %}
+  </div>
+</div>

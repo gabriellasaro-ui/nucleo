@@ -9,6 +9,14 @@
 </div>
 
 <div class="settings-grid">
+  <a class="settings-card" href="{% url 'dashboard_settings' %}">
+    <span class="settings-card__icon">{% include "core/_icon.html" with icon="sliders" %}</span>
+    <div class="settings-card__body">
+      <b>Painel</b>
+      <span>O que aparece na dashboard e em que ordem.</span>
+    </div>
+    <span class="settings-card__chev">{% include "core/_icon.html" with icon="chevron" %}</span>
+  </a>
   <a class="settings-card" href="{% url 'appearance' %}">
     <span class="settings-card__icon">{% include "core/_icon.html" with icon="palette" %}</span>
     <div class="settings-card__body">
