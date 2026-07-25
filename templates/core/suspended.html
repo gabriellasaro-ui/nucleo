@@ -1,0 +1,25 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br" data-theme="{{ app_theme|default:'light' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acesso suspenso · {{ workspace.name }}</title>
+  <link rel="stylesheet" href="{% static 'css/nucleo.css' %}">
+  <style>{{ brand_css|safe }}</style>
+</head>
+<body>
+  <div class="auth">
+    <div class="auth__card" style="text-align:center;">
+      <div style="width:48px;height:48px;margin:0 auto 4px;display:grid;place-items:center;border-radius:50%;background:var(--surface-2);color:var(--ink-3);">{% include "core/_icon.html" with icon="lock" %}</div>
+      <h1 style="font-size:20px; margin:6px 0;">Acesso suspenso</h1>
+      <p class="sub">O workspace <b>{{ workspace.name }}</b> está temporariamente suspenso.{% if workspace.suspended_reason %} {{ workspace.suspended_reason }}{% endif %}</p>
+      <p class="sub" style="margin-top:10px;">Fale com o responsável pela sua conta para reativar.</p>
+      <form action="{% url 'logout' %}" method="post" style="margin-top:18px;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn--ghost">Sair</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

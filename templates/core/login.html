@@ -4,39 +4,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Entrar · {{ request.workspace.name|default:"Núcleo" }}</title>
-  {% if brand_logo_uri %}<link rel="icon" href="{{ brand_logo_uri }}">{% endif %}
+  <title>Entrar · {{ wl_brand_name|default:"Núcleo" }}</title>
+  {% if wl_logo_uri %}<link rel="icon" href="{{ wl_logo_uri }}">{% elif brand_logo_uri %}<link rel="icon" href="{{ brand_logo_uri }}">{% endif %}
   <link rel="stylesheet" href="{% static 'css/nucleo.css' %}">
-  <style>{{ brand_css|safe }}</style>
+  <style>{{ brand_css|safe }}{{ wl_brand_css|safe }}</style>
 </head>
 <body>
-  <div class="auth">
-    <form class="auth__card" method="post">
-      {% csrf_token %}
-      <div class="auth__brand">
-        {% if brand_logo_uri %}
-        <img src="{{ brand_logo_uri }}" alt="{{ request.workspace.name }}" class="auth__logo">
-        {% else %}
-        <span class="brand-mark">{{ request.workspace.initials|default:"N" }}</span> {{ request.workspace.name|default:"Núcleo" }}
+  <div class="auth-split">
+    <aside class="auth-hero">
+      <div class="auth-hero__inner">
+        <div class="auth-hero__brand">
+          {% if wl_logo_uri %}<img src="{{ wl_logo_uri }}" class="auth-hero__logo" alt="">
+          {% elif brand_logo_uri %}<img src="{{ brand_logo_uri }}" class="auth-hero__logo" alt="">
+          {% else %}<span class="auth-hero__mark">{{ wl_brand_name|default:"Núcleo"|slice:":1" }}</span>{% endif %}
+          <span class="auth-hero__name">{{ wl_brand_name|default:"Núcleo" }}</span>
+        </div>
+        <h1 class="auth-hero__title">Seu CRM, do jeito que o seu negócio precisa.</h1>
+        <p class="auth-hero__sub">Contatos, negócios, automações e WhatsApp — tudo em um só lugar.</p>
+      </div>
+      <div class="auth-hero__glow" aria-hidden="true"></div>
+    </aside>
+
+    <main class="auth-form-wrap">
+      <form class="auth-form" method="post">
+        {% csrf_token %}
+        <div class="auth-form__brand-sm">
+          {% if wl_logo_uri %}<img src="{{ wl_logo_uri }}" alt="">{% elif brand_logo_uri %}<img src="{{ brand_logo_uri }}" alt="">{% else %}<span class="auth-hero__mark auth-hero__mark--sm">{{ wl_brand_name|default:"Núcleo"|slice:":1" }}</span>{% endif %}
+          <b>{{ wl_brand_name|default:"Núcleo" }}</b>
+        </div>
+        <h2 class="auth-form__title">Entrar</h2>
+        <p class="auth-form__sub">Acesse a sua conta para continuar.</p>
+
+        {% if form.errors %}
+        <div class="auth-form__error">Usuário ou senha inválidos.</div>
         {% endif %}
-      </div>
-      <p class="sub">Entre em {{ request.workspace.name|default:"seu workspace" }}.</p>
 
-      {% if form.errors %}
-      <div class="auth__error">Usuário ou senha inválidos.</div>
-      {% endif %}
+        <label class="auth-field">
+          <span>Usuário</span>
+          <input type="text" name="username" autocomplete="username" autofocus required>
+        </label>
+        <label class="auth-field">
+          <span>Senha</span>
+          <span class="auth-pass">
+            <input type="password" name="password" autocomplete="current-password" required>
+            <button type="button" class="auth-pass__toggle"
+                    onclick="var i=this.previousElementSibling; var p=i.type==='password'; i.type=p?'text':'password'; this.textContent=p?'Ocultar':'Mostrar';">Mostrar</button>
+          </span>
+        </label>
 
-      <div class="field">
-        <label for="id_username">Usuário</label>
-        <input type="text" name="username" id="id_username" autofocus required>
-      </div>
-      <div class="field">
-        <label for="id_password">Senha</label>
-        <input type="password" name="password" id="id_password" required>
-      </div>
-      <input type="hidden" name="next" value="{{ next }}">
-      <button type="submit" class="btn btn--primary">Entrar</button>
-    </form>
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit" class="btn btn--primary auth-form__submit">Entrar</button>
+      </form>
+    </main>
   </div>
 </body>
 </html>

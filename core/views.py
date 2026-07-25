@@ -28,8 +28,10 @@ from modules.crm.models import (
 from core.events import emit, run_automation_for_event, CONDITION_OPERATORS
 from core.tenancy import clear_current_workspace, set_current_workspace
 
+from . import access as platform_access
+from . import audit
 from .forms import WhatsAppPromotionForm, WorkspaceForm
-from .models import EVENT_CHOICES, Automation, AutomationRun, CustomField, Domain, Event, IntegrationConnection, Membership
+from .models import EVENT_CHOICES, Automation, AutomationRun, CustomField, Domain, Event, IntegrationConnection, Membership, UserProfile, Workspace
 from .dashboard import DASHBOARD_KEYS, enabled_keys as dashboard_enabled_keys, resolve_layout
 from .money import format_money
 from .rbac import require_role
@@ -284,11 +286,232 @@ def workspace_new(request):
 
 @login_required
 def workspace_switch(request, pk):
-    if request.method == "POST" and Membership.objects.filter(
-        user=request.user, workspace_id=pk
-    ).exists():
-        request.session["workspace_id"] = pk
+    if request.method == "POST":
+        from django_tenants.utils import tenant_context
+        ws = Workspace.objects.filter(pk=pk).first()
+        if ws is not None and platform_access.can_access_workspace(request.user, ws):
+            request.session["workspace_id"] = pk
+            # Entering a client workspace as a manager (agency/admin, not a real
+            # member) is logged in that client's own audit trail — transparency.
+            is_member = Membership.objects.filter(user=request.user, workspace=ws).exists()
+            if not is_member:
+                with tenant_context(ws):
+                    audit.record(
+                        "access", workspace=ws, actor=request.user,
+                        object_type="workspace", object_repr=ws.name,
+                        source=platform_access.account_type(request.user),
+                    )
     return redirect("dashboard")
+
+
+# --------------------------------------------------------------------------- #
+# Platform admin console (account_type == "admin")
+# --------------------------------------------------------------------------- #
+def _owner_by_workspace():
+    owners = {}
+    for m in (Membership.objects.filter(role=Membership.ROLE_OWNER)
+              .select_related("user").order_by("created_at")):
+        owners.setdefault(m.workspace_id, m.user)
+    return owners
+
+
+@login_required
+@platform_access.platform_admin_required
+def admin_console(request):
+    User = get_user_model()
+    workspaces = (Workspace.objects.exclude(schema_name=get_public_schema_name())
+                  .select_related("agency").order_by("name"))
+    owners = _owner_by_workspace()
+    ws_rows = [{"ws": w, "owner": owners.get(w.pk)} for w in workspaces]
+
+    profiles = {p.user_id: p for p in UserProfile.objects.all()}
+    user_rows, agencies = [], []
+    for u in User.objects.all().order_by("username"):
+        prof = profiles.get(u.pk)
+        atype = "admin" if u.is_superuser else (prof.account_type if prof else "user")
+        user_rows.append({"user": u, "account_type": atype, "locked": u.is_superuser})
+        if atype == "agency":
+            agencies.append(u)
+    return render(request, "core/console.html", {
+        "page_title": "Console",
+        "breadcrumb": ["Console"],
+        "workspaces": ws_rows,
+        "users": user_rows,
+        "agencies": agencies,
+        "type_choices": UserProfile.TYPE_CHOICES,
+    })
+
+
+@login_required
+@platform_access.platform_admin_required
+def console_workspace_suspend(request, pk):
+    ws = get_object_or_404(Workspace, pk=pk)
+    if request.method == "POST":
+        ws.suspended = not ws.suspended
+        ws.suspended_reason = request.POST.get("reason", "").strip()[:200] if ws.suspended else ""
+        ws.save(update_fields=["suspended", "suspended_reason"])
+        messages.success(request, f"Workspace {'suspenso' if ws.suspended else 'reativado'}.")
+    return redirect("admin_console")
+
+
+@login_required
+@platform_access.platform_admin_required
+def console_workspace_agency(request, pk):
+    ws = get_object_or_404(Workspace, pk=pk)
+    if request.method == "POST":
+        agency_id = request.POST.get("agency") or ""
+        User = get_user_model()
+        ws.agency = User.objects.filter(pk=agency_id).first() if agency_id else None
+        ws.save(update_fields=["agency"])
+        messages.success(request, "Agência do workspace atualizada.")
+    return redirect("admin_console")
+
+
+@login_required
+@platform_access.platform_admin_required
+def console_user_type(request, pk):
+    User = get_user_model()
+    target = get_object_or_404(User, pk=pk)
+    if request.method == "POST" and not target.is_superuser:
+        atype = request.POST.get("account_type")
+        if atype in dict(UserProfile.TYPE_CHOICES):
+            prof, _ = UserProfile.objects.get_or_create(user=target)
+            prof.account_type = atype
+            prof.save(update_fields=["account_type"])
+            messages.success(request, "Tipo de conta atualizado.")
+    return redirect("admin_console")
+
+
+# --------------------------------------------------------------------------- #
+# Agency console (account_type == "agency") — self-serve reselling
+# --------------------------------------------------------------------------- #
+@login_required
+@platform_access.agency_required
+def agency_console(request):
+    clients = (Workspace.objects.filter(agency=request.user)
+               .exclude(schema_name=get_public_schema_name()).order_by("name"))
+    owners = _owner_by_workspace()
+    rows = [{"ws": w, "owner": owners.get(w.pk)} for w in clients]
+    return render(request, "core/agency_console.html", {
+        "page_title": "Clientes",
+        "breadcrumb": ["Clientes"],
+        "clients": rows,
+    })
+
+
+@login_required
+@platform_access.agency_required
+def client_new(request):
+    if request.method == "POST":
+        ws_name = request.POST.get("workspace_name", "").strip()
+        email = request.POST.get("email", "").strip().lower()
+        owner_name = request.POST.get("owner_name", "").strip()
+        if not ws_name:
+            messages.error(request, "Informe o nome do workspace do cliente.")
+            return redirect("client_new")
+        if not email:
+            messages.error(request, "Informe o e-mail do dono.")
+            return redirect("client_new")
+        try:
+            validate_email(email)
+        except ValidationError:
+            messages.error(request, "Informe um e-mail válido.")
+            return redirect("client_new")
+
+        temporary_password = ""
+        with schema_context(get_public_schema_name()), transaction.atomic():
+            User = get_user_model()
+            owner = User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email)).first()
+            if owner is None:
+                temporary_password = _temporary_password()
+                owner = User(username=email, email=email)
+                if owner_name:
+                    parts = owner_name.split(" ", 1)
+                    owner.first_name = parts[0]
+                    owner.last_name = parts[1] if len(parts) > 1 else ""
+                owner.set_password(temporary_password)
+                owner.save()
+            workspace = Workspace(name=ws_name[:120], agency=request.user)
+            workspace.save()  # creates the tenant schema
+            Domain.objects.get_or_create(
+                domain=f"{workspace.schema_name}.localhost", tenant=workspace,
+                defaults={"is_primary": True},
+            )
+            Membership.objects.get_or_create(
+                user=owner, workspace=workspace, defaults={"role": Membership.ROLE_OWNER},
+            )
+        msg = f"Cliente “{ws_name}” criado e vinculado à sua agência."
+        if temporary_password:
+            msg += f" Senha temporária de {email}: {temporary_password}"
+        messages.success(request, msg)
+        return redirect("agency_console")
+    return render(request, "core/client_new.html", {
+        "page_title": "Novo cliente",
+        "breadcrumb": ["Clientes", "Novo cliente"],
+    })
+
+
+@login_required
+@platform_access.agency_required
+def agency_branding(request):
+    """The agency's white-label brand, applied to its clients' login page."""
+    profile = platform_access.get_profile(request.user)
+    if request.method == "POST":
+        profile.brand_name = request.POST.get("brand_name", "").strip()[:120]
+        color = request.POST.get("brand_color", "").strip()
+        if _COLOR_RE.match(color):
+            profile.brand_color = color
+        elif not color:
+            profile.brand_color = ""
+        slug = slugify(request.POST.get("slug", "").strip())[:60]
+        if slug and UserProfile.objects.filter(slug=slug).exclude(pk=profile.pk).exists():
+            messages.error(request, "Esse link já está em uso. Escolha outro.")
+            return redirect("agency_branding")
+        profile.slug = slug
+        upload = request.FILES.get("logo")
+        if upload:
+            import base64
+            if upload.size > 2 * 1024 * 1024:
+                messages.error(request, "A logo deve ter no máximo 2 MB.")
+                return redirect("agency_branding")
+            if (upload.content_type or "").startswith("image/"):
+                encoded = base64.b64encode(upload.read()).decode("ascii")
+                profile.logo_data = f"data:{upload.content_type};base64,{encoded}"
+        if "remove_logo" in request.POST:
+            profile.logo_data = ""
+        profile.save()
+        messages.success(request, "Marca atualizada.")
+        return redirect("agency_branding")
+    return render(request, "core/agency_branding.html", {
+        "page_title": "Sua marca",
+        "breadcrumb": ["Clientes", "Sua marca"],
+        "profile": profile,
+    })
+
+
+def agency_login(request, slug):
+    """White-label login: the same page, branded with the agency's identity."""
+    from django.contrib.auth.views import LoginView
+
+    from .context_processors import _HEX_RE, _hex_to_rgb, _mix, _to_hex
+    profile = UserProfile.objects.filter(slug=slug, account_type=UserProfile.TYPE_AGENCY).first()
+    extra = {}
+    if profile:
+        color = profile.brand_color if _HEX_RE.match(profile.brand_color or "") else "#2563eb"
+        rgb = _hex_to_rgb(color)
+        ramp = {
+            "--blue-50": _to_hex(_mix(rgb, (255, 255, 255), 0.92)),
+            "--blue-600": color,
+            "--blue-700": _to_hex(_mix(rgb, (0, 0, 0), 0.14)),
+            "--blue-800": _to_hex(_mix(rgb, (0, 0, 0), 0.28)),
+            "--ring": f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.22)",
+        }
+        extra = {
+            "wl_brand_name": profile.brand_name or "",
+            "wl_logo_uri": (profile.logo_data or "").strip(),
+            "wl_brand_css": ":root{" + "".join(f"{k}:{v};" for k, v in ramp.items()) + "}",
+        }
+    return LoginView.as_view(template_name="core/login.html", extra_context=extra)(request)
 
 
 # --------------------------------------------------------------------------- #

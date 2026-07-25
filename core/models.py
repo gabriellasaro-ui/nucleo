@@ -39,6 +39,13 @@ class Workspace(TenantMixin):
     # LGPD retention: anonymize contacts untouched for this many months.
     # 0 = disabled (keep indefinitely).
     retention_months = models.PositiveSmallIntegerField("Retenção (meses)", default=0)
+    # Reseller model: the agency (a User) that manages this client workspace.
+    agency = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="agency_workspaces", verbose_name="Agência",
+    )
+    suspended = models.BooleanField("Suspenso", default=False)
+    suspended_reason = models.CharField(max_length=200, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Create/drop the Postgres schema automatically with the workspace.
@@ -145,6 +152,42 @@ class Membership(models.Model):
 
     def can(self, min_role):
         return self.level >= self.ROLE_LEVEL.get(min_role, 99)
+
+
+class UserProfile(models.Model):
+    """Platform-level account type (above workspaces): admin / agency / user.
+    Separate axis from the in-workspace Membership role. Also carries the
+    agency's white-label branding (applied to its clients' login)."""
+    TYPE_ADMIN = "admin"
+    TYPE_AGENCY = "agency"
+    TYPE_USER = "user"
+    TYPE_CHOICES = [
+        (TYPE_ADMIN, "Admin da plataforma"),
+        (TYPE_AGENCY, "Agência"),
+        (TYPE_USER, "Usuário"),
+    ]
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile"
+    )
+    account_type = models.CharField(max_length=10, choices=TYPE_CHOICES, default=TYPE_USER)
+    # White-label (only meaningful for agencies) — mirrors the Workspace branding.
+    slug = models.SlugField(max_length=60, blank=True, default="")
+    brand_name = models.CharField(max_length=120, blank=True, default="")
+    brand_color = models.CharField(max_length=7, blank=True, default="")
+    logo_data = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user} ({self.get_account_type_display()})"
+
+    @property
+    def is_admin(self):
+        return self.account_type == self.TYPE_ADMIN
+
+    @property
+    def is_agency(self):
+        return self.account_type == self.TYPE_AGENCY
 
 
 class CustomField(models.Model):

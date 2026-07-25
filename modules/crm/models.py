@@ -517,6 +517,7 @@ class AuditLog(models.Model):
         ("delete", "Excluiu"),
         ("anonymize", "Anonimizou"),
         ("consent", "Consentimento"),
+        ("access", "Acessou (gestor)"),
         ("export", "Exportou"),
         ("login", "Entrou"),
         ("logout", "Saiu"),

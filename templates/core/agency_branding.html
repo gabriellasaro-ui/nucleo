@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Sua marca</h1>
+    <p>A identidade da sua agência aplicada na tela de login dos seus clientes.</p>
+  </div>
+  <a href="{% url 'agency_console' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Clientes</a>
+</div>
+
+<div class="card panel" style="max-width:560px;">
+  <div class="panel__head"><b>White-label</b></div>
+  <form method="post" enctype="multipart/form-data" class="appearance-form" style="padding:16px;">
+    {% csrf_token %}
+    <label class="appearance-label" style="margin-top:0;">Nome da marca</label>
+    <input type="text" name="brand_name" value="{{ profile.brand_name }}" class="appearance-text-input" placeholder="Ex.: Agência Alfa" maxlength="120">
+
+    <label class="appearance-label">Cor da marca</label>
+    <div class="color-row">
+      <input type="color" name="brand_color" value="{{ profile.brand_color|default:'#2563eb' }}" class="color-input">
+      <input type="text" name="brand_color" value="{{ profile.brand_color }}" class="color-hex" maxlength="7" placeholder="#2563eb" spellcheck="false" oninput="this.previousElementSibling.value=this.value">
+    </div>
+
+    <label class="appearance-label">Link do login (slug)</label>
+    <input type="text" name="slug" value="{{ profile.slug }}" class="appearance-text-input" placeholder="agencia-alfa" maxlength="60">
+    {% if profile.slug %}
+    <p class="appearance-hint" style="margin-top:6px;">Seus clientes entram por: <b>{{ request.scheme }}://{{ request.get_host }}/e/{{ profile.slug }}/</b></p>
+    {% endif %}
+
+    <label class="appearance-label">Logo</label>
+    {% if profile.logo_data %}<div class="logo-preview"><img src="{{ profile.logo_data }}" alt="Logo"></div>{% endif %}
+    <input type="file" name="logo" accept="image/*" style="font-size:13px;">
+
+    <div class="appearance-actions" style="margin-top:14px;">
+      <button class="btn btn--primary" type="submit">Salvar marca</button>
+      {% if profile.logo_data %}<button class="btn btn--ghost btn--sm" name="remove_logo" value="1" type="submit">Remover logo</button>{% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -12,7 +12,7 @@ from django.db import connection
 from django.shortcuts import redirect
 from django.urls import reverse
 
-from . import audit
+from . import access, audit
 from .models import Membership
 from .tenancy import clear_current_workspace, set_current_workspace
 
@@ -23,23 +23,37 @@ class WorkspaceMiddleware:
 
     def __call__(self, request):
         request.memberships = []
+        request.accessible_workspaces = []
         request.membership = None
         request.workspace = None
+        request.account_type = "user"
+        request.is_workspace_manager = False
 
         user = getattr(request, "user", None)
         if user is not None and user.is_authenticated:
-            memberships = list(
+            request.account_type = access.account_type(user)
+            request.memberships = list(
                 Membership.objects.filter(user=user).select_related("workspace")
             )
-            request.memberships = memberships
-            if memberships:
+            # Accessible = own memberships + (agency) managed clients + (admin) all.
+            rows = access.accessible_workspaces(user)
+            request.accessible_workspaces = rows
+            if rows:
                 ws_id = request.session.get("workspace_id")
-                chosen = next((m for m in memberships if m.workspace_id == ws_id), None)
+                chosen = next((r for r in rows if r["workspace"].pk == ws_id), None)
                 if chosen is None:
-                    chosen = memberships[0]
-                    request.session["workspace_id"] = chosen.workspace_id
-                request.membership = chosen
-                request.workspace = chosen.workspace
+                    chosen = rows[0]
+                    request.session["workspace_id"] = chosen["workspace"].pk
+                ws = chosen["workspace"]
+                request.workspace = ws
+                real = next((m for m in request.memberships if m.workspace_id == ws.pk), None)
+                if real is not None:
+                    request.membership = real
+                else:
+                    # Admin/agency entering a workspace they don't belong to:
+                    # owner-level power so existing RBAC keeps working.
+                    request.membership = access.SyntheticMembership(ws)
+                    request.is_workspace_manager = True
             elif self._needs_workspace(request):
                 return redirect("workspace_new")
 
@@ -52,6 +66,15 @@ class WorkspaceMiddleware:
             # Route every query in this request to the workspace's own schema.
             connection.set_tenant(request.workspace)
         try:
+            # A suspended workspace blocks its client, but a manager (agency/admin)
+            # can still enter to manage or reactivate it. Inside the tenant context
+            # so the page renders normally; the finally resets the schema.
+            ws = request.workspace
+            if ws is not None and ws.suspended and not request.is_workspace_manager \
+                    and not access.is_platform_admin(user):
+                if not request.path.startswith(("/accounts/logout", "/static", "/media")):
+                    from django.shortcuts import render as _render
+                    return _render(request, "core/suspended.html", {"workspace": ws}, status=403)
             return self.get_response(request)
         finally:
             clear_current_workspace()
@@ -61,7 +84,7 @@ class WorkspaceMiddleware:
     @staticmethod
     def _needs_workspace(request):
         path = request.path
-        if path.startswith(("/admin", "/accounts", "/static", "/media")):
+        if path.startswith(("/admin", "/accounts", "/static", "/media", "/console", "/agencia")):
             return False
         if path == reverse("workspace_new"):
             return False

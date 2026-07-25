@@ -21,7 +21,7 @@ from .dashboard import DASHBOARD_KEYS, enabled_keys, resolve_layout
 from .events import _coerce_custom_value, _create_contact, _norm_key, run_automation_for_event
 from .money import format_money
 from .tenancy import clear_current_workspace, set_current_workspace
-from .models import Automation, CustomField, Domain, Event, IntegrationConnection, Membership, Workspace
+from .models import Automation, CustomField, Domain, Event, IntegrationConnection, Membership, UserProfile, Workspace
 from .rbac import can_edit, require_role
 from .whatsapp_service import connect_instance, create_instance, get_avatar
 from .views import (
@@ -1224,3 +1224,209 @@ class ErasureExportTests(TransactionTestCase):
         with tenant_context(self.ws):
             self.contact.refresh_from_db()
         self.assertFalse(self.contact.is_anonymized)
+
+
+class AccessControlTests(TransactionTestCase):
+    """Platform account types decide which workspaces a user may enter, above
+    the in-workspace Membership role."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        self.ws_a = Workspace(schema_name="test_acc_a", name="Alpha")
+        self.ws_a.save()
+        Domain.objects.create(tenant=self.ws_a, domain="acca.test")
+        self.ws_b = Workspace(schema_name="test_acc_b", name="Bravo")
+        self.ws_b.save()
+        Domain.objects.create(tenant=self.ws_b, domain="accb.test")
+        User = get_user_model()
+        self.owner = User.objects.create_user("owner", password="x")
+        Membership.objects.create(user=self.owner, workspace=self.ws_a, role=Membership.ROLE_OWNER)
+        self.agency = User.objects.create_user("agencia", password="x")
+        UserProfile.objects.create(user=self.agency, account_type=UserProfile.TYPE_AGENCY)
+        self.ws_b.agency = self.agency
+        self.ws_b.save(update_fields=["agency"])
+        self.admin = User.objects.create_user("adm", password="x", is_superuser=True)
+        self.plain = User.objects.create_user("plain", password="x")
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        for ws in (self.ws_a, self.ws_b):
+            try:
+                ws.delete()
+            except Exception:
+                pass
+
+    def test_account_type_bootstrap_and_profile(self):
+        from core.access import account_type, is_agency, is_platform_admin
+        self.assertEqual(account_type(self.admin), "admin")   # superuser -> admin
+        self.assertTrue(is_platform_admin(self.admin))
+        self.assertEqual(account_type(self.agency), "agency")
+        self.assertTrue(is_agency(self.agency))
+        self.assertEqual(account_type(self.plain), "user")
+        self.assertFalse(is_platform_admin(self.plain))
+
+    def test_accessible_workspaces_by_type(self):
+        from core.access import accessible_workspaces
+        admin_ids = {r["workspace"].pk for r in accessible_workspaces(self.admin)}
+        self.assertIn(self.ws_a.pk, admin_ids)                # admin sees all
+        self.assertIn(self.ws_b.pk, admin_ids)
+        agency_ids = {r["workspace"].pk for r in accessible_workspaces(self.agency)}
+        self.assertEqual(agency_ids, {self.ws_b.pk})          # agency: its client
+        owner_ids = {r["workspace"].pk for r in accessible_workspaces(self.owner)}
+        self.assertEqual(owner_ids, {self.ws_a.pk})           # user: own membership
+        self.assertEqual(accessible_workspaces(self.plain), [])  # user: none
+
+    def test_can_access_workspace(self):
+        from core.access import can_access_workspace
+        self.assertTrue(can_access_workspace(self.admin, self.ws_a))
+        self.assertTrue(can_access_workspace(self.agency, self.ws_b))
+        self.assertFalse(can_access_workspace(self.agency, self.ws_a))  # not its client
+        self.assertTrue(can_access_workspace(self.owner, self.ws_a))
+        self.assertFalse(can_access_workspace(self.plain, self.ws_a))
+
+    def test_synthetic_membership_has_owner_power(self):
+        from core.access import SyntheticMembership
+        m = SyntheticMembership(self.ws_b)
+        self.assertTrue(m.can("admin"))
+        self.assertTrue(m.can("owner"))
+        self.assertEqual(m.get_role_display(), "Gestor")
+
+
+class AdminConsoleTests(TransactionTestCase):
+    """Fase C: platform admin manages account types, agency links and suspension."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_con_ws", name="ClientCo")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="conws.test")
+        User = get_user_model()
+        self.admin = User.objects.create_user("adm", password="x", is_superuser=True)
+        self.client_user = User.objects.create_user("cli", password="x")
+        Membership.objects.create(user=self.client_user, workspace=self.ws, role=Membership.ROLE_OWNER)
+        self.agency = User.objects.create_user("agn", password="x")
+        UserProfile.objects.create(user=self.agency, account_type=UserProfile.TYPE_AGENCY)
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    def test_admin_can_set_account_type(self):
+        from django.urls import reverse
+        self.client.force_login(self.admin)
+        resp = self.client.post(reverse("console_user_type", args=[self.client_user.pk]),
+                                {"account_type": "agency"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(UserProfile.objects.get(user=self.client_user).account_type, "agency")
+
+    def test_admin_can_suspend_and_assign_agency(self):
+        from django.urls import reverse
+        self.client.force_login(self.admin)
+        self.client.post(reverse("console_workspace_suspend", args=[self.ws.pk]), {"reason": "teste"})
+        self.ws.refresh_from_db()
+        self.assertTrue(self.ws.suspended)
+        self.client.post(reverse("console_workspace_agency", args=[self.ws.pk]), {"agency": self.agency.pk})
+        self.ws.refresh_from_db()
+        self.assertEqual(self.ws.agency_id, self.agency.pk)
+
+    def test_non_admin_forbidden(self):
+        from django.urls import reverse
+        self.client.force_login(self.client_user)
+        self.assertEqual(self.client.get(reverse("admin_console")).status_code, 403)
+
+
+class AgencyOnboardingTests(TransactionTestCase):
+    """Fase D: an agency self-serve creates a client (workspace + owner), linked
+    to itself; non-agencies can't."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        User = get_user_model()
+        self.agency = User.objects.create_user("agn", password="x")
+        UserProfile.objects.create(user=self.agency, account_type=UserProfile.TYPE_AGENCY)
+        self.plain = User.objects.create_user("plain", password="x")
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        for ws in Workspace.objects.filter(agency=self.agency):
+            try:
+                ws.delete()
+            except Exception:
+                pass
+
+    def test_agency_creates_linked_client(self):
+        from django.contrib.auth import get_user_model
+        from django.urls import reverse
+        self.client.force_login(self.agency)
+        resp = self.client.post(reverse("client_new"),
+                                {"workspace_name": "Padaria", "email": "dono@x.com"})
+        self.assertEqual(resp.status_code, 302)
+        ws = Workspace.objects.filter(agency=self.agency, name="Padaria").first()
+        self.assertIsNotNone(ws)
+        owner = get_user_model().objects.filter(email="dono@x.com").first()
+        self.assertIsNotNone(owner)
+        self.assertTrue(Membership.objects.filter(
+            user=owner, workspace=ws, role=Membership.ROLE_OWNER).exists())
+
+    def test_non_agency_cannot_create_client(self):
+        from django.urls import reverse
+        self.client.force_login(self.plain)
+        self.assertEqual(self.client.get(reverse("client_new")).status_code, 403)
+
+
+class SuspensionWhiteLabelTests(TransactionTestCase):
+    """Fases B + E: suspension blocks the client (not the agency), agency access
+    is audited in the client's schema, and the white-label login shows the brand."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_susp_ws", name="ClientCo")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="suspws.test")
+        User = get_user_model()
+        self.client_user = User.objects.create_user("cli", password="x")
+        Membership.objects.create(user=self.client_user, workspace=self.ws, role=Membership.ROLE_OWNER)
+        self.agency = User.objects.create_user("agn", password="x")
+        UserProfile.objects.create(user=self.agency, account_type=UserProfile.TYPE_AGENCY,
+                                   slug="ag-alfa", brand_name="Agencia Alfa")
+        self.ws.agency = self.agency
+        self.ws.save(update_fields=["agency"])
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    def test_suspended_blocks_client_but_not_agency(self):
+        from django.urls import reverse
+        self.ws.suspended = True
+        self.ws.save(update_fields=["suspended"])
+        self.client.force_login(self.client_user)
+        resp = self.client.get(reverse("dashboard"))
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("suspenso", resp.content.decode("utf-8").lower())
+        self.client.force_login(self.agency)
+        self.assertEqual(self.client.get(reverse("dashboard")).status_code, 200)
+
+    def test_agency_switch_is_audited_in_client_schema(self):
+        from django.urls import reverse
+        from modules.crm.models import AuditLog
+        self.client.force_login(self.agency)
+        self.client.post(reverse("workspace_switch", args=[self.ws.pk]))
+        with tenant_context(self.ws):
+            self.assertTrue(AuditLog.all_objects.filter(action="access", object_type="workspace").exists())
+
+    def test_white_label_login_shows_agency_brand(self):
+        from django.urls import reverse
+        resp = self.client.get(reverse("agency_login", args=["ag-alfa"]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Agencia Alfa", resp.content.decode("utf-8"))

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Console</h1>
+    <p>Administração da plataforma — workspaces, agências e tipos de conta.</p>
+  </div>
+</div>
+
+<div class="card panel" style="margin-bottom:18px;">
+  <div class="panel__head"><b>Workspaces</b><span class="panel__count">{{ workspaces|length }}</span></div>
+  <div class="table-wrap">
+    <table class="tbl">
+      <thead><tr><th>Workspace</th><th>Dono</th><th>Agência</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for row in workspaces %}
+        <tr>
+          <td><div class="cell-primary"><span class="ws-mark ws-mark--sm">{{ row.ws.initials }}</span>{{ row.ws.name }}</div></td>
+          <td class="cell-sub">{% if row.owner %}{{ row.owner.get_username }}{% else %}—{% endif %}</td>
+          <td>
+            <form method="post" action="{% url 'console_workspace_agency' row.ws.pk %}" class="console-inline">
+              {% csrf_token %}
+              <select name="agency" onchange="this.form.submit()" class="region-select region-select--sm">
+                <option value="">— sem agência —</option>
+                {% for a in agencies %}<option value="{{ a.pk }}" {% if row.ws.agency_id == a.pk %}selected{% endif %}>{{ a.get_username }}</option>{% endfor %}
+              </select>
+            </form>
+          </td>
+          <td>{% if row.ws.suspended %}<span class="pill pill--bad">Suspenso</span>{% else %}<span class="pill pill--ok">Ativo</span>{% endif %}</td>
+          <td class="console-actions">
+            <form method="post" action="{% url 'workspace_switch' row.ws.pk %}">{% csrf_token %}<button class="btn btn--ghost btn--sm" type="submit">Entrar</button></form>
+            <form method="post" action="{% url 'console_workspace_suspend' row.ws.pk %}">{% csrf_token %}
+              <button class="btn btn--sm {% if row.ws.suspended %}btn--ghost{% else %}btn--danger{% endif %}" type="submit">{% if row.ws.suspended %}Reativar{% else %}Suspender{% endif %}</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}<tr><td colspan="5" class="empty">Nenhum workspace ainda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card panel">
+  <div class="panel__head"><b>Usuários</b><span class="panel__count">{{ users|length }}</span></div>
+  <div class="table-wrap">
+    <table class="tbl">
+      <thead><tr><th>Usuário</th><th>E-mail</th><th>Tipo de conta</th></tr></thead>
+      <tbody>
+        {% for row in users %}
+        <tr>
+          <td>{{ row.user.get_username }}</td>
+          <td class="cell-sub">{{ row.user.email|default:"—" }}</td>
+          <td>
+            {% if row.locked %}<span class="pill">Admin (superusuário)</span>
+            {% else %}
+            <form method="post" action="{% url 'console_user_type' row.user.pk %}" class="console-inline">
+              {% csrf_token %}
+              <select name="account_type" onchange="this.form.submit()" class="region-select region-select--sm">
+                {% for value, label in type_choices %}<option value="{{ value }}" {% if value == row.account_type %}selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

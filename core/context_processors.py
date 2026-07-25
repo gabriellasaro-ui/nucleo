@@ -139,6 +139,16 @@ def _nav_model(request, whatsapp_unread=0):
                 {"label": "Configurações", "url_name": "settings", "icon": "sliders", "shortcut": "G S"},
             ],
         })
+    # Platform layer (above workspaces): a top section for admins / agencies.
+    account_type = getattr(request, "account_type", "user")
+    if account_type == "admin":
+        sections.insert(0, {"section": "Plataforma", "items": [
+            {"label": "Console", "url_name": "admin_console", "icon": "shield", "shortcut": ""},
+        ]})
+    elif account_type == "agency":
+        sections.insert(0, {"section": "Agência", "items": [
+            {"label": "Clientes", "url_name": "agency_console", "icon": "building", "shortcut": ""},
+        ]})
     return sections
 
 
@@ -166,6 +176,7 @@ def navigation(request):
     for label, name in (("Configurações", "settings"), ("Aparência", "appearance"),
                         ("Painel", "dashboard_settings"), ("Auditoria", "audit_log"),
                         ("Privacidade", "privacy_settings"),
+                        ("Console", "admin_console"), ("Clientes", "agency_console"),
                         ("Membros", "members"), ("Automações", "automations"),
                         ("Integrações", "integrations"), ("Facebook", "facebook_forms"),
                         ("Formulários", "facebook_forms"), ("Campos personalizados", "custom_fields")):
@@ -182,10 +193,15 @@ def navigation(request):
                 palette.append({"label": label, "url": reverse(name), "section": "Configurações", "icon": icon, "shortcut": ""})
             except Exception:
                 pass
+    account_type = getattr(request, "account_type", "user")
     return {
         "nav_sections": sections,
         "command_palette": palette,
         "breadcrumb_urls": breadcrumb_urls,
         "can_edit": _can_edit(request),
         "can_admin": bool(membership and membership.can("admin")),
+        "account_type": account_type,
+        "is_platform_admin": account_type == "admin",
+        "is_agency": account_type == "agency",
+        "is_workspace_manager": getattr(request, "is_workspace_manager", False),
     }

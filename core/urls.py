@@ -16,6 +16,17 @@ urlpatterns = [
     path("whatsapp/send/", views.whatsapp_send, name="whatsapp_send"),
     path("workspaces/new/", views.workspace_new, name="workspace_new"),
     path("workspaces/<int:pk>/switch/", views.workspace_switch, name="workspace_switch"),
+    # Platform admin console
+    path("console/", views.admin_console, name="admin_console"),
+    path("console/workspace/<int:pk>/suspend/", views.console_workspace_suspend, name="console_workspace_suspend"),
+    path("console/workspace/<int:pk>/agency/", views.console_workspace_agency, name="console_workspace_agency"),
+    path("console/user/<int:pk>/type/", views.console_user_type, name="console_user_type"),
+    # Agency console
+    path("agencia/", views.agency_console, name="agency_console"),
+    path("agencia/novo-cliente/", views.client_new, name="client_new"),
+    path("agencia/marca/", views.agency_branding, name="agency_branding"),
+    # White-label login for an agency's clients
+    path("e/<slug:slug>/", views.agency_login, name="agency_login"),
     path("settings/", views.settings_hub, name="settings"),
     path("settings/members/", views.members, name="members"),
     path("settings/members/add/", views.member_add, name="member_add"),

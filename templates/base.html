@@ -39,19 +39,21 @@
         </button>
         <div class="ws-menu" x-show="open" x-cloak x-transition @click.outside="open = false">
           <div class="ws-menu__label">Trocar workspace</div>
-          {% for m in request.memberships %}
-          <form method="post" action="{% url 'workspace_switch' m.workspace_id %}">
+          {% for r in request.accessible_workspaces %}
+          <form method="post" action="{% url 'workspace_switch' r.workspace.pk %}">
             {% csrf_token %}
-            <button type="submit" class="ws-menu__item {% if m.workspace_id == request.workspace.id %}is-active{% endif %}">
-              <span class="ws-mark ws-mark--sm">{{ m.workspace.initials }}</span>
-              <span class="ws-menu__name">{{ m.workspace.name }}</span>
-              <span class="ws-role">{{ m.get_role_display }}</span>
+            <button type="submit" class="ws-menu__item {% if r.workspace.pk == request.workspace.id %}is-active{% endif %}">
+              <span class="ws-mark ws-mark--sm">{{ r.workspace.initials }}</span>
+              <span class="ws-menu__name">{{ r.workspace.name }}</span>
+              <span class="ws-role ws-role--{{ r.relation }}">{{ r.role }}</span>
             </button>
           </form>
           {% endfor %}
+          {% if not is_agency and not is_platform_admin %}
           <a class="ws-menu__new" href="{% url 'workspace_new' %}">
             {% include "core/_icon.html" with icon="plus" %} Novo workspace
           </a>
+          {% endif %}
         </div>
       </div>
 
