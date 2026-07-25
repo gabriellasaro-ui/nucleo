@@ -148,11 +148,12 @@
         {% endif %}
         <form method="post" enctype="multipart/form-data">
           {% csrf_token %}
+          <input type="hidden" name="logo_data" value="">
           <label class="logo-dropzone">
             <span class="logo-dropzone__icon">{% include "core/_icon.html" with icon="plus" %}</span>
             <b>{% if request.workspace.logo_data %}Trocar logo{% else %}Enviar logo{% endif %}</b>
-            <span class="logo-dropzone__hint">PNG, SVG ou JPG · até 2 MB · fundo transparente fica melhor</span>
-            <input type="file" name="logo" accept="image/*" required onchange="this.form.submit()">
+            <span class="logo-dropzone__hint">PNG, SVG ou JPG · qualquer tamanho · fundo transparente fica melhor</span>
+            <input type="file" name="logo" accept="image/*" required onchange="nucleoUploadLogo(this)">
           </label>
         </form>
         {% if request.workspace.logo_data %}

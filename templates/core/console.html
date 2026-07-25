@@ -3,16 +3,23 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Console</h1>
-    <p>Administração da plataforma — workspaces, agências e tipos de conta.</p>
+    <h1>Console da plataforma</h1>
+    <p>Aqui você controla <b>quem é o quê</b> no Núcleo e gerencia todos os workspaces.</p>
   </div>
+</div>
+
+<div class="console-legend">
+  <div class="console-legend__item"><span class="pill pill--admin">Admin</span> vê e entra em <b>todos</b> os workspaces (é você e quem você promover).</div>
+  <div class="console-legend__item"><span class="pill pill--agency">Agência</span> revende o Núcleo e entra nos workspaces dos <b>clientes dela</b>.</div>
+  <div class="console-legend__item"><span class="pill">Usuário</span> só acessa o <b>próprio</b> workspace.</div>
 </div>
 
 <div class="card panel" style="margin-bottom:18px;">
   <div class="panel__head"><b>Workspaces</b><span class="panel__count">{{ workspaces|length }}</span></div>
+  <p class="console-hint">Cada workspace é a conta de um cliente. <b>Vincule uma agência</b> para ela poder gerenciar, ou <b>suspenda</b> para bloquear o acesso do cliente.</p>
   <div class="table-wrap">
     <table class="tbl">
-      <thead><tr><th>Workspace</th><th>Dono</th><th>Agência</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Workspace</th><th>Dono</th><th>Agência responsável</th><th>Status</th><th class="col-actions">Ações</th></tr></thead>
       <tbody>
         {% for row in workspaces %}
         <tr>
@@ -22,7 +29,7 @@
             <form method="post" action="{% url 'console_workspace_agency' row.ws.pk %}" class="console-inline">
               {% csrf_token %}
               <select name="agency" onchange="this.form.submit()" class="region-select region-select--sm">
-                <option value="">— sem agência —</option>
+                <option value="">Sem agência</option>
                 {% for a in agencies %}<option value="{{ a.pk }}" {% if row.ws.agency_id == a.pk %}selected{% endif %}>{{ a.get_username }}</option>{% endfor %}
               </select>
             </form>
@@ -30,7 +37,8 @@
           <td>{% if row.ws.suspended %}<span class="pill pill--bad">Suspenso</span>{% else %}<span class="pill pill--ok">Ativo</span>{% endif %}</td>
           <td class="console-actions">
             <form method="post" action="{% url 'workspace_switch' row.ws.pk %}">{% csrf_token %}<button class="btn btn--ghost btn--sm" type="submit">Entrar</button></form>
-            <form method="post" action="{% url 'console_workspace_suspend' row.ws.pk %}">{% csrf_token %}
+            <form method="post" action="{% url 'console_workspace_suspend' row.ws.pk %}"
+                  {% if not row.ws.suspended %}onsubmit="return confirm('Suspender “{{ row.ws.name|escapejs }}”? O cliente perde o acesso até você reativar.');"{% endif %}>{% csrf_token %}
               <button class="btn btn--sm {% if row.ws.suspended %}btn--ghost{% else %}btn--danger{% endif %}" type="submit">{% if row.ws.suspended %}Reativar{% else %}Suspender{% endif %}</button>
             </form>
           </td>
@@ -43,17 +51,18 @@
 </div>
 
 <div class="card panel">
-  <div class="panel__head"><b>Usuários</b><span class="panel__count">{{ users|length }}</span></div>
+  <div class="panel__head"><b>Pessoas</b><span class="panel__count">{{ users|length }}</span></div>
+  <p class="console-hint">Defina o <b>tipo de conta</b> de cada pessoa. Promova alguém a <b>Agência</b> para ela revender e gerenciar clientes.</p>
   <div class="table-wrap">
     <table class="tbl">
-      <thead><tr><th>Usuário</th><th>E-mail</th><th>Tipo de conta</th></tr></thead>
+      <thead><tr><th>Pessoa</th><th>E-mail</th><th class="col-type">Tipo de conta</th></tr></thead>
       <tbody>
         {% for row in users %}
         <tr>
-          <td>{{ row.user.get_username }}</td>
+          <td><div class="cell-primary"><span class="avatar avatar--xs">{{ row.user.get_username|slice:':2'|upper }}</span>{{ row.user.get_username }}</div></td>
           <td class="cell-sub">{{ row.user.email|default:"—" }}</td>
-          <td>
-            {% if row.locked %}<span class="pill">Admin (superusuário)</span>
+          <td class="col-type">
+            {% if row.locked %}<span class="pill pill--admin">Admin (você)</span>
             {% else %}
             <form method="post" action="{% url 'console_user_type' row.user.pk %}" class="console-inline">
               {% csrf_token %}

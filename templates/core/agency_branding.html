@@ -29,8 +29,9 @@
     {% endif %}
 
     <label class="appearance-label">Logo</label>
-    {% if profile.logo_data %}<div class="logo-preview"><img src="{{ profile.logo_data }}" alt="Logo"></div>{% endif %}
-    <input type="file" name="logo" accept="image/*" style="font-size:13px;">
+    <input type="hidden" name="logo_data" value="">
+    <div class="logo-preview"><img src="{{ profile.logo_data }}" alt="Logo" data-logo-preview {% if not profile.logo_data %}style="display:none"{% endif %}></div>
+    <input type="file" name="logo" accept="image/*" style="font-size:13px;" onchange="nucleoUploadLogo(this, false)">
 
     <div class="appearance-actions" style="margin-top:14px;">
       <button class="btn btn--primary" type="submit">Salvar marca</button>

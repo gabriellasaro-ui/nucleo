@@ -238,6 +238,7 @@ def dashboard(request):
         "page_title": "Dashboard",
         "breadcrumb": ["Workspace", "Dashboard"],
         "dashboard_order": dashboard_order,
+        "dashboard_widgets": resolve_layout(ws),
         "pending_tasks": pending_tasks,
         "recent_deals": recent_deals,
         "today": timezone.localdate(),
@@ -468,15 +469,19 @@ def agency_branding(request):
             messages.error(request, "Esse link já está em uso. Escolha outro.")
             return redirect("agency_branding")
         profile.slug = slug
-        upload = request.FILES.get("logo")
-        if upload:
-            import base64
-            if upload.size > 2 * 1024 * 1024:
-                messages.error(request, "A logo deve ter no máximo 2 MB.")
-                return redirect("agency_branding")
-            if (upload.content_type or "").startswith("image/"):
-                encoded = base64.b64encode(upload.read()).decode("ascii")
-                profile.logo_data = f"data:{upload.content_type};base64,{encoded}"
+        posted_logo = request.POST.get("logo_data", "").strip()
+        if posted_logo.startswith("data:image/") and len(posted_logo) <= 1_200_000:
+            profile.logo_data = posted_logo  # already resized in the browser
+        else:
+            upload = request.FILES.get("logo")
+            if upload:
+                import base64
+                if upload.size > 5 * 1024 * 1024:
+                    messages.error(request, "A imagem deve ter no máximo 5 MB.")
+                    return redirect("agency_branding")
+                if (upload.content_type or "").startswith("image/"):
+                    encoded = base64.b64encode(upload.read()).decode("ascii")
+                    profile.logo_data = f"data:{upload.content_type};base64,{encoded}"
         if "remove_logo" in request.POST:
             profile.logo_data = ""
         profile.save()
@@ -3692,6 +3697,8 @@ def audit_log(request):
 @login_required
 @require_role("admin")
 def dashboard_settings(request):
+    """Save endpoint for the dashboard's inline "Personalizar" panel. There's no
+    standalone page anymore — GET just returns to the dashboard."""
     ws = request.workspace
     if request.method == "POST":
         raw = request.POST.get("layout", "")
@@ -3704,12 +3711,7 @@ def dashboard_settings(request):
         ws.dashboard_layout = ordered
         ws.save(update_fields=["dashboard_layout"])
         messages.success(request, "Painel atualizado.")
-        return redirect("dashboard_settings")
-    return render(request, "core/dashboard_settings.html", {
-        "page_title": "Painel",
-        "breadcrumb": ["Configurações", "Painel"],
-        "widgets": resolve_layout(ws),
-    })
+    return redirect("dashboard")
 
 
 @login_required
@@ -3764,18 +3766,22 @@ def appearance(request):
             value = request.POST.get("date_format")
             if value in dict(ws.DATE_FORMAT_CHOICES):
                 ws.date_format = value
-        upload = request.FILES.get("logo")
-        if upload:
-            import base64
-            if upload.size > 2 * 1024 * 1024:
-                ok = False
-                messages.error(request, "A logo deve ter no máximo 2 MB.")
-            elif not (upload.content_type or "").startswith("image/"):
-                ok = False
-                messages.error(request, "Envie um arquivo de imagem (PNG, SVG ou JPG).")
-            else:
-                encoded = base64.b64encode(upload.read()).decode("ascii")
-                ws.logo_data = f"data:{upload.content_type};base64,{encoded}"
+        posted_logo = request.POST.get("logo_data", "").strip()
+        if posted_logo.startswith("data:image/") and len(posted_logo) <= 1_200_000:
+            ws.logo_data = posted_logo  # already resized in the browser
+        else:
+            upload = request.FILES.get("logo")
+            if upload:
+                import base64
+                if upload.size > 5 * 1024 * 1024:
+                    ok = False
+                    messages.error(request, "A imagem deve ter no máximo 5 MB.")
+                elif not (upload.content_type or "").startswith("image/"):
+                    ok = False
+                    messages.error(request, "Envie um arquivo de imagem (PNG, SVG ou JPG).")
+                else:
+                    encoded = base64.b64encode(upload.read()).decode("ascii")
+                    ws.logo_data = f"data:{upload.content_type};base64,{encoded}"
         ws.save()
         if ok:
             messages.success(request, "Aparência atualizada.")

@@ -2004,3 +2004,39 @@
     }
   });
 })();
+
+// Logo upload: resize in the browser so ANY photo (even big phone ones) works
+// and the stored logo stays small. Sends a compact data URI, not the raw file.
+window.nucleoUploadLogo = function (input, autoSubmit) {
+  if (autoSubmit === undefined) autoSubmit = true;
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var form = input.form;
+  var hidden = form.querySelector('input[name="logo_data"]');
+  var maybeSubmit = function () { if (autoSubmit) form.submit(); };
+  var reader = new FileReader();
+  reader.onerror = maybeSubmit;  // fall back to raw file
+  reader.onload = function (e) {
+    var img = new Image();
+    img.onerror = maybeSubmit;
+    img.onload = function () {
+      try {
+        var max = 400;
+        var scale = Math.min(1, max / Math.max(img.width, img.height));
+        var w = Math.max(1, Math.round(img.width * scale));
+        var h = Math.max(1, Math.round(img.height * scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        if (hidden) hidden.value = canvas.toDataURL("image/png");
+        input.value = "";  // don't also upload the big raw file
+        // Live preview if there's a target image on the page.
+        var prev = form.querySelector("[data-logo-preview]");
+        if (prev && hidden) { prev.src = hidden.value; prev.style.display = ""; }
+      } catch (err) { /* keep the raw file as fallback */ }
+      maybeSubmit();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+};

@@ -3,6 +3,7 @@
 {% load nucleo_extras %}
 
 {% block content %}
+<div x-data="{ editing: false }">
 <div class="page-head">
   <div>
     <h1>Olá, {{ user.get_username }}</h1>
@@ -10,15 +11,49 @@
   </div>
   <div class="page-head__actions">
     {% if can_admin %}
-    <a href="{% url 'dashboard_settings' %}" class="btn btn--ghost" title="Personalizar painel">
-      {% include "core/_icon.html" with icon="sliders" %} Personalizar
-    </a>
+    <button type="button" class="btn btn--ghost" @click="editing = !editing" :class="{ 'is-active': editing }">
+      {% include "core/_icon.html" with icon="sliders" %} <span x-text="editing ? 'Concluir' : 'Personalizar'">Personalizar</span>
+    </button>
     {% endif %}
     <a href="{% url 'crm:deal_board' %}{% if current_pipeline %}?pipeline={{ current_pipeline.pk }}{% endif %}" class="btn btn--primary">
       {% include "core/_icon.html" with icon="pipeline" %} Ver pipeline
     </a>
   </div>
 </div>
+
+{% if can_admin %}
+<div class="dash-customize card panel" x-show="editing" x-cloak x-transition
+     x-data="{
+       items: [{% for w in dashboard_widgets %}{ key: '{{ w.key }}', label: '{{ w.label|escapejs }}', on: {% if w.on %}true{% else %}false{% endif %} }{% if not forloop.last %},{% endif %}{% endfor %}],
+       move(i, dir) { const j = i + dir; if (j < 0 || j >= this.items.length) return; const t = this.items[i]; this.items.splice(i, 1); this.items.splice(j, 0, t); },
+       get layout() { return this.items.filter(x => x.on).map(x => x.key).join(','); }
+     }">
+  <div class="panel__head"><b>Personalizar painel</b><span class="panel__count" x-text="items.filter(x => x.on).length + ' de ' + items.length"></span></div>
+  <form method="post" action="{% url 'dashboard_settings' %}" class="dash-customize__form">
+    {% csrf_token %}
+    <input type="hidden" name="layout" :value="layout">
+    <ul class="dash-cfg">
+      <template x-for="(item, i) in items" :key="item.key">
+        <li class="dash-cfg__row" :class="{ 'is-off': !item.on }">
+          <div class="dash-cfg__reorder">
+            <button type="button" class="dash-cfg__move dash-cfg__move--up" @click="move(i, -1)" :disabled="i === 0" aria-label="Subir">{% include "core/_icon.html" with icon="chevron" %}</button>
+            <button type="button" class="dash-cfg__move" @click="move(i, 1)" :disabled="i === items.length - 1" aria-label="Descer">{% include "core/_icon.html" with icon="chevron" %}</button>
+          </div>
+          <div class="dash-cfg__body"><b x-text="item.label"></b></div>
+          <label class="switch" :title="item.on ? 'Ocultar' : 'Mostrar'">
+            <input type="checkbox" x-model="item.on">
+            <span class="switch__track"><span class="switch__thumb"></span></span>
+          </label>
+        </li>
+      </template>
+    </ul>
+    <div class="appearance-actions">
+      <button class="btn btn--primary" type="submit">Salvar painel</button>
+      <span class="appearance-hint">Setas para reordenar, interruptor para mostrar/ocultar.</span>
+    </div>
+  </form>
+</div>
+{% endif %}
 
 {% if pipelines|length > 1 %}
 <div class="pipe-tabs">
@@ -42,9 +77,10 @@
     <div class="cf-empty" style="padding:48px 16px;">
       {% include "core/_icon.html" with icon="sliders" %}
       <div>Seu painel está vazio.</div>
-      {% if can_admin %}<a href="{% url 'dashboard_settings' %}" class="btn btn--ghost btn--sm" style="margin-top:10px;">Escolher o que mostrar</a>{% endif %}
+      {% if can_admin %}<button type="button" class="btn btn--ghost btn--sm" style="margin-top:10px;" @click="editing = true">Escolher o que mostrar</button>{% endif %}
     </div>
   </div>
   {% endfor %}
+</div>
 </div>
 {% endblock %}
