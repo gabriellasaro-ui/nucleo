@@ -1339,6 +1339,16 @@ class AdminConsoleTests(TransactionTestCase):
         self.client.force_login(self.client_user)
         self.assertEqual(self.client.get(reverse("admin_console")).status_code, 403)
 
+    def test_delete_workspace_requires_typed_confirmation(self):
+        from django.urls import reverse
+        self.client.force_login(self.admin)
+        # wrong confirmation -> kept
+        self.client.post(reverse("console_workspace_delete", args=[self.ws.pk]), {"confirm": "nao"})
+        self.assertTrue(Workspace.objects.filter(pk=self.ws.pk).exists())
+        # correct confirmation -> deleted (drops the tenant schema)
+        self.client.post(reverse("console_workspace_delete", args=[self.ws.pk]), {"confirm": "EXCLUIR"})
+        self.assertFalse(Workspace.objects.filter(pk=self.ws.pk).exists())
+
 
 class AgencyOnboardingTests(TransactionTestCase):
     """Fase D: an agency self-serve creates a client (workspace + owner), linked

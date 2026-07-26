@@ -370,6 +370,23 @@ def console_workspace_agency(request, pk):
 
 @login_required
 @platform_access.platform_admin_required
+def console_workspace_delete(request, pk):
+    """Delete a workspace and everything in it (drops its Postgres schema).
+    Irreversible — the template guards it behind a typed confirmation."""
+    ws = get_object_or_404(Workspace, pk=pk)
+    if request.method == "POST" and request.POST.get("confirm", "").strip().lower() == "excluir":
+        name = ws.name
+        if request.session.get("workspace_id") == ws.pk:
+            request.session.pop("workspace_id", None)
+        ws.delete()  # drops the tenant schema + public rows for this workspace only
+        messages.success(request, f"Workspace “{name}” excluído.")
+    else:
+        messages.error(request, "Confirmação inválida — workspace não excluído.")
+    return redirect("admin_console")
+
+
+@login_required
+@platform_access.platform_admin_required
 def console_user_type(request, pk):
     User = get_user_model()
     target = get_object_or_404(User, pk=pk)

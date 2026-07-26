@@ -20,6 +20,7 @@ urlpatterns = [
     path("console/", views.admin_console, name="admin_console"),
     path("console/workspace/<int:pk>/suspend/", views.console_workspace_suspend, name="console_workspace_suspend"),
     path("console/workspace/<int:pk>/agency/", views.console_workspace_agency, name="console_workspace_agency"),
+    path("console/workspace/<int:pk>/delete/", views.console_workspace_delete, name="console_workspace_delete"),
     path("console/user/<int:pk>/type/", views.console_user_type, name="console_user_type"),
     # Agency console
     path("agencia/", views.agency_console, name="agency_console"),

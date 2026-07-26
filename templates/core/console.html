@@ -4,19 +4,18 @@
 <div class="page-head">
   <div>
     <h1>Console da plataforma</h1>
-    <p>Aqui você controla <b>quem é o quê</b> no Núcleo e gerencia todos os workspaces.</p>
+    <p>Gerencie todas as contas (workspaces) e defina quem é admin, agência ou usuário.</p>
   </div>
 </div>
 
-<div class="console-legend">
-  <div class="console-legend__item"><span class="pill pill--admin">Admin</span> vê e entra em <b>todos</b> os workspaces (é você e quem você promover).</div>
-  <div class="console-legend__item"><span class="pill pill--agency">Agência</span> revende o Núcleo e entra nos workspaces dos <b>clientes dela</b>.</div>
-  <div class="console-legend__item"><span class="pill">Usuário</span> só acessa o <b>próprio</b> workspace.</div>
+<div class="console-how">
+  <div class="console-how__step"><span class="console-how__n">1</span><div>Na lista de <b>Pessoas</b> (abaixo), promova alguém a <b>Agência</b>.</div></div>
+  <div class="console-how__step"><span class="console-how__n">2</span><div>Em <b>Workspaces</b>, escolha essa agência na coluna <b>“Agência responsável”</b>.</div></div>
+  <div class="console-how__step"><span class="console-how__n">3</span><div>Pronto — a agência passa a <b>acessar e gerenciar</b> aquele cliente. Você (Admin) controla tudo.</div></div>
 </div>
 
 <div class="card panel" style="margin-bottom:18px;">
   <div class="panel__head"><b>Workspaces</b><span class="panel__count">{{ workspaces|length }}</span></div>
-  <p class="console-hint">Cada workspace é a conta de um cliente. <b>Vincule uma agência</b> para ela poder gerenciar, ou <b>suspenda</b> para bloquear o acesso do cliente.</p>
   <div class="table-wrap">
     <table class="tbl">
       <thead><tr><th>Workspace</th><th>Dono</th><th>Agência responsável</th><th>Status</th><th class="col-actions">Ações</th></tr></thead>
@@ -39,7 +38,12 @@
             <form method="post" action="{% url 'workspace_switch' row.ws.pk %}">{% csrf_token %}<button class="btn btn--ghost btn--sm" type="submit">Entrar</button></form>
             <form method="post" action="{% url 'console_workspace_suspend' row.ws.pk %}"
                   {% if not row.ws.suspended %}onsubmit="return confirm('Suspender “{{ row.ws.name|escapejs }}”? O cliente perde o acesso até você reativar.');"{% endif %}>{% csrf_token %}
-              <button class="btn btn--sm {% if row.ws.suspended %}btn--ghost{% else %}btn--danger{% endif %}" type="submit">{% if row.ws.suspended %}Reativar{% else %}Suspender{% endif %}</button>
+              <button class="btn btn--ghost btn--sm" type="submit">{% if row.ws.suspended %}Reativar{% else %}Suspender{% endif %}</button>
+            </form>
+            <form method="post" action="{% url 'console_workspace_delete' row.ws.pk %}"
+                  onsubmit="var v=prompt('Isso APAGA todos os dados de \'{{ row.ws.name|escapejs }}\' e nao pode ser desfeito.\n\nDigite EXCLUIR para confirmar:'); if(!v||v.trim().toLowerCase()!=='excluir'){return false;} this.querySelector('[name=confirm]').value=v; return true;">
+              {% csrf_token %}<input type="hidden" name="confirm" value="">
+              <button class="btn btn--danger btn--sm btn--icon" type="submit" title="Excluir workspace">{% include "core/_icon.html" with icon="trash" %}</button>
             </form>
           </td>
         </tr>
@@ -52,7 +56,6 @@
 
 <div class="card panel">
   <div class="panel__head"><b>Pessoas</b><span class="panel__count">{{ users|length }}</span></div>
-  <p class="console-hint">Defina o <b>tipo de conta</b> de cada pessoa. Promova alguém a <b>Agência</b> para ela revender e gerenciar clientes.</p>
   <div class="table-wrap">
     <table class="tbl">
       <thead><tr><th>Pessoa</th><th>E-mail</th><th class="col-type">Tipo de conta</th></tr></thead>

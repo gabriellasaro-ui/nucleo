@@ -4,29 +4,36 @@
 <div class="page-head">
   <div>
     <h1>Membros</h1>
-    <p>Quem tem acesso a <b>{{ request.workspace.name }}</b> e com qual papel.</p>
+    <p>Quem tem acesso a <b>{{ request.workspace.name }}</b> e o que cada um pode fazer.</p>
   </div>
 </div>
 
-<div class="card">
-  <form class="member-add" method="post" action="{% url 'member_add' %}">
+<div class="card panel" style="margin-bottom:18px;">
+  <div class="panel__head"><b>Convidar pessoa</b></div>
+  <form class="member-invite" method="post" action="{% url 'member_add' %}">
     {% csrf_token %}
-    <input type="text" name="name" placeholder="Nome" autocomplete="name">
-    <input type="email" name="email" placeholder="E-mail" autocomplete="email" required>
-    <select name="role" class="role-select">
+    <input type="text" name="name" placeholder="Nome (opcional)" autocomplete="name" class="appearance-text-input">
+    <input type="email" name="email" placeholder="E-mail" autocomplete="email" required class="appearance-text-input">
+    <select name="role" class="region-select">
       {% for value, label in roles %}
       <option value="{{ value }}" {% if value == 'member' %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
-    <button class="btn btn--primary btn--sm" type="submit">
-      {% include "core/_icon.html" with icon="plus" %} Adicionar
-    </button>
+    <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="plus" %} Convidar</button>
   </form>
+  <p class="member-roles-hint">
+    <b>Proprietário</b> e <b>Admin</b> mexem em tudo (equipe, config) ·
+    <b>Membro</b> cria e edita registros ·
+    <b>Visualizador</b> só consulta.
+  </p>
+</div>
 
+<div class="card panel">
+  <div class="panel__head"><b>Equipe</b><span class="panel__count">{{ memberships|length }}</span></div>
   <div class="table-wrap">
     <table class="tbl">
       <thead>
-        <tr><th>Membro</th><th>Papel</th><th>Ações</th></tr>
+        <tr><th>Membro</th><th>Papel</th><th class="col-actions">Ações</th></tr>
       </thead>
       <tbody>
         {% for m in memberships %}
@@ -35,7 +42,7 @@
             <div class="cell-primary">
               <span class="avatar">{{ m.user.get_full_name|default:m.user.username|slice:":2"|upper }}</span>
               <div>
-                <b>{% firstof m.user.get_full_name m.user.get_username %}</b>
+                <b>{% firstof m.user.get_full_name m.user.get_username %}{% if m.user == request.user %} <span class="pill">você</span>{% endif %}</b>
                 {% if m.user.email %}<div class="cell-sub">{{ m.user.email }}</div>{% endif %}
               </div>
             </div>
@@ -43,21 +50,23 @@
           <td>
             <form class="inline-form" method="post" action="{% url 'member_update' m.pk %}">
               {% csrf_token %}
-              <select class="role-select" name="role" onchange="this.form.submit()">
+              <select class="region-select region-select--sm" name="role" onchange="this.form.submit()">
                 {% for value, label in roles %}
                 <option value="{{ value }}" {% if value == m.role %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
             </form>
           </td>
-          <td class="cell-actions">
+          <td class="col-actions">
+            {% if m.user != request.user %}
             <form class="inline-form" method="post" action="{% url 'member_remove' m.pk %}"
                   data-confirm="Remover {{ m.user.get_username|escapejs }} deste workspace?">
               {% csrf_token %}
-              <button class="btn btn--danger btn--sm" type="submit">
-                {% include "core/_icon.html" with icon="trash" %} Remover
+              <button class="btn btn--ghost btn--sm btn--icon" type="submit" title="Remover">
+                {% include "core/_icon.html" with icon="trash" %}
               </button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
