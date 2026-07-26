@@ -214,6 +214,12 @@ FACEBOOK_GRAPH_VERSION = env("FACEBOOK_GRAPH_VERSION", "v19.0")
 # Verify token you also type in the Meta app's Webhooks config (leadgen).
 FACEBOOK_VERIFY_TOKEN = env("FACEBOOK_VERIFY_TOKEN", "nucleo-leadgen")
 
+# Google OAuth ("Entrar com Google"). Create an OAuth client (Web) in Google
+# Cloud Console and add the callback (…/accounts/google/callback/) as an
+# authorized redirect URI. Without these, the button simply doesn't appear.
+GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", "")
+GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET", "")
+
 # EvoGo / WhatsApp. Keep the global key in the Núcleo service environment;
 # each workspace receives its own instance token after connecting.
 EVOGO_API_URL = env("EVOGO_API_URL", "")

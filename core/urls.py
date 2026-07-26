@@ -28,6 +28,9 @@ urlpatterns = [
     path("agencia/marca/", views.agency_branding, name="agency_branding"),
     # White-label login for an agency's clients
     path("e/<slug:slug>/", views.agency_login, name="agency_login"),
+    # Google OAuth login
+    path("accounts/google/login/", views.google_login, name="google_login"),
+    path("accounts/google/callback/", views.google_callback, name="google_callback"),
     path("settings/", views.settings_hub, name="settings"),
     path("settings/members/", views.members, name="members"),
     path("settings/members/add/", views.member_add, name="member_add"),

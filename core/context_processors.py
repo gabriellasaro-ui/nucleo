@@ -3,6 +3,7 @@
 """
 import re
 
+from django.conf import settings
 from django.urls import reverse
 
 from .rbac import can_edit as _can_edit
@@ -92,6 +93,7 @@ def branding(request):
         "date_format": getattr(ws, "date_format", None) or "dmy",
         "date_fmt": date_fmt,
         "datetime_fmt": date_fmt + " H:i",
+        "google_enabled": bool(settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET),
     }
 
 

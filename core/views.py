@@ -542,6 +542,94 @@ def agency_login(request, slug):
 
 
 # --------------------------------------------------------------------------- #
+# Google OAuth login ("Entrar com Google")
+# --------------------------------------------------------------------------- #
+_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+
+
+def _google_enabled():
+    return bool(settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET)
+
+
+def google_login(request):
+    if not _google_enabled():
+        messages.error(request, "Login com Google não está configurado.")
+        return redirect("login")
+    import urllib.parse
+
+    state = get_random_string(24)
+    request.session["google_oauth_state"] = state
+    nxt = request.GET.get("next", "")
+    request.session["google_oauth_next"] = nxt if nxt.startswith("/") else ""
+    params = urllib.parse.urlencode({
+        "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+        "redirect_uri": request.build_absolute_uri(reverse("google_callback")),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "prompt": "select_account",
+    })
+    return redirect(f"{_GOOGLE_AUTH_URL}?{params}")
+
+
+def google_callback(request):
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth import login as auth_login
+
+    if request.GET.get("error"):
+        messages.info(request, "Login com Google cancelado.")
+        return redirect("login")
+    if not request.GET.get("state") or request.GET.get("state") != request.session.get("google_oauth_state"):
+        messages.error(request, "A sessão do Google expirou. Tente entrar de novo.")
+        return redirect("login")
+    code = request.GET.get("code")
+    if not code:
+        return redirect("login")
+    try:
+        import urllib.parse
+        import urllib.request
+        redirect_uri = request.build_absolute_uri(reverse("google_callback"))
+        body = urllib.parse.urlencode({
+            "code": code,
+            "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+            "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        }).encode()
+        req = urllib.request.Request(_GOOGLE_TOKEN_URL, data=body, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            token = json.loads(resp.read().decode("utf-8"))
+        access_token = token.get("access_token")
+        if not access_token:
+            raise ValueError("no access_token")
+        ureq = urllib.request.Request(_GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"})
+        with urllib.request.urlopen(ureq, timeout=10) as resp:
+            info = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        messages.error(request, "Não foi possível entrar com o Google. Tente de novo.")
+        return redirect("login")
+
+    email = (info.get("email") or "").strip().lower()
+    if not email or info.get("email_verified") is False:
+        messages.error(request, "O Google não retornou um e-mail verificado.")
+        return redirect("login")
+    User = get_user_model()
+    user = User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email)).first()
+    if user is None:
+        messages.error(request, "Nenhuma conta com esse e-mail. Peça acesso ao responsável.")
+        return redirect("login")
+    if not user.is_active:
+        messages.error(request, "Sua conta está inativa.")
+        return redirect("login")
+    auth_login(request, user)
+    request.session.pop("google_oauth_state", None)
+    nxt = request.session.pop("google_oauth_next", "") or ""
+    return redirect(nxt if nxt.startswith("/") else "dashboard")
+
+
+# --------------------------------------------------------------------------- #
 # Member management (admin+)
 # --------------------------------------------------------------------------- #
 @login_required

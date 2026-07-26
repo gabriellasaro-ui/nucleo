@@ -1499,3 +1499,30 @@ class DashboardCardTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 302)
         with tenant_context(self.ws):
             self.assertTrue(DashboardCard.all_objects.filter(title="Meu card").exists())
+
+
+class GoogleOAuthTests(TransactionTestCase):
+    """The Google login button appears only when configured, and the flow
+    redirects safely (to Google when set up, back to login otherwise)."""
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="", GOOGLE_OAUTH_CLIENT_SECRET="")
+    def test_disabled_redirects_back_to_login(self):
+        from django.urls import reverse
+        resp = self.client.get(reverse("google_login"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/accounts/login", resp.url)
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="cid", GOOGLE_OAUTH_CLIENT_SECRET="secret")
+    def test_enabled_redirects_to_google(self):
+        from django.urls import reverse
+        resp = self.client.get(reverse("google_login"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("accounts.google.com", resp.url)
+        self.assertIn("client_id=cid", resp.url)
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="cid", GOOGLE_OAUTH_CLIENT_SECRET="secret")
+    def test_callback_rejects_bad_state(self):
+        from django.urls import reverse
+        resp = self.client.get(reverse("google_callback") + "?state=wrong&code=x")
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/accounts/login", resp.url)
