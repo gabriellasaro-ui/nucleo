@@ -38,17 +38,26 @@
           <span class="ws-switch__chev">{% include "core/_icon.html" with icon="chevron" %}</span>
         </button>
         <div class="ws-menu" x-show="open" x-cloak x-transition @click.outside="open = false">
-          <div class="ws-menu__label">Trocar workspace</div>
-          {% for r in request.accessible_workspaces %}
-          <form method="post" action="{% url 'workspace_switch' r.workspace.pk %}">
-            {% csrf_token %}
-            <button type="submit" class="ws-menu__item {% if r.workspace.pk == request.workspace.id %}is-active{% endif %}">
-              <span class="ws-mark ws-mark--sm">{{ r.workspace.initials }}</span>
-              <span class="ws-menu__name">{{ r.workspace.name }}</span>
-              <span class="ws-role ws-role--{{ r.relation }}">{{ r.role }}</span>
-            </button>
-          </form>
-          {% endfor %}
+          <div class="ws-menu__scroll">
+            {% regroup request.accessible_workspaces by relation as ws_groups %}
+            {% for group in ws_groups %}
+            {% if is_agency or is_platform_admin %}
+            <div class="ws-menu__label">{% if group.grouper == 'agency' %}Seus clientes{% elif group.grouper == 'admin' %}Todos os workspaces{% else %}Seu workspace{% endif %}</div>
+            {% elif forloop.first %}
+            <div class="ws-menu__label">Trocar workspace</div>
+            {% endif %}
+            {% for r in group.list %}
+            <form method="post" action="{% url 'workspace_switch' r.workspace.pk %}">
+              {% csrf_token %}
+              <button type="submit" class="ws-menu__item {% if r.workspace.pk == request.workspace.id %}is-active{% endif %}">
+                <span class="ws-mark ws-mark--sm">{{ r.workspace.initials }}</span>
+                <span class="ws-menu__name">{{ r.workspace.name }}</span>
+                {% if r.relation != 'own' %}<span class="ws-role ws-role--{{ r.relation }}">{{ r.role }}</span>{% endif %}
+              </button>
+            </form>
+            {% endfor %}
+            {% endfor %}
+          </div>
           {% if not is_agency and not is_platform_admin %}
           <a class="ws-menu__new" href="{% url 'workspace_new' %}">
             {% include "core/_icon.html" with icon="plus" %} Novo workspace

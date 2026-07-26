@@ -88,8 +88,8 @@
       </div>
 
       <button type="button" class="cbm__refresh"
-              hx-post="{% url 'dashboard_card_preview' %}" hx-include="closest form" hx-target="#card-preview"
-              hx-trigger="load, click, change from:closest form delay:200ms, keyup from:closest form delay:400ms">
+              hx-post="{% url 'dashboard_card_preview' %}" hx-include="closest form" hx-target="#card-preview" hx-swap="innerHTML"
+              hx-trigger="click, change from:closest form delay:250ms, keyup from:closest form delay:450ms">
         {% include "core/_icon.html" with icon="sliders" %} Atualizar prévia
       </button>
 
@@ -101,7 +101,9 @@
 
     <div class="cbm__preview">
       <div class="cbm__preview-label">Prévia</div>
-      <div id="card-preview" class="dash-stack"></div>
+      <div id="card-preview" class="dash-stack">
+        {% include "core/dash/_card.html" with card=card data=preview_data can_admin=False %}
+      </div>
     </div>
   </div>
 </div>

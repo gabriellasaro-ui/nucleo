@@ -146,7 +146,9 @@ button { font-family: inherit; }
 .ws-switch__chev { color: var(--ink-3); display: flex; }
 .ws-switch__chev svg { width: 15px; height: 15px; }
 .ws-menu { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 40; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-lg); padding: 6px; }
-.ws-menu__label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); font-weight: 600; padding: 6px 8px 4px; }
+.ws-menu__scroll { max-height: min(60vh, 420px); overflow-y: auto; }
+.ws-menu__label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); font-weight: 600; padding: 8px 8px 4px; }
+.ws-menu__scroll > .ws-menu__label:not(:first-child) { margin-top: 4px; border-top: 1px solid var(--border); padding-top: 10px; }
 .ws-menu form { margin: 0; }
 .ws-menu__item { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 0; background: transparent; border-radius: 7px; cursor: pointer; font-size: 13.5px; color: var(--ink-2); }
 .ws-menu__item:hover { background: var(--surface-2); }
@@ -159,8 +161,10 @@ button { font-family: inherit; }
 /* Console (admin/agency) */
 .region-select--sm { padding: 5px 8px; font-size: 12.5px; min-width: 130px; width: auto; }
 .console-inline { display: inline; margin: 0; }
-.console-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.console-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .console-actions form { display: inline; margin: 0; }
+.tbl td.col-actions { text-align: right; white-space: nowrap; width: 1%; }
+.tbl td.col-type { text-align: right; white-space: nowrap; width: 1%; }
 .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--surface-3); color: var(--ink-2); }
 .pill--ok { background: var(--green-50); color: var(--green-600); }
 .pill--bad { background: var(--red-50); color: var(--red-600); }

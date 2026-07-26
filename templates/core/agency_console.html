@@ -23,8 +23,10 @@
           <td><div class="cell-primary"><span class="ws-mark ws-mark--sm">{{ row.ws.initials }}</span>{{ row.ws.name }}</div></td>
           <td class="cell-sub">{% if row.owner %}{{ row.owner.get_username }}{% else %}—{% endif %}</td>
           <td>{% if row.ws.suspended %}<span class="pill pill--bad">Suspenso</span>{% else %}<span class="pill pill--ok">Ativo</span>{% endif %}</td>
-          <td class="console-actions">
-            <form method="post" action="{% url 'workspace_switch' row.ws.pk %}">{% csrf_token %}<button class="btn btn--ghost btn--sm" type="submit">Entrar</button></form>
+          <td class="col-actions">
+            <div class="console-actions">
+              <form method="post" action="{% url 'workspace_switch' row.ws.pk %}">{% csrf_token %}<button class="btn btn--ghost btn--sm" type="submit">Entrar</button></form>
+            </div>
           </td>
         </tr>
         {% empty %}

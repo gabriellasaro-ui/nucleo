@@ -3870,6 +3870,7 @@ def dashboard_card_form(request, pk=None):
         return redirect("dashboard")
     return render(request, "core/dashboard_card_modal.html", {
         "card": card,
+        "preview_data": _compute_card(card),   # initial preview, rendered server-side
         "options": card_options(),
         "period_choices": PERIOD_CHOICES,
         "chart_choices": DashboardCard.CHART_CHOICES,

@@ -34,17 +34,19 @@
             </form>
           </td>
           <td>{% if row.ws.suspended %}<span class="pill pill--bad">Suspenso</span>{% else %}<span class="pill pill--ok">Ativo</span>{% endif %}</td>
-          <td class="console-actions">
-            <form method="post" action="{% url 'workspace_switch' row.ws.pk %}">{% csrf_token %}<button class="btn btn--ghost btn--sm" type="submit">Entrar</button></form>
-            <form method="post" action="{% url 'console_workspace_suspend' row.ws.pk %}"
-                  {% if not row.ws.suspended %}onsubmit="return confirm('Suspender “{{ row.ws.name|escapejs }}”? O cliente perde o acesso até você reativar.');"{% endif %}>{% csrf_token %}
-              <button class="btn btn--ghost btn--sm" type="submit">{% if row.ws.suspended %}Reativar{% else %}Suspender{% endif %}</button>
-            </form>
-            <form method="post" action="{% url 'console_workspace_delete' row.ws.pk %}"
-                  onsubmit="var v=prompt('Isso APAGA todos os dados de \'{{ row.ws.name|escapejs }}\' e nao pode ser desfeito.\n\nDigite EXCLUIR para confirmar:'); if(!v||v.trim().toLowerCase()!=='excluir'){return false;} this.querySelector('[name=confirm]').value=v; return true;">
-              {% csrf_token %}<input type="hidden" name="confirm" value="">
-              <button class="btn btn--danger btn--sm btn--icon" type="submit" title="Excluir workspace">{% include "core/_icon.html" with icon="trash" %}</button>
-            </form>
+          <td class="col-actions">
+            <div class="console-actions">
+              <form method="post" action="{% url 'workspace_switch' row.ws.pk %}">{% csrf_token %}<button class="btn btn--ghost btn--sm" type="submit">Entrar</button></form>
+              <form method="post" action="{% url 'console_workspace_suspend' row.ws.pk %}"
+                    {% if not row.ws.suspended %}onsubmit="return confirm('Suspender “{{ row.ws.name|escapejs }}”? O cliente perde o acesso até você reativar.');"{% endif %}>{% csrf_token %}
+                <button class="btn btn--ghost btn--sm" type="submit">{% if row.ws.suspended %}Reativar{% else %}Suspender{% endif %}</button>
+              </form>
+              <form method="post" action="{% url 'console_workspace_delete' row.ws.pk %}"
+                    onsubmit="var v=prompt('Isso APAGA todos os dados de \'{{ row.ws.name|escapejs }}\' e nao pode ser desfeito.\n\nDigite EXCLUIR para confirmar:'); if(!v||v.trim().toLowerCase()!=='excluir'){return false;} this.querySelector('[name=confirm]').value=v; return true;">
+                {% csrf_token %}<input type="hidden" name="confirm" value="">
+                <button class="btn btn--danger btn--sm btn--icon" type="submit" title="Excluir workspace">{% include "core/_icon.html" with icon="trash" %}</button>
+              </form>
+            </div>
           </td>
         </tr>
         {% empty %}<tr><td colspan="5" class="empty">Nenhum workspace ainda.</td></tr>
