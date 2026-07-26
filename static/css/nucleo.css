@@ -1211,6 +1211,11 @@ button { font-family: inherit; }
 /* ---- Configurable dashboard ---------------------------------------------- */
 .page-head__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .dash-stack { display: flex; flex-direction: column; gap: 18px; }
+.dash-grid { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
+@media (min-width: 780px) { .dash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1320px) { .dash-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.dash-col { min-width: 0; }
+.dash-col--full { grid-column: 1 / -1; }
 .dash-card__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .dash-card__head b { font-size: 14px; }
 .dash-list { display: flex; flex-direction: column; padding: 6px; }

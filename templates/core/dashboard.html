@@ -73,21 +73,21 @@
 </div>
 {% endif %}
 
-<div class="dash-stack">
+<div class="dash-grid">
   {% for key in dashboard_order %}
-    {% if key == "kpis" %}{% include "core/dash/_kpis.html" %}
-    {% elif key == "funnel" %}{% include "core/dash/_funnel.html" %}
-    {% elif key == "contacts" %}{% include "core/dash/_contacts.html" %}
-    {% elif key == "tasks" %}{% include "core/dash/_tasks.html" %}
-    {% elif key == "recent_deals" %}{% include "core/dash/_recent_deals.html" %}
-    {% elif key == "companies" %}{% include "core/dash/_companies.html" %}
+    {% if key == "kpis" %}<div class="dash-col dash-col--full">{% include "core/dash/_kpis.html" %}</div>
+    {% elif key == "funnel" %}<div class="dash-col">{% include "core/dash/_funnel.html" %}</div>
+    {% elif key == "contacts" %}<div class="dash-col">{% include "core/dash/_contacts.html" %}</div>
+    {% elif key == "tasks" %}<div class="dash-col">{% include "core/dash/_tasks.html" %}</div>
+    {% elif key == "recent_deals" %}<div class="dash-col">{% include "core/dash/_recent_deals.html" %}</div>
+    {% elif key == "companies" %}<div class="dash-col dash-col--full">{% include "core/dash/_companies.html" %}</div>
     {% endif %}
   {% endfor %}
   {% for cc in custom_cards %}
-    {% include "core/dash/_card.html" with card=cc.card data=cc.data %}
+    <div class="dash-col{% if cc.data.kind == 'list' %} dash-col--full{% endif %}">{% include "core/dash/_card.html" with card=cc.card data=cc.data %}</div>
   {% endfor %}
   {% if not dashboard_order and not custom_cards %}
-  <div class="card">
+  <div class="dash-col dash-col--full card">
     <div class="cf-empty" style="padding:48px 16px;">
       {% include "core/_icon.html" with icon="sliders" %}
       <div>Seu painel está vazio.</div>
