@@ -52,6 +52,13 @@
       <span class="appearance-hint">Setas para reordenar, interruptor para mostrar/ocultar.</span>
     </div>
   </form>
+  <div class="dash-customize__cards">
+    <div class="dash-customize__cards-head">
+      <b>Cards personalizados</b>
+      <a href="{% url 'dashboard_card_new' %}" class="btn btn--ghost btn--sm">{% include "core/_icon.html" with icon="plus" %} Novo card</a>
+    </div>
+    <span class="appearance-hint">Crie um card com a métrica e o gráfico que quiser. No modo Personalizar, passe o mouse nos cards para editar ou excluir.</span>
+  </div>
 </div>
 {% endif %}
 
@@ -72,15 +79,19 @@
     {% elif key == "recent_deals" %}{% include "core/dash/_recent_deals.html" %}
     {% elif key == "companies" %}{% include "core/dash/_companies.html" %}
     {% endif %}
-  {% empty %}
+  {% endfor %}
+  {% for cc in custom_cards %}
+    {% include "core/dash/_card.html" with card=cc.card data=cc.data %}
+  {% endfor %}
+  {% if not dashboard_order and not custom_cards %}
   <div class="card">
     <div class="cf-empty" style="padding:48px 16px;">
       {% include "core/_icon.html" with icon="sliders" %}
       <div>Seu painel está vazio.</div>
-      {% if can_admin %}<button type="button" class="btn btn--ghost btn--sm" style="margin-top:10px;" @click="editing = true">Escolher o que mostrar</button>{% endif %}
+      {% if can_admin %}<button type="button" class="btn btn--ghost btn--sm" style="margin-top:10px;" @click="editing = true">Personalizar</button>{% endif %}
     </div>
   </div>
-  {% endfor %}
+  {% endif %}
 </div>
 </div>
 {% endblock %}

@@ -22,7 +22,7 @@ from django.views.decorators.http import require_POST
 from django_tenants.utils import get_public_schema_name, schema_context, tenant_context
 
 from modules.crm.models import (
-    Activity, AuditLog, Company, Contact, Deal, Pipeline, WhatsAppConversation,
+    Activity, AuditLog, Company, Contact, DashboardCard, Deal, Pipeline, WhatsAppConversation,
 )
 
 from core.events import emit, run_automation_for_event, CONDITION_OPERATORS
@@ -33,6 +33,7 @@ from . import audit
 from .forms import WhatsAppPromotionForm, WorkspaceForm
 from .models import EVENT_CHOICES, Automation, AutomationRun, CustomField, Domain, Event, IntegrationConnection, Membership, UserProfile, Workspace
 from .dashboard import DASHBOARD_KEYS, enabled_keys as dashboard_enabled_keys, resolve_layout
+from .dashboard_cards import PERIOD_CHOICES, card_options, catalog as _card_catalog, compute_card as _compute_card
 from .money import format_money
 from .rbac import require_role
 from .whatsapp_inbox import (
@@ -239,6 +240,10 @@ def dashboard(request):
         "breadcrumb": ["Workspace", "Dashboard"],
         "dashboard_order": dashboard_order,
         "dashboard_widgets": resolve_layout(ws),
+        "custom_cards": [
+            {"card": c, "data": _compute_card(c)}
+            for c in DashboardCard.objects.filter(workspace=ws).order_by("order", "id")
+        ],
         "pending_tasks": pending_tasks,
         "recent_deals": recent_deals,
         "today": timezone.localdate(),
@@ -3728,6 +3733,77 @@ def dashboard_settings(request):
         ws.dashboard_layout = ordered
         ws.save(update_fields=["dashboard_layout"])
         messages.success(request, "Painel atualizado.")
+    return redirect("dashboard")
+
+
+def _apply_card_form(card, post, cat):
+    """Read + validate a card's config from POST, strictly against the catalog."""
+    card.title = (post.get("title") or "Novo card").strip()[:120]
+    obj = post.get("object_type")
+    if obj in cat:
+        card.object_type = obj
+    spec = cat[card.object_type]
+    card.metric = post.get("metric") if post.get("metric") in dict(DashboardCard.METRIC_CHOICES) else "count"
+    vf = post.get("value_field") or ""
+    card.value_field = vf if vf in spec["number_fields"] else ""
+    if card.metric in ("sum", "avg") and not card.value_field:
+        card.metric = "count"                     # can't sum/avg without a numeric field
+    card.chart = post.get("chart") if post.get("chart") in dict(DashboardCard.CHART_CHOICES) else "kpi"
+    gb = post.get("group_by") or ""
+    card.group_by = gb if gb in spec["groups"] else ""
+    filters = {}
+    period = post.get("period") or ""
+    if period in dict(PERIOD_CHOICES):
+        filters["period"] = period
+    stage = post.get("stage") or ""
+    if "stage" in spec["filters"] and stage in spec["filters"]["stage"][1]:
+        filters["stage"] = stage
+    done = post.get("done") or ""
+    if "done" in spec["filters"] and done in ("0", "1"):
+        filters["done"] = done
+    card.filters = {k: v for k, v in filters.items() if v}
+
+
+@login_required
+@require_role("admin")
+def dashboard_card_form(request, pk=None):
+    ws = request.workspace
+    card = get_object_or_404(DashboardCard, pk=pk, workspace=ws) if pk else DashboardCard(workspace=ws)
+    if request.method == "POST":
+        if not card.pk:
+            card.order = (DashboardCard.objects.filter(workspace=ws).count())
+        _apply_card_form(card, request.POST, _card_catalog())
+        card.save()
+        messages.success(request, "Card salvo.")
+        return redirect("dashboard")
+    return render(request, "core/dashboard_card_form.html", {
+        "page_title": "Novo card" if pk is None else "Editar card",
+        "breadcrumb": ["Dashboard", "Novo card" if pk is None else "Editar card"],
+        "card": card,
+        "options": card_options(),
+        "period_choices": PERIOD_CHOICES,
+        "chart_choices": DashboardCard.CHART_CHOICES,
+        "metric_choices": DashboardCard.METRIC_CHOICES,
+        "object_choices": DashboardCard.OBJECT_CHOICES,
+    })
+
+
+@login_required
+@require_role("admin")
+def dashboard_card_preview(request):
+    card = DashboardCard(workspace=request.workspace)
+    _apply_card_form(card, request.POST, _card_catalog())
+    return render(request, "core/dash/_card.html",
+                  {"card": card, "data": _compute_card(card), "can_admin": False, "preview": True})
+
+
+@login_required
+@require_role("admin")
+def dashboard_card_delete(request, pk):
+    card = get_object_or_404(DashboardCard, pk=pk, workspace=request.workspace)
+    if request.method == "POST":
+        card.delete()
+        messages.success(request, "Card excluído.")
     return redirect("dashboard")
 
 

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block content %}
+{{ options|json_script:"card-opts" }}
+<div class="page-head">
+  <div>
+    <h1>{% if card.pk %}Editar card{% else %}Novo card{% endif %}</h1>
+    <p>Escolha o que medir e como mostrar. A prévia atualiza sozinha.</p>
+  </div>
+  <a href="{% url 'dashboard' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Dashboard</a>
+</div>
+
+<div class="card-builder"
+     x-data="{
+       opts: JSON.parse(document.getElementById('card-opts').textContent),
+       obj: '{{ card.object_type|default:'deal' }}',
+       metric: '{{ card.metric|default:'count' }}',
+       chart: '{{ card.chart|default:'kpi' }}',
+       valueField: '{{ card.value_field }}',
+       groupBy: '{{ card.group_by }}',
+       get spec() { return this.opts[this.obj] || {}; },
+       get numberFields() { return this.spec.number_fields || []; },
+       get groups() { return this.spec.groups || []; },
+       get stageOptions() { return this.spec.stage_options || []; },
+       get hasDone() { return this.spec.has_done; },
+       get grouped() { return ['bar','pie','line'].includes(this.chart); }
+     }">
+  <div class="card panel card-builder__form">
+    <div class="panel__head"><b>Configuração</b></div>
+    <form method="post" action="{% if card.pk %}{% url 'dashboard_card_edit' card.pk %}{% else %}{% url 'dashboard_card_new' %}{% endif %}" class="appearance-form" style="padding:16px;">
+      {% csrf_token %}
+
+      <label class="appearance-label" style="margin-top:0;">Título do card</label>
+      <input type="text" name="title" value="{{ card.title }}" class="appearance-text-input" placeholder="Ex.: Negócios por etapa" maxlength="120" required>
+
+      <label class="appearance-label">O que medir</label>
+      <div class="builder-row">
+        <select name="object_type" x-model="obj" class="region-select">
+          {% for value, label in object_choices %}<option value="{{ value }}" {% if value == card.object_type %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <select name="metric" x-model="metric" class="region-select">
+          {% for value, label in metric_choices %}<option value="{{ value }}" {% if value == card.metric %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+
+      <template x-if="metric !== 'count'">
+        <div>
+          <label class="appearance-label">Campo (para soma/média)</label>
+          <select name="value_field" x-model="valueField" class="region-select" style="width:100%">
+            <option value="">—</option>
+            <template x-for="f in numberFields" :key="f.key"><option :value="f.key" x-text="f.label"></option></template>
+          </select>
+          <span class="appearance-hint" x-show="numberFields.length === 0">Este objeto não tem campo numérico — use Contagem.</span>
+        </div>
+      </template>
+
+      <label class="appearance-label">Como mostrar</label>
+      <select name="chart" x-model="chart" class="region-select" style="width:100%">
+        {% for value, label in chart_choices %}<option value="{{ value }}" {% if value == card.chart %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+
+      <template x-if="grouped">
+        <div>
+          <label class="appearance-label">Agrupar por</label>
+          <select name="group_by" x-model="groupBy" class="region-select" style="width:100%">
+            <option value="">—</option>
+            <template x-for="g in groups" :key="g.key"><option :value="g.key" x-text="g.label"></option></template>
+          </select>
+        </div>
+      </template>
+
+      <label class="appearance-label">Filtros</label>
+      <div class="builder-row">
+        <select name="period" class="region-select">
+          {% for value, label in period_choices %}<option value="{{ value }}" {% if value == card.filters.period %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <template x-if="stageOptions.length">
+          <select name="stage" class="region-select">
+            <option value="">Todas as etapas</option>
+            <template x-for="s in stageOptions" :key="s.key"><option :value="s.key" x-text="s.label" :selected="s.key === '{{ card.filters.stage }}'"></option></template>
+          </select>
+        </template>
+        <template x-if="hasDone">
+          <select name="done" class="region-select">
+            <option value="">Todas</option>
+            <option value="0" {% if card.filters.done == '0' %}selected{% endif %}>Pendentes</option>
+            <option value="1" {% if card.filters.done == '1' %}selected{% endif %}>Concluídas</option>
+          </select>
+        </template>
+      </div>
+
+      <div class="appearance-actions" style="margin-top:16px;">
+        <button class="btn btn--primary" type="submit">Salvar card</button>
+        <button type="button" class="btn btn--ghost btn--sm"
+                hx-post="{% url 'dashboard_card_preview' %}" hx-include="closest form" hx-target="#card-preview"
+                hx-trigger="load, click, change from:closest form delay:250ms, keyup from:closest form delay:400ms">
+          Atualizar prévia
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card-builder__preview">
+    <div class="card-builder__preview-label">Prévia</div>
+    <div id="card-preview" class="dash-stack"></div>
+  </div>
+</div>
+{% endblock %}

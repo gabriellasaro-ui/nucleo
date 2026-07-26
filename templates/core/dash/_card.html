@@ -1,0 +1,58 @@
+{% load humanize %}
+{% load nucleo_extras %}
+<div class="card panel custom-card">
+  <div class="custom-card__head">
+    <b>{{ card.title }}</b>
+    {% if can_admin %}
+    <div class="custom-card__tools" x-show="editing" x-cloak>
+      <a href="{% url 'dashboard_card_edit' card.pk %}" class="custom-card__tool" title="Editar">{% include "core/_icon.html" with icon="edit" %}</a>
+      <form method="post" action="{% url 'dashboard_card_delete' card.pk %}" onsubmit="return confirm('Excluir o card “{{ card.title|escapejs }}”?');">
+        {% csrf_token %}
+        <button type="submit" class="custom-card__tool custom-card__tool--danger" title="Excluir">{% include "core/_icon.html" with icon="trash" %}</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if data.kind == "kpi" %}
+  <div class="custom-kpi">{% if data.money %}{{ data.value|money:currency_code }}{% else %}{{ data.value|intcomma }}{% endif %}</div>
+
+  {% elif data.kind == "bar" %}
+  <div class="bar-list">
+    {% for s in data.series %}
+    <div class="bar-row">
+      <div class="bar-row__label">{{ s.label }}</div>
+      <div class="bar-row__track"><div class="bar-row__fill" style="width:{% widthratio s.value data.max 100 %}%; background:{{ s.color }}"></div></div>
+      <div class="bar-row__val">{% if data.money %}{{ s.value|money:currency_code }}{% else %}{{ s.value|intcomma }}{% endif %}</div>
+    </div>
+    {% empty %}<div class="cf-empty" style="padding:26px 12px;">Sem dados no período.</div>{% endfor %}
+  </div>
+
+  {% elif data.kind == "pie" %}
+  {% if data.series %}
+  <div class="donut">
+    <div class="donut__ring" style="background: {{ data.gradient }}"><div class="donut__hole"><div class="donut__total">{% if data.money %}{{ data.total|money:currency_code }}{% else %}{{ data.total|intcomma }}{% endif %}</div></div></div>
+    <div class="donut__legend">
+      {% for s in data.series %}<div class="donut__leg"><span class="donut__dot" style="background:{{ s.color }}"></span><span class="donut__leg-label">{{ s.label }}</span><span class="donut__leg-val">{{ s.pct }}%</span></div>{% endfor %}
+    </div>
+  </div>
+  {% else %}<div class="cf-empty" style="padding:26px 12px;">Sem dados no período.</div>{% endif %}
+
+  {% elif data.kind == "line" %}
+  {% if data.series %}
+  <svg class="line-chart" viewBox="{{ data.viewbox }}" preserveAspectRatio="none">
+    <polygon points="{{ data.area }}" class="line-chart__area"></polygon>
+    <polyline points="{{ data.points }}" class="line-chart__line"></polyline>
+  </svg>
+  <div class="line-chart__labels">{% for s in data.series %}<span>{{ s.label }}</span>{% endfor %}</div>
+  {% else %}<div class="cf-empty" style="padding:26px 12px;">Sem dados no período.</div>{% endif %}
+
+  {% elif data.kind == "list" %}
+  <div class="custom-list">
+    {% for r in data.rows %}<div class="custom-list__row">{{ r }}</div>{% empty %}<div class="cf-empty" style="padding:26px 12px;">Sem itens.</div>{% endfor %}
+  </div>
+
+  {% else %}
+  <div class="cf-empty" style="padding:26px 12px;">Não foi possível carregar este card.</div>
+  {% endif %}
+</div>

@@ -554,3 +554,41 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.get_action_display()} {self.object_type} #{self.object_id} por {self.actor_label or 'sistema'}"
+
+
+class DashboardCard(models.Model):
+    """A user-built dashboard card: what to measure + how to show it. The safe
+    computation (whitelisted objects/fields/aggregations) lives in
+    core.dashboard_cards — this model only stores the configuration."""
+    OBJECT_CHOICES = [
+        ("deal", "Negócios"), ("contact", "Contatos"),
+        ("company", "Empresas"), ("task", "Tarefas"),
+    ]
+    METRIC_CHOICES = [("count", "Contagem"), ("sum", "Soma"), ("avg", "Média")]
+    CHART_CHOICES = [
+        ("kpi", "Número"), ("bar", "Barras"), ("pie", "Pizza"),
+        ("line", "Linha"), ("list", "Lista"),
+    ]
+
+    workspace = models.ForeignKey("core.Workspace", on_delete=models.CASCADE, related_name="dashboard_cards")
+    title = models.CharField("Título", max_length=120)
+    object_type = models.CharField(max_length=12, choices=OBJECT_CHOICES, default="deal")
+    metric = models.CharField(max_length=10, choices=METRIC_CHOICES, default="count")
+    value_field = models.CharField(max_length=40, blank=True, default="")   # for sum/avg
+    group_by = models.CharField(max_length=40, blank=True, default="")      # for bar/pie/line
+    chart = models.CharField(max_length=10, choices=CHART_CHOICES, default="kpi")
+    filters = models.JSONField(default=dict, blank=True)
+    order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = TenantManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        ordering = ["order", "id"]
+        verbose_name = "Card do painel"
+        verbose_name_plural = "Cards do painel"
+
+    def __str__(self):
+        return f"{self.title} ({self.get_chart_display()})"

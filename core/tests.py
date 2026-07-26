@@ -1440,3 +1440,62 @@ class SuspensionWhiteLabelTests(TransactionTestCase):
         resp = self.client.get(reverse("agency_login", args=["ag-alfa"]))
         self.assertEqual(resp.status_code, 200)
         self.assertIn("Agencia Alfa", resp.content.decode("utf-8"))
+
+
+class DashboardCardTests(TransactionTestCase):
+    """Custom dashboard cards: the safe metric engine computes KPI/grouped
+    series, never raises on a bad config, and admins can create cards."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_card", name="CardCo")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="card.test")
+        self.admin = get_user_model().objects.create_user("adm", password="x", is_superuser=True)
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        clear_current_workspace()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    def test_kpi_sum_and_grouped_series(self):
+        from core.dashboard_cards import compute_card
+        from modules.crm.models import DashboardCard, Deal
+        set_current_workspace(self.ws)
+        with tenant_context(self.ws):
+            Deal.objects.create(workspace=self.ws, title="A", value=100)
+            Deal.objects.create(workspace=self.ws, title="B", value=200)
+            kpi = DashboardCard(workspace=self.ws, title="Soma", object_type="deal",
+                                metric="sum", value_field="value", chart="kpi")
+            data = compute_card(kpi)
+            self.assertEqual(data["kind"], "kpi")
+            self.assertEqual(data["value"], 300)
+            self.assertTrue(data["money"])
+            bar = DashboardCard(workspace=self.ws, title="Por etapa", object_type="deal",
+                                metric="count", chart="bar", group_by="stage")
+            bdata = compute_card(bar)
+            self.assertEqual(bdata["kind"], "bar")
+            self.assertEqual(sum(s["value"] for s in bdata["series"]), 2)
+
+    def test_engine_is_best_effort_on_bad_config(self):
+        from core.dashboard_cards import compute_card
+        from modules.crm.models import DashboardCard
+        set_current_workspace(self.ws)
+        with tenant_context(self.ws):
+            bad = DashboardCard(workspace=self.ws, title="x", object_type="bogus", chart="kpi")
+            self.assertEqual(compute_card(bad)["kind"], "error")
+
+    def test_admin_creates_card_via_view(self):
+        from django.urls import reverse
+        from modules.crm.models import DashboardCard
+        self.client.force_login(self.admin)
+        resp = self.client.post(reverse("dashboard_card_new"), {
+            "title": "Meu card", "object_type": "deal", "metric": "count", "chart": "kpi",
+        })
+        self.assertEqual(resp.status_code, 302)
+        with tenant_context(self.ws):
+            self.assertTrue(DashboardCard.all_objects.filter(title="Meu card").exists())
