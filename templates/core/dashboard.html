@@ -55,7 +55,10 @@
   <div class="dash-customize__cards">
     <div class="dash-customize__cards-head">
       <b>Cards personalizados</b>
-      <a href="{% url 'dashboard_card_new' %}" class="btn btn--ghost btn--sm">{% include "core/_icon.html" with icon="plus" %} Novo card</a>
+      <button type="button" class="btn btn--ghost btn--sm"
+              hx-get="{% url 'dashboard_card_new' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">
+        {% include "core/_icon.html" with icon="plus" %} Novo card
+      </button>
     </div>
     <span class="appearance-hint">Crie um card com a métrica e o gráfico que quiser. No modo Personalizar, passe o mouse nos cards para editar ou excluir.</span>
   </div>

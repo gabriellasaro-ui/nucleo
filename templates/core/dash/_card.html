@@ -5,7 +5,8 @@
     <b>{{ card.title }}</b>
     {% if can_admin %}
     <div class="custom-card__tools" x-show="editing" x-cloak>
-      <a href="{% url 'dashboard_card_edit' card.pk %}" class="custom-card__tool" title="Editar">{% include "core/_icon.html" with icon="edit" %}</a>
+      <button type="button" class="custom-card__tool" title="Editar"
+              hx-get="{% url 'dashboard_card_edit' card.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">{% include "core/_icon.html" with icon="edit" %}</button>
       <form method="post" action="{% url 'dashboard_card_delete' card.pk %}" onsubmit="return confirm('Excluir o card “{{ card.title|escapejs }}”?');">
         {% csrf_token %}
         <button type="submit" class="custom-card__tool custom-card__tool--danger" title="Excluir">{% include "core/_icon.html" with icon="trash" %}</button>

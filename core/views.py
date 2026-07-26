@@ -3859,14 +3859,16 @@ def dashboard_card_form(request, pk=None):
     card = get_object_or_404(DashboardCard, pk=pk, workspace=ws) if pk else DashboardCard(workspace=ws)
     if request.method == "POST":
         if not card.pk:
-            card.order = (DashboardCard.objects.filter(workspace=ws).count())
+            card.order = DashboardCard.objects.filter(workspace=ws).count()
         _apply_card_form(card, request.POST, _card_catalog())
         card.save()
         messages.success(request, "Card salvo.")
+        if request.headers.get("HX-Request"):
+            resp = HttpResponse(status=204)
+            resp["HX-Redirect"] = reverse("dashboard")
+            return resp
         return redirect("dashboard")
-    return render(request, "core/dashboard_card_form.html", {
-        "page_title": "Novo card" if pk is None else "Editar card",
-        "breadcrumb": ["Dashboard", "Novo card" if pk is None else "Editar card"],
+    return render(request, "core/dashboard_card_modal.html", {
         "card": card,
         "options": card_options(),
         "period_choices": PERIOD_CHOICES,
