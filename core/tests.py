@@ -1349,6 +1349,17 @@ class AdminConsoleTests(TransactionTestCase):
         self.client.post(reverse("console_workspace_delete", args=[self.ws.pk]), {"confirm": "EXCLUIR"})
         self.assertFalse(Workspace.objects.filter(pk=self.ws.pk).exists())
 
+    def test_admin_can_create_an_agency_person(self):
+        from django.contrib.auth import get_user_model
+        from django.urls import reverse
+        self.client.force_login(self.admin)
+        resp = self.client.post(reverse("console_user_add"),
+                                {"email": "nova@ag.com", "account_type": "agency"})
+        self.assertEqual(resp.status_code, 302)
+        u = get_user_model().objects.filter(email="nova@ag.com").first()
+        self.assertIsNotNone(u)
+        self.assertEqual(UserProfile.objects.get(user=u).account_type, "agency")
+
 
 class AgencyOnboardingTests(TransactionTestCase):
     """Fase D: an agency self-serve creates a client (workspace + owner), linked

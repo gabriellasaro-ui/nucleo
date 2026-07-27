@@ -94,6 +94,8 @@ def branding(request):
         "date_fmt": date_fmt,
         "datetime_fmt": date_fmt + " H:i",
         "google_enabled": bool(settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET),
+        "platform_brand_name": settings.PLATFORM_BRAND_NAME,
+        "platform_logo_uri": settings.PLATFORM_LOGO_URI,
     }
 
 

@@ -4,8 +4,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Entrar · {{ wl_brand_name|default:"Núcleo" }}</title>
-  {% if wl_logo_uri %}<link rel="icon" href="{{ wl_logo_uri }}">{% elif brand_logo_uri %}<link rel="icon" href="{{ brand_logo_uri }}">{% endif %}
+  <title>Entrar · {{ wl_brand_name|default:platform_brand_name }}</title>
+  {% if wl_logo_uri %}<link rel="icon" href="{{ wl_logo_uri }}">{% elif platform_logo_uri %}<link rel="icon" href="{{ platform_logo_uri }}">{% endif %}
   <link rel="stylesheet" href="{% static 'css/nucleo.css' %}">
   <style>{{ brand_css|safe }}{{ wl_brand_css|safe }}</style>
 </head>
@@ -14,55 +14,55 @@
     <aside class="auth-hero">
       <div class="auth-hero__inner">
         <div class="auth-hero__brand">
-          {% if wl_logo_uri %}<img src="{{ wl_logo_uri }}" class="auth-hero__logo" alt="">
-          {% elif brand_logo_uri %}<img src="{{ brand_logo_uri }}" class="auth-hero__logo" alt="">
-          {% else %}<span class="auth-hero__mark">{{ wl_brand_name|default:"Núcleo"|slice:":1" }}</span>{% endif %}
-          <span class="auth-hero__name">{{ wl_brand_name|default:"Núcleo" }}</span>
+          {% if wl_logo_uri %}<img src="{{ wl_logo_uri }}" class="auth-hero__logo" alt="{{ wl_brand_name|default:platform_brand_name }}">
+          {% elif platform_logo_uri %}<img src="{{ platform_logo_uri }}" class="auth-hero__logo" alt="{{ platform_brand_name }}">
+          {% else %}<span class="auth-hero__mark">{{ wl_brand_name|default:platform_brand_name|slice:":1" }}</span><span class="auth-hero__name">{{ wl_brand_name|default:platform_brand_name }}</span>{% endif %}
         </div>
         <h1 class="auth-hero__title">Seu comercial, organizado.</h1>
-        <p class="auth-hero__sub">CRM, funil de vendas, automações e WhatsApp — tudo em um só lugar, do jeito da sua operação.</p>
+        <p class="auth-hero__sub">CRM, funil de vendas, automações e WhatsApp num só lugar, do jeito da sua operação.</p>
       </div>
       <div class="auth-hero__glow" aria-hidden="true"></div>
     </aside>
 
     <main class="auth-form-wrap">
-      <form class="auth-form" method="post">
-        {% csrf_token %}
+      <div class="auth-form">
         <div class="auth-form__brand-sm">
-          {% if wl_logo_uri %}<img src="{{ wl_logo_uri }}" alt="">{% elif brand_logo_uri %}<img src="{{ brand_logo_uri }}" alt="">{% else %}<span class="auth-hero__mark auth-hero__mark--sm">{{ wl_brand_name|default:"Núcleo"|slice:":1" }}</span>{% endif %}
-          <b>{{ wl_brand_name|default:"Núcleo" }}</b>
+          {% if wl_logo_uri %}<img src="{{ wl_logo_uri }}" alt="">{% elif platform_logo_uri %}<img src="{{ platform_logo_uri }}" alt="">{% else %}<span class="auth-hero__mark auth-hero__mark--sm">{{ wl_brand_name|default:platform_brand_name|slice:":1" }}</span><b>{{ wl_brand_name|default:platform_brand_name }}</b>{% endif %}
         </div>
         <h2 class="auth-form__title">Entrar</h2>
         <p class="auth-form__sub">Bem-vindo de volta. Acesse a sua conta.</p>
 
-        {% if form.errors %}
-        <div class="auth-form__error">Usuário ou senha inválidos.</div>
+        <form method="post">
+          {% csrf_token %}
+          {% if form.errors %}
+          <div class="auth-form__error">Usuário ou senha inválidos.</div>
+          {% endif %}
+
+          <label class="auth-field">
+            <span>Usuário</span>
+            <input type="text" name="username" autocomplete="username" autofocus required>
+          </label>
+          <label class="auth-field">
+            <span>Senha</span>
+            <span class="auth-pass">
+              <input type="password" name="password" autocomplete="current-password" required>
+              <button type="button" class="auth-pass__toggle"
+                      onclick="var i=this.previousElementSibling; var p=i.type==='password'; i.type=p?'text':'password'; this.textContent=p?'Ocultar':'Mostrar';">Mostrar</button>
+            </span>
+          </label>
+
+          <input type="hidden" name="next" value="{{ next }}">
+          <button type="submit" class="btn btn--primary auth-form__submit">Entrar</button>
+        </form>
+
+        {% if google_enabled %}
+        <div class="auth-divider"><span>ou</span></div>
+        <a href="{% url 'google_login' %}{% if next %}?next={{ next|urlencode }}{% endif %}" class="btn auth-google">
+          <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          Entrar com Google
+        </a>
         {% endif %}
-
-        <label class="auth-field">
-          <span>Usuário</span>
-          <input type="text" name="username" autocomplete="username" autofocus required>
-        </label>
-        <label class="auth-field">
-          <span>Senha</span>
-          <span class="auth-pass">
-            <input type="password" name="password" autocomplete="current-password" required>
-            <button type="button" class="auth-pass__toggle"
-                    onclick="var i=this.previousElementSibling; var p=i.type==='password'; i.type=p?'text':'password'; this.textContent=p?'Ocultar':'Mostrar';">Mostrar</button>
-          </span>
-        </label>
-
-        <input type="hidden" name="next" value="{{ next }}">
-        <button type="submit" class="btn btn--primary auth-form__submit">Entrar</button>
-      </form>
-
-      {% if google_enabled %}
-      <div class="auth-divider"><span>ou</span></div>
-      <a href="{% url 'google_login' %}{% if next %}?next={{ next|urlencode }}{% endif %}" class="btn auth-google">
-        <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-        Entrar com Google
-      </a>
-      {% endif %}
+      </div>
     </main>
   </div>
 </body>

@@ -58,6 +58,15 @@
 
 <div class="card panel">
   <div class="panel__head"><b>Pessoas</b><span class="panel__count">{{ users|length }}</span></div>
+  <form class="member-invite" method="post" action="{% url 'console_user_add' %}">
+    {% csrf_token %}
+    <input type="text" name="name" placeholder="Nome (opcional)" autocomplete="name" class="appearance-text-input">
+    <input type="email" name="email" placeholder="E-mail" autocomplete="email" required class="appearance-text-input">
+    <select name="account_type" class="region-select">
+      {% for value, label in type_choices %}<option value="{{ value }}" {% if value == 'agency' %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button class="btn btn--primary" type="submit">{% include "core/_icon.html" with icon="plus" %} Adicionar</button>
+  </form>
   <div class="table-wrap">
     <table class="tbl">
       <thead><tr><th>Pessoa</th><th>E-mail</th><th class="col-type">Tipo de conta</th></tr></thead>

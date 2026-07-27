@@ -214,6 +214,12 @@ FACEBOOK_GRAPH_VERSION = env("FACEBOOK_GRAPH_VERSION", "v19.0")
 # Verify token you also type in the Meta app's Webhooks config (leadgen).
 FACEBOOK_VERIFY_TOKEN = env("FACEBOOK_VERIFY_TOKEN", "nucleo-leadgen")
 
+# Platform brand shown on the main (non-white-label) login. Set these in the
+# environment to use your own name/logo without touching code. PLATFORM_LOGO_URI
+# can be a URL or a data: URI.
+PLATFORM_BRAND_NAME = env("PLATFORM_BRAND_NAME", "Núcleo")
+PLATFORM_LOGO_URI = env("PLATFORM_LOGO_URI", "")
+
 # Google OAuth ("Entrar com Google"). Create an OAuth client (Web) in Google
 # Cloud Console and add the callback (…/accounts/google/callback/) as an
 # authorized redirect URI. Without these, the button simply doesn't appear.

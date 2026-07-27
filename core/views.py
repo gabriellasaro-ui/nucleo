@@ -392,6 +392,48 @@ def console_workspace_delete(request, pk):
 
 @login_required
 @platform_access.platform_admin_required
+def console_user_add(request):
+    """Create (or find) a person and set their platform account type — this is
+    how an admin creates an Agency (or another admin/user)."""
+    if request.method == "POST":
+        email = request.POST.get("email", "").strip().lower()
+        name = request.POST.get("name", "").strip()
+        atype = request.POST.get("account_type", "user")
+        if atype not in dict(UserProfile.TYPE_CHOICES):
+            atype = "user"
+        if not email:
+            messages.error(request, "Informe o e-mail.")
+            return redirect("admin_console")
+        try:
+            validate_email(email)
+        except ValidationError:
+            messages.error(request, "Informe um e-mail válido.")
+            return redirect("admin_console")
+        temp = ""
+        with schema_context(get_public_schema_name()), transaction.atomic():
+            User = get_user_model()
+            user = User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email)).first()
+            if user is None:
+                temp = _temporary_password()
+                user = User(username=email, email=email)
+                if name:
+                    parts = name.split(" ", 1)
+                    user.first_name = parts[0]
+                    user.last_name = parts[1] if len(parts) > 1 else ""
+                user.set_password(temp)
+                user.save()
+            prof, _ = UserProfile.objects.get_or_create(user=user)
+            prof.account_type = atype
+            prof.save(update_fields=["account_type"])
+        msg = f"{email} definido como {dict(UserProfile.TYPE_CHOICES)[atype]}."
+        if temp:
+            msg += f" Senha temporária: {temp}"
+        messages.success(request, msg)
+    return redirect("admin_console")
+
+
+@login_required
+@platform_access.platform_admin_required
 def console_user_type(request, pk):
     User = get_user_model()
     target = get_object_or_404(User, pk=pk)
