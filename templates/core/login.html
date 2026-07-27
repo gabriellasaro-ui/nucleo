@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Entrar · {{ wl_brand_name|default:platform_brand_name }}</title>
-  {% if wl_logo_uri %}<link rel="icon" href="{{ wl_logo_uri }}">{% elif platform_logo_uri %}<link rel="icon" href="{{ platform_logo_uri }}">{% endif %}
+  <link rel="icon" href="{% if wl_logo_uri %}{{ wl_logo_uri }}{% elif platform_logo_uri %}{{ platform_logo_uri }}{% else %}{% static 'img/logo.png' %}{% endif %}">
   <link rel="stylesheet" href="{% static 'css/nucleo.css' %}">
   <style>{{ brand_css|safe }}{{ wl_brand_css|safe }}</style>
 </head>
@@ -16,7 +16,7 @@
         <div class="auth-hero__brand">
           {% if wl_logo_uri %}<img src="{{ wl_logo_uri }}" class="auth-hero__logo" alt="{{ wl_brand_name|default:platform_brand_name }}">
           {% elif platform_logo_uri %}<img src="{{ platform_logo_uri }}" class="auth-hero__logo" alt="{{ platform_brand_name }}">
-          {% else %}<span class="auth-hero__mark">{{ wl_brand_name|default:platform_brand_name|slice:":1" }}</span><span class="auth-hero__name">{{ wl_brand_name|default:platform_brand_name }}</span>{% endif %}
+          {% else %}<img src="{% static 'img/logo.png' %}" class="auth-hero__logo" alt="{{ platform_brand_name }}">{% endif %}
         </div>
         <h1 class="auth-hero__title">Seu comercial, organizado.</h1>
         <p class="auth-hero__sub">CRM, funil de vendas, automações e WhatsApp num só lugar, do jeito da sua operação.</p>
@@ -27,7 +27,7 @@
     <main class="auth-form-wrap">
       <div class="auth-form">
         <div class="auth-form__brand-sm">
-          {% if wl_logo_uri %}<img src="{{ wl_logo_uri }}" alt="">{% elif platform_logo_uri %}<img src="{{ platform_logo_uri }}" alt="">{% else %}<span class="auth-hero__mark auth-hero__mark--sm">{{ wl_brand_name|default:platform_brand_name|slice:":1" }}</span><b>{{ wl_brand_name|default:platform_brand_name }}</b>{% endif %}
+          {% if wl_logo_uri %}<img src="{{ wl_logo_uri }}" alt="">{% elif platform_logo_uri %}<img src="{{ platform_logo_uri }}" alt="">{% else %}<img src="{% static 'img/logo.png' %}" alt="{{ platform_brand_name }}">{% endif %}
         </div>
         <h2 class="auth-form__title">Entrar</h2>
         <p class="auth-form__sub">Bem-vindo de volta. Acesse a sua conta.</p>

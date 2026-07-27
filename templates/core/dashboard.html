@@ -32,10 +32,10 @@
 <div class="dash-grid">
   {% for key in dashboard_order %}
     {% if key == "kpis" %}<div class="dash-col dash-col--full">{% include "core/dash/_kpis.html" %}</div>
-    {% elif key == "funnel" %}<div class="dash-col dash-col--full">{% include "core/dash/_funnel.html" %}</div>
-    {% elif key == "contacts" %}<div class="dash-col dash-col--full">{% include "core/dash/_contacts.html" %}</div>
-    {% elif key == "tasks" %}<div class="dash-col dash-col--full">{% include "core/dash/_tasks.html" %}</div>
-    {% elif key == "recent_deals" %}<div class="dash-col dash-col--full">{% include "core/dash/_recent_deals.html" %}</div>
+    {% elif key == "funnel" %}<div class="dash-col">{% include "core/dash/_funnel.html" %}</div>
+    {% elif key == "contacts" %}<div class="dash-col">{% include "core/dash/_contacts.html" %}</div>
+    {% elif key == "tasks" %}<div class="dash-col">{% include "core/dash/_tasks.html" %}</div>
+    {% elif key == "recent_deals" %}<div class="dash-col">{% include "core/dash/_recent_deals.html" %}</div>
     {% elif key == "companies" %}<div class="dash-col dash-col--full">{% include "core/dash/_companies.html" %}</div>
     {% endif %}
   {% endfor %}
