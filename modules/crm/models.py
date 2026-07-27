@@ -569,6 +569,7 @@ class DashboardCard(models.Model):
         ("kpi", "Número"), ("bar", "Barras"), ("pie", "Pizza"),
         ("line", "Linha"), ("list", "Lista"),
     ]
+    WIDTH_CHOICES = [("normal", "Normal"), ("full", "Largura total")]
 
     workspace = models.ForeignKey("core.Workspace", on_delete=models.CASCADE, related_name="dashboard_cards")
     title = models.CharField("Título", max_length=120)
@@ -577,6 +578,7 @@ class DashboardCard(models.Model):
     value_field = models.CharField(max_length=40, blank=True, default="")   # for sum/avg
     group_by = models.CharField(max_length=40, blank=True, default="")      # for bar/pie/line
     chart = models.CharField(max_length=10, choices=CHART_CHOICES, default="kpi")
+    width = models.CharField(max_length=10, choices=WIDTH_CHOICES, default="normal")
     filters = models.JSONField(default=dict, blank=True)
     order = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -63,6 +63,7 @@ urlpatterns = [
     path("webhooks/whatsapp/<str:secret>/", views.whatsapp_webhook, name="whatsapp_webhook"),
     path("settings/appearance/", views.appearance, name="appearance"),
     path("settings/dashboard/", views.dashboard_settings, name="dashboard_settings"),
+    path("dashboard/customize/", views.dashboard_customize, name="dashboard_customize"),
     path("dashboard/cards/new/", views.dashboard_card_form, name="dashboard_card_new"),
     path("dashboard/cards/<int:pk>/edit/", views.dashboard_card_form, name="dashboard_card_edit"),
     path("dashboard/cards/<int:pk>/delete/", views.dashboard_card_delete, name="dashboard_card_delete"),

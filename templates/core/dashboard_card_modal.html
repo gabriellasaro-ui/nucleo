@@ -53,9 +53,14 @@
       </template>
 
       <label class="cbm__label">Como mostrar</label>
-      <select name="chart" x-model="chart" class="cbm__select cbm__select--full">
-        {% for value, label in chart_choices %}<option value="{{ value }}" {% if value == card.chart %}selected{% endif %}>{{ label }}</option>{% endfor %}
-      </select>
+      <div class="cbm__row">
+        <select name="chart" x-model="chart" class="cbm__select">
+          {% for value, label in chart_choices %}<option value="{{ value }}" {% if value == card.chart %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <select name="width" class="cbm__select" title="Largura do card">
+          {% for value, label in width_choices %}<option value="{{ value }}" {% if value == card.width %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
 
       <template x-if="grouped">
         <div>

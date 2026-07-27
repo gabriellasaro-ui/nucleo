@@ -3821,7 +3821,20 @@ def dashboard_settings(request):
         ws.dashboard_layout = ordered
         ws.save(update_fields=["dashboard_layout"])
         messages.success(request, "Painel atualizado.")
+    if request.headers.get("HX-Request"):
+        resp = HttpResponse(status=204)
+        resp["HX-Redirect"] = reverse("dashboard")
+        return resp
     return redirect("dashboard")
+
+
+@login_required
+@require_role("admin")
+def dashboard_customize(request):
+    """The 'Personalizar' panel as a modal (built-in widgets: show/hide + order)."""
+    return render(request, "core/dashboard_customize_modal.html", {
+        "dashboard_widgets": resolve_layout(request.workspace),
+    })
 
 
 def _apply_card_form(card, post, cat):
@@ -3837,6 +3850,7 @@ def _apply_card_form(card, post, cat):
     if card.metric in ("sum", "avg") and not card.value_field:
         card.metric = "count"                     # can't sum/avg without a numeric field
     card.chart = post.get("chart") if post.get("chart") in dict(DashboardCard.CHART_CHOICES) else "kpi"
+    card.width = post.get("width") if post.get("width") in dict(DashboardCard.WIDTH_CHOICES) else "normal"
     gb = post.get("group_by") or ""
     card.group_by = gb if gb in spec["groups"] else ""
     filters = {}
@@ -3876,6 +3890,7 @@ def dashboard_card_form(request, pk=None):
         "chart_choices": DashboardCard.CHART_CHOICES,
         "metric_choices": DashboardCard.METRIC_CHOICES,
         "object_choices": DashboardCard.OBJECT_CHOICES,
+        "width_choices": DashboardCard.WIDTH_CHOICES,
     })
 
 

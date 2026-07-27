@@ -4,7 +4,7 @@
   <div class="custom-card__head">
     <b>{{ card.title }}</b>
     {% if can_admin %}
-    <div class="custom-card__tools" x-show="editing" x-cloak>
+    <div class="custom-card__tools">
       <button type="button" class="custom-card__tool" title="Editar"
               hx-get="{% url 'dashboard_card_edit' card.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modal = true">{% include "core/_icon.html" with icon="edit" %}</button>
       <form method="post" action="{% url 'dashboard_card_delete' card.pk %}" onsubmit="return confirm('Excluir o card “{{ card.title|escapejs }}”?');">

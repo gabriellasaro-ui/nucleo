@@ -182,7 +182,8 @@ button { font-family: inherit; }
 /* Custom dashboard cards + builder */
 .custom-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .custom-card__head b { font-size: 14px; }
-.custom-card__tools { display: flex; gap: 4px; }
+.custom-card__tools { display: flex; gap: 4px; opacity: 0; transition: opacity .12s; }
+.custom-card:hover .custom-card__tools { opacity: 1; }
 .custom-card__tools form { margin: 0; }
 .custom-card__tool { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); cursor: pointer; }
 .custom-card__tool svg { width: 14px; height: 14px; }
@@ -1214,8 +1215,7 @@ button { font-family: inherit; }
 /* Masonry-style packing (columns) so cards of different heights don't leave
    big gaps. Full-width cards (KPIs, tables) span all columns. */
 .dash-grid { column-gap: 18px; column-count: 1; }
-@media (min-width: 780px) { .dash-grid { column-count: 2; } }
-@media (min-width: 1320px) { .dash-grid { column-count: 3; } }
+@media (min-width: 900px) { .dash-grid { column-count: 2; } }
 .dash-col { break-inside: avoid; margin-bottom: 18px; }
 .dash-col--full { column-span: all; }
 .dash-card__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }

@@ -1,0 +1,51 @@
+<div class="modal card-builder-modal"
+     x-data="{
+       items: [{% for w in dashboard_widgets %}{ key: '{{ w.key }}', label: '{{ w.label|escapejs }}', on: {% if w.on %}true{% else %}false{% endif %} }{% if not forloop.last %},{% endif %}{% endfor %}],
+       move(i, dir) { const j = i + dir; if (j < 0 || j >= this.items.length) return; const t = this.items[i]; this.items.splice(i, 1); this.items.splice(j, 0, t); },
+       get layout() { return this.items.filter(x => x.on).map(x => x.key).join(','); }
+     }">
+  <div class="modal__head">
+    <div>
+      <h2>Personalizar painel</h2>
+      <p class="modal__subtitle">Mostre/oculte e reordene os blocos. Crie cards do jeito que quiser.</p>
+    </div>
+    <button type="button" class="icon-btn" @click="modal = false">{% include "core/_icon.html" with icon="close" %}</button>
+  </div>
+
+  <div class="modal__body">
+    <form method="post" hx-post="{% url 'dashboard_settings' %}" hx-swap="none">
+      {% csrf_token %}
+      <input type="hidden" name="layout" :value="layout">
+      <ul class="dash-cfg">
+        <template x-for="(item, i) in items" :key="item.key">
+          <li class="dash-cfg__row" :class="{ 'is-off': !item.on }">
+            <div class="dash-cfg__reorder">
+              <button type="button" class="dash-cfg__move dash-cfg__move--up" @click="move(i, -1)" :disabled="i === 0" aria-label="Subir">{% include "core/_icon.html" with icon="chevron" %}</button>
+              <button type="button" class="dash-cfg__move" @click="move(i, 1)" :disabled="i === items.length - 1" aria-label="Descer">{% include "core/_icon.html" with icon="chevron" %}</button>
+            </div>
+            <div class="dash-cfg__body"><b x-text="item.label"></b></div>
+            <label class="switch" :title="item.on ? 'Ocultar' : 'Mostrar'">
+              <input type="checkbox" x-model="item.on">
+              <span class="switch__track"><span class="switch__thumb"></span></span>
+            </label>
+          </li>
+        </template>
+      </ul>
+      <div class="cbm__actions">
+        <button class="btn btn--primary" type="submit">Salvar painel</button>
+        <button type="button" class="btn btn--ghost" @click="modal = false">Fechar</button>
+      </div>
+    </form>
+
+    <div class="dash-customize__cards">
+      <div class="dash-customize__cards-head">
+        <b>Cards personalizados</b>
+        <button type="button" class="btn btn--primary btn--sm"
+                hx-get="{% url 'dashboard_card_new' %}" hx-target="#modal-content" hx-swap="innerHTML">
+          {% include "core/_icon.html" with icon="plus" %} Novo card
+        </button>
+      </div>
+      <span class="appearance-hint">Escolha a métrica, o gráfico e a largura. Passe o mouse num card na dashboard para editar ou excluir.</span>
+    </div>
+  </div>
+</div>
