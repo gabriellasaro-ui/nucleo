@@ -464,55 +464,178 @@ def agency_console(request):
     })
 
 
+_ONBOARDING_PRESETS = ["#2563eb", "#7c3aed", "#059669", "#dc2626", "#d97706", "#0891b2", "#db2777", "#0f172a"]
+
+
+def _ob_create_user(User, email, name=""):
+    """Reuse an existing user (by e-mail/username) or create one. Returns
+    (user, temporary_password) — the password is '' when the user already existed."""
+    user = User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email)).first()
+    if user is not None:
+        return user, ""
+    temp = _temporary_password()
+    user = User(username=email, email=email)
+    if name:
+        parts = name.split(" ", 1)
+        user.first_name = parts[0]
+        user.last_name = parts[1] if len(parts) > 1 else ""
+    user.set_password(temp)
+    user.save()
+    return user, temp
+
+
+def _ob_clean_team(raw, exclude_email):
+    """Parse the team-emails textarea into a de-duplicated list of valid e-mails."""
+    out = []
+    for line in (raw or "").replace(",", "\n").splitlines():
+        e = line.strip().lower()
+        if not e or e == exclude_email or e in out:
+            continue
+        try:
+            validate_email(e)
+            out.append(e)
+        except ValidationError:
+            pass
+    return out
+
+
 @login_required
 @platform_access.agency_required
-def client_new(request):
+def client_onboarding(request):
+    """Guided wizard to implement a new client: workspace + owner + pipeline +
+    brand + team, created atomically."""
     if request.method == "POST":
         ws_name = request.POST.get("workspace_name", "").strip()
         email = request.POST.get("email", "").strip().lower()
         owner_name = request.POST.get("owner_name", "").strip()
-        if not ws_name:
-            messages.error(request, "Informe o nome do workspace do cliente.")
-            return redirect("client_new")
-        if not email:
-            messages.error(request, "Informe o e-mail do dono.")
-            return redirect("client_new")
-        try:
-            validate_email(email)
-        except ValidationError:
-            messages.error(request, "Informe um e-mail válido.")
-            return redirect("client_new")
+        pipeline_name = (request.POST.get("pipeline_name", "").strip() or "Vendas")[:80]
+        brand_color = request.POST.get("brand_color", "").strip()
+        logo_data = request.POST.get("logo_data", "").strip()
+        team_emails = _ob_clean_team(request.POST.get("team_emails", ""), email)
 
-        temporary_password = ""
+        error = None
+        if not ws_name:
+            error = "Informe o nome do cliente."
+        elif not email:
+            error = "Informe o e-mail do dono."
+        else:
+            try:
+                validate_email(email)
+            except ValidationError:
+                error = "O e-mail do dono é inválido."
+        if error:
+            messages.error(request, error)
+            return redirect("client_onboarding")
+
+        agency = request.user if platform_access.is_agency(request.user) else None
+        credentials = []
         with schema_context(get_public_schema_name()), transaction.atomic():
             User = get_user_model()
-            owner = User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email)).first()
-            if owner is None:
-                temporary_password = _temporary_password()
-                owner = User(username=email, email=email)
-                if owner_name:
-                    parts = owner_name.split(" ", 1)
-                    owner.first_name = parts[0]
-                    owner.last_name = parts[1] if len(parts) > 1 else ""
-                owner.set_password(temporary_password)
-                owner.save()
-            workspace = Workspace(name=ws_name[:120], agency=request.user)
+            owner, temp = _ob_create_user(User, email, owner_name)
+            if temp:
+                credentials.append({"email": email, "password": temp})
+            workspace = Workspace(name=ws_name[:120], agency=agency)
+            if _COLOR_RE.match(brand_color):
+                workspace.brand_color = brand_color
+            if logo_data.startswith("data:image/") and len(logo_data) <= 1_200_000:
+                workspace.logo_data = logo_data
             workspace.save()  # creates the tenant schema
             Domain.objects.get_or_create(
                 domain=f"{workspace.schema_name}.localhost", tenant=workspace,
                 defaults={"is_primary": True},
             )
             Membership.objects.get_or_create(
-                user=owner, workspace=workspace, defaults={"role": Membership.ROLE_OWNER},
-            )
-        msg = f"Cliente “{ws_name}” criado e vinculado à sua agência."
-        if temporary_password:
-            msg += f" Senha temporária de {email}: {temporary_password}"
-        messages.success(request, msg)
-        return redirect("agency_console")
-    return render(request, "core/client_new.html", {
+                user=owner, workspace=workspace, defaults={"role": Membership.ROLE_OWNER})
+            for te in team_emails:
+                member, mtemp = _ob_create_user(User, te)
+                Membership.objects.get_or_create(
+                    user=member, workspace=workspace, defaults={"role": Membership.ROLE_MEMBER})
+                if mtemp:
+                    credentials.append({"email": te, "password": mtemp})
+
+        # Default pipeline lives in the new tenant schema — best-effort (the board
+        # also creates one lazily, so a failure here never blocks the client).
+        try:
+            from django_tenants.utils import tenant_context
+            from modules.crm.models import Pipeline
+            with tenant_context(workspace):
+                Pipeline.objects.create(workspace=workspace, name=pipeline_name, is_default=True)
+        except Exception:
+            pass
+
+        request.session["onboarding_result"] = {
+            "kind": "client", "workspace_id": workspace.pk, "title": ws_name,
+            "credentials": credentials,
+        }
+        return redirect("onboarding_done")
+
+    return render(request, "core/onboarding_client.html", {
         "page_title": "Novo cliente",
         "breadcrumb": ["Clientes", "Novo cliente"],
+        "presets": _ONBOARDING_PRESETS,
+    })
+
+
+@login_required
+def onboarding_done(request):
+    result = request.session.pop("onboarding_result", None)
+    if not result:
+        return redirect("dashboard")
+    return render(request, "core/onboarding_done.html", {"page_title": "Pronto!", "result": result})
+
+
+@login_required
+@platform_access.platform_admin_required
+def agency_onboarding(request):
+    """Guided wizard to set up a new agency: account + white-label brand."""
+    if request.method == "POST":
+        email = request.POST.get("email", "").strip().lower()
+        name = request.POST.get("name", "").strip()
+        brand_name = request.POST.get("brand_name", "").strip()[:120]
+        brand_color = request.POST.get("brand_color", "").strip()
+        slug = slugify(request.POST.get("slug", "").strip())[:60]
+        logo_data = request.POST.get("logo_data", "").strip()
+
+        error = None
+        if not email:
+            error = "Informe o e-mail da agência."
+        else:
+            try:
+                validate_email(email)
+            except ValidationError:
+                error = "O e-mail é inválido."
+        if not error and slug and UserProfile.objects.filter(slug=slug).exists():
+            error = "Esse link (slug) já está em uso. Escolha outro."
+        if error:
+            messages.error(request, error)
+            return redirect("agency_onboarding")
+
+        credentials = []
+        with schema_context(get_public_schema_name()), transaction.atomic():
+            User = get_user_model()
+            user, temp = _ob_create_user(User, email, name)
+            if temp:
+                credentials.append({"email": email, "password": temp})
+            prof, _ = UserProfile.objects.get_or_create(user=user)
+            prof.account_type = UserProfile.TYPE_AGENCY
+            prof.brand_name = brand_name
+            if _COLOR_RE.match(brand_color):
+                prof.brand_color = brand_color
+            prof.slug = slug
+            if logo_data.startswith("data:image/") and len(logo_data) <= 1_200_000:
+                prof.logo_data = logo_data
+            prof.save()
+
+        request.session["onboarding_result"] = {
+            "kind": "agency", "title": brand_name or email,
+            "credentials": credentials, "login_slug": slug,
+        }
+        return redirect("onboarding_done")
+
+    return render(request, "core/onboarding_agency.html", {
+        "page_title": "Nova agência",
+        "breadcrumb": ["Console", "Nova agência"],
+        "presets": _ONBOARDING_PRESETS,
     })
 
 

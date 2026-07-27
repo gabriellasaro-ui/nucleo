@@ -25,8 +25,11 @@ urlpatterns = [
     path("console/user/<int:pk>/type/", views.console_user_type, name="console_user_type"),
     # Agency console
     path("agencia/", views.agency_console, name="agency_console"),
-    path("agencia/novo-cliente/", views.client_new, name="client_new"),
+    path("agencia/novo-cliente/", views.client_onboarding, name="client_onboarding"),
     path("agencia/marca/", views.agency_branding, name="agency_branding"),
+    # Onboarding wizards
+    path("console/nova-agencia/", views.agency_onboarding, name="agency_onboarding"),
+    path("onboarding/pronto/", views.onboarding_done, name="onboarding_done"),
     # White-label login for an agency's clients
     path("e/<slug:slug>/", views.agency_login, name="agency_login"),
     # Google OAuth login

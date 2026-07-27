@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="onb" x-data="{
+      step: 1, total: 2,
+      email: '', color: '#2563eb',
+      emailOk() { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(this.email.trim()); },
+      canNext() { return this.step !== 1 || this.emailOk(); },
+      next() { if (this.step < this.total && this.canNext()) this.step++; },
+      back() { if (this.step > 1) this.step--; }
+    }">
+  <div class="onb__head">
+    <a href="{% url 'admin_console' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Console</a>
+    <h1>Nova agência</h1>
+    <p>Crie uma agência revendedora, já com a marca dela.</p>
+  </div>
+
+  <ol class="onb-steps">
+    <li class="onb-step" :class="{ 'is-active': step===1, 'is-done': step>1 }"><span class="onb-step__n" x-text="step>1 ? '✓' : '1'">1</span> Dados</li>
+    <li class="onb-step" :class="{ 'is-active': step===2 }"><span class="onb-step__n">2</span> Marca</li>
+  </ol>
+
+  <form method="post" class="card onb-card" @submit="if (step < total) $event.preventDefault()">
+    {% csrf_token %}
+    <input type="hidden" name="logo_data" value="">
+
+    <div class="onb-pane" x-show="step===1" x-cloak>
+      <h2 class="onb-pane__title">Dados da agência</h2>
+      <p class="onb-pane__sub">Quem vai administrar a agência.</p>
+      <label class="onb-label">E-mail da agência</label>
+      <input type="email" name="email" x-model="email" class="onb-input" placeholder="contato@agencia.com">
+      <span class="onb-hint" x-show="email.length > 0 && !emailOk()" style="color:var(--red-600)">E-mail inválido.</span>
+      <label class="onb-label">Nome <span class="onb-opt">(opcional)</span></label>
+      <input type="text" name="name" class="onb-input" placeholder="Agência Alfa" maxlength="120">
+    </div>
+
+    <div class="onb-pane" x-show="step===2" x-cloak>
+      <h2 class="onb-pane__title">Marca white-label</h2>
+      <p class="onb-pane__sub">A identidade que os clientes da agência veem no login. Tudo opcional.</p>
+      <label class="onb-label">Nome da marca</label>
+      <input type="text" name="brand_name" class="onb-input" placeholder="Agência Alfa" maxlength="120">
+      <label class="onb-label">Cor da marca</label>
+      <div class="color-row">
+        <input type="color" name="brand_color" x-model="color" class="color-input">
+        <input type="text" x-model="color" class="color-hex" maxlength="7" spellcheck="false">
+        <div class="btn btn--primary" style="pointer-events:none" :style="'background:'+color+';border-color:'+color">Exemplo</div>
+      </div>
+      <div class="swatches">
+        {% for p in presets %}<button type="button" class="swatch" style="background: {{ p }}" @click="color = '{{ p }}'" :class="{ 'is-active': color.toLowerCase() === '{{ p }}' }" title="{{ p }}"></button>{% endfor %}
+      </div>
+      <label class="onb-label">Link do login (slug) <span class="onb-opt">(opcional)</span></label>
+      <input type="text" name="slug" class="onb-input" placeholder="agencia-alfa" maxlength="60">
+      <span class="onb-hint">Clientes entram por <b>/e/&lt;slug&gt;/</b> com a marca da agência.</span>
+      <label class="onb-label">Logo <span class="onb-opt">(opcional)</span></label>
+      <div class="onb-logo">
+        <img data-logo-preview src="" alt="" style="display:none">
+        <label class="logo-dropzone logo-dropzone--sm">
+          <span class="logo-dropzone__icon">{% include "core/_icon.html" with icon="plus" %}</span>
+          <b>Enviar logo</b>
+          <span class="logo-dropzone__hint">PNG, SVG ou JPG · qualquer tamanho</span>
+          <input type="file" accept="image/*" onchange="nucleoUploadLogo(this, false)">
+        </label>
+      </div>
+    </div>
+
+    <div class="onb-nav">
+      <button type="button" class="btn btn--ghost" @click="back()" x-show="step>1">{% include "core/_icon.html" with icon="back" %} Voltar</button>
+      <span class="onb-nav__spacer"></span>
+      <button type="button" class="btn btn--primary" @click="next()" x-show="step<total" :class="{ 'is-disabled': !canNext() }">Próximo</button>
+      <button type="submit" class="btn btn--primary" x-show="step===total">Criar agência</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

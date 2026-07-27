@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="onb onb--done">
+  <div class="onb-done__mark">{% include "core/_icon.html" with icon="check" %}</div>
+  <h1>Pronto!</h1>
+  <p class="onb-done__sub">
+    {% if result.kind == 'client' %}O cliente <b>{{ result.title }}</b> foi criado e está pronto pra usar.
+    {% else %}A agência <b>{{ result.title }}</b> foi criada.{% endif %}
+  </p>
+
+  {% if result.credentials %}
+  <div class="card onb-creds">
+    <div class="onb-creds__head">{% include "core/_icon.html" with icon="lock" %} Senhas temporárias</div>
+    <p class="onb-hint">Copie e compartilhe agora — elas <b>não aparecem de novo</b>. Peça para trocarem no primeiro acesso.</p>
+    <div class="table-wrap">
+      <table class="tbl">
+        <thead><tr><th>E-mail</th><th>Senha temporária</th></tr></thead>
+        <tbody>{% for c in result.credentials %}<tr><td>{{ c.email }}</td><td><code class="onb-code">{{ c.password }}</code></td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="onb-hint">Os e-mails informados já tinham conta — eles entram com a senha que já usam.</p>
+  {% endif %}
+
+  <div class="onb-done__actions">
+    {% if result.kind == 'client' and result.workspace_id %}
+    <form method="post" action="{% url 'workspace_switch' result.workspace_id %}">{% csrf_token %}<button class="btn btn--primary" type="submit">Entrar no workspace do cliente</button></form>
+    <a href="{% url 'agency_console' %}" class="btn btn--ghost">Ver clientes</a>
+    {% elif result.kind == 'agency' %}
+    {% if result.login_slug %}<a href="{% url 'agency_login' result.login_slug %}" class="btn btn--ghost" target="_blank" rel="noopener">Ver login da agência</a>{% endif %}
+    <a href="{% url 'admin_console' %}" class="btn btn--primary">Voltar ao Console</a>
+    {% else %}
+    <a href="{% url 'dashboard' %}" class="btn btn--primary">Ir para a dashboard</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="onb" x-data="{
+      step: 1, total: 5,
+      wsName: '', email: '', color: '#2563eb',
+      emailOk() { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(this.email.trim()); },
+      canNext() { return this.step !== 1 || (this.wsName.trim().length > 0 && this.emailOk()); },
+      next() { if (this.step < this.total && this.canNext()) this.step++; },
+      back() { if (this.step > 1) this.step--; }
+    }">
+  <div class="onb__head">
+    <a href="{% url 'agency_console' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Clientes</a>
+    <h1>Novo cliente</h1>
+    <p>Vamos deixar o workspace do seu cliente pronto pra usar.</p>
+  </div>
+
+  <ol class="onb-steps">
+    <li class="onb-step" :class="{ 'is-active': step===1, 'is-done': step>1 }"><span class="onb-step__n" x-text="step>1 ? '✓' : '1'">1</span> Dados</li>
+    <li class="onb-step" :class="{ 'is-active': step===2, 'is-done': step>2 }"><span class="onb-step__n" x-text="step>2 ? '✓' : '2'">2</span> Pipeline</li>
+    <li class="onb-step" :class="{ 'is-active': step===3, 'is-done': step>3 }"><span class="onb-step__n" x-text="step>3 ? '✓' : '3'">3</span> Marca</li>
+    <li class="onb-step" :class="{ 'is-active': step===4, 'is-done': step>4 }"><span class="onb-step__n" x-text="step>4 ? '✓' : '4'">4</span> Equipe</li>
+    <li class="onb-step" :class="{ 'is-active': step===5 }"><span class="onb-step__n">5</span> Canais</li>
+  </ol>
+
+  <form method="post" class="card onb-card" @submit="if (step < total) $event.preventDefault()">
+    {% csrf_token %}
+    <input type="hidden" name="logo_data" value="">
+
+    <div class="onb-pane" x-show="step===1" x-cloak>
+      <h2 class="onb-pane__title">Dados do cliente</h2>
+      <p class="onb-pane__sub">Quem é o cliente e quem vai ser o dono da conta.</p>
+      <label class="onb-label">Nome do cliente</label>
+      <input type="text" name="workspace_name" x-model="wsName" class="onb-input" placeholder="Ex.: Padaria do João" maxlength="120">
+      <label class="onb-label">E-mail do dono</label>
+      <input type="email" name="email" x-model="email" class="onb-input" placeholder="dono@empresa.com">
+      <span class="onb-hint" x-show="email.length > 0 && !emailOk()" style="color:var(--red-600)">E-mail inválido.</span>
+      <label class="onb-label">Nome do dono <span class="onb-opt">(opcional)</span></label>
+      <input type="text" name="owner_name" class="onb-input" placeholder="João Silva" maxlength="120">
+    </div>
+
+    <div class="onb-pane" x-show="step===2" x-cloak>
+      <h2 class="onb-pane__title">Pipeline inicial</h2>
+      <p class="onb-pane__sub">O funil de vendas já nasce com as etapas padrão. Você pode ajustar depois.</p>
+      <label class="onb-label">Nome do funil</label>
+      <input type="text" name="pipeline_name" value="Vendas" class="onb-input" placeholder="Vendas" maxlength="80">
+      <div class="onb-flow">
+        <span class="onb-flow__stage">Novo</span><span class="onb-flow__arrow">→</span>
+        <span class="onb-flow__stage">Qualificado</span><span class="onb-flow__arrow">→</span>
+        <span class="onb-flow__stage">Proposta</span><span class="onb-flow__arrow">→</span>
+        <span class="onb-flow__stage">Negociação</span><span class="onb-flow__arrow">→</span>
+        <span class="onb-flow__stage onb-flow__stage--won">Ganho</span>
+      </div>
+    </div>
+
+    <div class="onb-pane" x-show="step===3" x-cloak>
+      <h2 class="onb-pane__title">Marca do cliente</h2>
+      <p class="onb-pane__sub">A cor e a logo que o cliente vê no sistema. Opcional — dá pra mudar depois.</p>
+      <label class="onb-label">Cor da marca</label>
+      <div class="color-row">
+        <input type="color" name="brand_color" x-model="color" class="color-input">
+        <input type="text" x-model="color" class="color-hex" maxlength="7" spellcheck="false">
+        <div class="btn btn--primary" style="pointer-events:none" :style="'background:'+color+';border-color:'+color">Exemplo</div>
+      </div>
+      <div class="swatches">
+        {% for p in presets %}<button type="button" class="swatch" style="background: {{ p }}" @click="color = '{{ p }}'" :class="{ 'is-active': color.toLowerCase() === '{{ p }}' }" title="{{ p }}"></button>{% endfor %}
+      </div>
+      <label class="onb-label">Logo <span class="onb-opt">(opcional)</span></label>
+      <div class="onb-logo">
+        <img data-logo-preview src="" alt="" style="display:none">
+        <label class="logo-dropzone logo-dropzone--sm">
+          <span class="logo-dropzone__icon">{% include "core/_icon.html" with icon="plus" %}</span>
+          <b>Enviar logo</b>
+          <span class="logo-dropzone__hint">PNG, SVG ou JPG · qualquer tamanho</span>
+          <input type="file" accept="image/*" onchange="nucleoUploadLogo(this, false)">
+        </label>
+      </div>
+    </div>
+
+    <div class="onb-pane" x-show="step===4" x-cloak>
+      <h2 class="onb-pane__title">Equipe</h2>
+      <p class="onb-pane__sub">Convide outras pessoas do time do cliente. Cada uma entra como <b>Membro</b>. Opcional.</p>
+      <label class="onb-label">E-mails (um por linha)</label>
+      <textarea name="team_emails" class="onb-input onb-textarea" rows="4" placeholder="pessoa1@empresa.com&#10;pessoa2@empresa.com"></textarea>
+    </div>
+
+    <div class="onb-pane" x-show="step===5" x-cloak>
+      <h2 class="onb-pane__title">Canais</h2>
+      <p class="onb-pane__sub">Depois de criar, conecte os canais dentro do workspace do cliente (em Integrações).</p>
+      <div class="onb-channels">
+        <div class="onb-channel">{% include "core/_icon.html" with icon="whatsapp" %}<b>WhatsApp</b><span>Conecte para conversar e captar leads.</span></div>
+        <div class="onb-channel">{% include "core/_icon.html" with icon="plug" %}<b>Facebook Lead Ads</b><span>Leads dos formulários caem direto no CRM.</span></div>
+      </div>
+      <p class="onb-hint">Tudo pronto? Clique em <b>Criar cliente</b> — a conta é criada na hora e você recebe a senha temporária do dono.</p>
+    </div>
+
+    <div class="onb-nav">
+      <button type="button" class="btn btn--ghost" @click="back()" x-show="step>1">{% include "core/_icon.html" with icon="back" %} Voltar</button>
+      <span class="onb-nav__spacer"></span>
+      <button type="button" class="btn btn--primary" @click="next()" x-show="step<total" :class="{ 'is-disabled': !canNext() }">Próximo</button>
+      <button type="submit" class="btn btn--primary" x-show="step===total">Criar cliente</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

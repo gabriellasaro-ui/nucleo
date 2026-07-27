@@ -6,6 +6,10 @@
     <h1>Console da plataforma</h1>
     <p>Gerencie todas as contas (workspaces) e defina quem é admin, agência ou usuário.</p>
   </div>
+  <div class="page-head__actions">
+    <a href="{% url 'client_onboarding' %}" class="btn btn--ghost">{% include "core/_icon.html" with icon="plus" %} Novo cliente</a>
+    <a href="{% url 'agency_onboarding' %}" class="btn btn--primary">{% include "core/_icon.html" with icon="plus" %} Nova agência</a>
+  </div>
 </div>
 
 <div class="console-how">

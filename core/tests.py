@@ -1372,6 +1372,7 @@ class AgencyOnboardingTests(TransactionTestCase):
         self.agency = User.objects.create_user("agn", password="x")
         UserProfile.objects.create(user=self.agency, account_type=UserProfile.TYPE_AGENCY)
         self.plain = User.objects.create_user("plain", password="x")
+        self.admin = User.objects.create_user("adm", password="x", is_superuser=True)
 
     def tearDown(self):
         connection.set_schema_to_public()
@@ -1381,24 +1382,70 @@ class AgencyOnboardingTests(TransactionTestCase):
             except Exception:
                 pass
 
-    def test_agency_creates_linked_client(self):
+    def test_agency_creates_client_with_pipeline_team_and_brand(self):
         from django.contrib.auth import get_user_model
         from django.urls import reverse
         self.client.force_login(self.agency)
-        resp = self.client.post(reverse("client_new"),
-                                {"workspace_name": "Padaria", "email": "dono@x.com"})
-        self.assertEqual(resp.status_code, 302)
+        resp = self.client.post(reverse("client_onboarding"), {
+            "workspace_name": "Padaria", "email": "dono@x.com", "owner_name": "João Silva",
+            "pipeline_name": "Comercial", "brand_color": "#059669",
+            "team_emails": "vend1@x.com\nvend2@x.com",
+        })
+        self.assertEqual(resp.status_code, 302)  # -> onboarding_done
         ws = Workspace.objects.filter(agency=self.agency, name="Padaria").first()
         self.assertIsNotNone(ws)
-        owner = get_user_model().objects.filter(email="dono@x.com").first()
-        self.assertIsNotNone(owner)
-        self.assertTrue(Membership.objects.filter(
-            user=owner, workspace=ws, role=Membership.ROLE_OWNER).exists())
+        self.assertEqual(ws.brand_color, "#059669")
+        User = get_user_model()
+        owner = User.objects.filter(email="dono@x.com").first()
+        self.assertTrue(Membership.objects.filter(user=owner, workspace=ws, role=Membership.ROLE_OWNER).exists())
+        self.assertTrue(Membership.objects.filter(user__email="vend1@x.com", workspace=ws, role=Membership.ROLE_MEMBER).exists())
+        self.assertTrue(Membership.objects.filter(user__email="vend2@x.com", workspace=ws, role=Membership.ROLE_MEMBER).exists())
+        with tenant_context(ws):
+            from modules.crm.models import Pipeline
+            self.assertTrue(Pipeline.objects.filter(name="Comercial", is_default=True).exists())
+        done = self.client.get(reverse("onboarding_done"))
+        self.assertEqual(done.status_code, 200)
+        self.assertIn("dono@x.com", done.content.decode("utf-8"))
+
+    def test_client_onboarding_requires_name_and_email(self):
+        from django.urls import reverse
+        self.client.force_login(self.agency)
+        resp = self.client.post(reverse("client_onboarding"), {"workspace_name": "", "email": ""})
+        self.assertEqual(resp.status_code, 302)  # back to the wizard, nothing created
+        self.assertFalse(Workspace.objects.filter(agency=self.agency).exists())
 
     def test_non_agency_cannot_create_client(self):
         from django.urls import reverse
         self.client.force_login(self.plain)
-        self.assertEqual(self.client.get(reverse("client_new")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("client_onboarding")).status_code, 403)
+
+    def test_admin_onboards_agency_with_brand(self):
+        from django.contrib.auth import get_user_model
+        from django.urls import reverse
+        self.client.force_login(self.admin)
+        resp = self.client.post(reverse("agency_onboarding"), {
+            "email": "ag@nova.com", "name": "Agencia Nova",
+            "brand_name": "Nova", "brand_color": "#7c3aed", "slug": "nova",
+        })
+        self.assertEqual(resp.status_code, 302)
+        u = get_user_model().objects.filter(email="ag@nova.com").first()
+        self.assertIsNotNone(u)
+        prof = UserProfile.objects.get(user=u)
+        self.assertEqual(prof.account_type, "agency")
+        self.assertEqual(prof.slug, "nova")
+        self.assertEqual(prof.brand_color, "#7c3aed")
+
+    def test_non_admin_cannot_onboard_agency(self):
+        from django.urls import reverse
+        self.client.force_login(self.agency)
+        self.assertEqual(self.client.get(reverse("agency_onboarding")).status_code, 403)
+
+    def test_wizards_render(self):
+        from django.urls import reverse
+        self.client.force_login(self.agency)
+        self.assertEqual(self.client.get(reverse("client_onboarding")).status_code, 200)
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("agency_onboarding")).status_code, 200)
 
 
 class SuspensionWhiteLabelTests(TransactionTestCase):

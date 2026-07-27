@@ -223,6 +223,59 @@ button { font-family: inherit; }
 .cbm__preview .dash-stack { gap: 0; }
 .cbm__preview .custom-card { min-height: 120px; }
 @media (max-width: 680px) { .cbm { grid-template-columns: 1fr; } .cbm__preview { position: static; } }
+
+/* ---- Onboarding wizard --------------------------------------------------- */
+.onb { max-width: 660px; margin: 0 auto; }
+.onb__head { margin-bottom: 22px; }
+.onb__head .back-link { margin-bottom: 12px; }
+.onb__head h1 { font-size: 24px; letter-spacing: -0.02em; margin: 0 0 4px; }
+.onb__head p { color: var(--ink-3); font-size: 14px; margin: 0; }
+.onb-steps { display: flex; list-style: none; margin: 0 0 20px; padding: 0; }
+.onb-step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-3); position: relative; text-align: center; }
+.onb-step::before { content: ""; position: absolute; top: 13px; left: -50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+.onb-step:first-child::before { display: none; }
+.onb-step__n { position: relative; z-index: 1; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 2px solid var(--border); color: var(--ink-3); font-weight: 700; font-size: 12px; transition: all .15s; }
+.onb-step.is-active { color: var(--ink); font-weight: 600; }
+.onb-step.is-active .onb-step__n { border-color: var(--blue-600); color: var(--blue-600); }
+.onb-step.is-done .onb-step__n { background: var(--blue-600); border-color: var(--blue-600); color: #fff; }
+.onb-step.is-done::before, .onb-step.is-active::before { background: var(--blue-600); }
+.onb-card { padding: 24px; }
+.onb-pane__title { font-size: 18px; letter-spacing: -0.02em; margin: 0 0 4px; }
+.onb-pane__sub { color: var(--ink-3); font-size: 13.5px; line-height: 1.5; margin: 0 0 18px; }
+.onb-label { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin: 14px 0 6px; }
+.onb-pane .onb-label:first-of-type { margin-top: 0; }
+.onb-opt { font-weight: 400; color: var(--ink-3); }
+.onb-input { width: 100%; padding: 11px 13px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; }
+.onb-input:focus { outline: none; border-color: var(--blue-600); box-shadow: var(--ring); }
+.onb-textarea { resize: vertical; min-height: 90px; }
+.onb-hint { font-size: 12.5px; color: var(--ink-3); margin: 6px 0 0; line-height: 1.5; }
+.onb-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 16px; }
+.onb-flow__stage { padding: 5px 10px; border-radius: var(--r-full); background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; color: var(--ink-2); }
+.onb-flow__stage--won { background: var(--green-50); color: var(--green-600); border-color: transparent; }
+.onb-flow__arrow { color: var(--ink-3); }
+.onb-logo { display: flex; align-items: center; gap: 14px; }
+.onb-logo img { max-height: 56px; max-width: 140px; object-fit: contain; border: 1px solid var(--border); border-radius: var(--r-md); padding: 6px; background: var(--surface-2); }
+.logo-dropzone--sm { flex: 1; padding: 16px; }
+.onb-channels { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+.onb-channel { padding: 16px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); display: flex; flex-direction: column; gap: 4px; }
+.onb-channel svg { width: 22px; height: 22px; color: var(--blue-600); }
+.onb-channel b { font-size: 14px; }
+.onb-channel span { font-size: 12.5px; color: var(--ink-3); line-height: 1.4; }
+.onb-nav { display: flex; align-items: center; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
+.onb-nav__spacer { flex: 1; }
+.onb-nav .is-disabled { opacity: .5; pointer-events: none; }
+.onb--done { text-align: center; max-width: 560px; }
+.onb-done__mark { width: 60px; height: 60px; margin: 12px auto 14px; border-radius: 50%; display: grid; place-items: center; background: var(--green-50); color: var(--green-600); }
+.onb-done__mark svg { width: 30px; height: 30px; }
+.onb--done h1 { font-size: 26px; letter-spacing: -0.02em; margin: 0 0 6px; }
+.onb-done__sub { color: var(--ink-2); font-size: 15px; margin: 0 0 22px; }
+.onb-creds { padding: 18px; text-align: left; margin-bottom: 22px; }
+.onb-creds__head { display: flex; align-items: center; gap: 8px; font-weight: 650; margin-bottom: 6px; }
+.onb-creds__head svg { width: 16px; height: 16px; color: var(--ink-2); }
+.onb-code { font-family: ui-monospace, Consolas, monospace; background: var(--surface-2); padding: 2px 8px; border-radius: 6px; font-size: 13px; }
+.onb-done__actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.onb-done__actions form { margin: 0; }
+@media (max-width: 560px) { .onb-channels { grid-template-columns: 1fr; } .onb-step { font-size: 0; } .onb-step__n { font-size: 12px; } }
 .ws-menu__new { display: flex; align-items: center; gap: 7px; padding: 8px; margin-top: 4px; border-top: 1px solid var(--border); color: var(--blue-600); font-size: 13px; font-weight: 600; }
 .ws-menu__new:hover { background: var(--surface-2); }
 .ws-menu__new svg { width: 15px; height: 15px; }
