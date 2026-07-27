@@ -21,6 +21,14 @@
   </div>
 </div>
 
+{% if pipelines|length > 1 %}
+<div class="pipe-tabs">
+  {% for p in pipelines %}
+  <a href="?pipeline={{ p.pk }}" class="pipe-tab{% if current_pipeline and p.pk == current_pipeline.pk %} is-active{% endif %}">{{ p.name }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if can_admin %}
 <div class="dash-customize card panel" x-show="editing" x-cloak x-transition
      x-data="{
@@ -62,14 +70,6 @@
     </div>
     <span class="appearance-hint">Crie um card com a métrica e o gráfico que quiser. No modo Personalizar, passe o mouse nos cards para editar ou excluir.</span>
   </div>
-</div>
-{% endif %}
-
-{% if pipelines|length > 1 %}
-<div class="pipe-tabs">
-  {% for p in pipelines %}
-  <a href="?pipeline={{ p.pk }}" class="pipe-tab{% if current_pipeline and p.pk == current_pipeline.pk %} is-active{% endif %}">{{ p.name }}</a>
-  {% endfor %}
 </div>
 {% endif %}
 
