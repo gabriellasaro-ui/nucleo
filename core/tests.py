@@ -12,9 +12,11 @@ from django.db import connection
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.test import SimpleTestCase, TransactionTestCase, override_settings
+from django.urls import reverse
+from django.utils import timezone
 from django_tenants.utils import tenant_context
 
-from modules.crm.models import Company, Contact, Deal
+from modules.crm.models import Company, Contact, Deal, SocialConversation, SocialMessage
 
 from . import audit
 from .dashboard import DASHBOARD_KEYS, enabled_keys, resolve_layout
@@ -1584,3 +1586,296 @@ class GoogleOAuthTests(TransactionTestCase):
         resp = self.client.get(reverse("google_callback") + "?state=wrong&code=x")
         self.assertEqual(resp.status_code, 302)
         self.assertIn("/accounts/login", resp.url)
+
+
+class InstagramWebhookTests(TransactionTestCase):
+    """Meta delivers Instagram DMs to the single app webhook URL. The dispatcher
+    routes object=="instagram" into the workspace's SocialConversation inbox and
+    leaves the Facebook Lead Ads (object=="page") path untouched."""
+
+    ACCOUNT_ID = "IG_ACCT_1"
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model  # noqa: F401
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_ig_wh", name="IGCo")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="igwh.test")
+        self.conn = IntegrationConnection.objects.create(
+            workspace=self.ws, provider="instagram", name="Instagram", status="connected",
+            config={"ig_account_id": self.ACCOUNT_ID, "page_id": "PAGE_1",
+                    "page_access_token": "PAGETOKEN", "ig_username": "loja"},
+        )
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        clear_current_workspace()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    def _incoming(self, mid="m1", text="Oi, tudo bem?", sender="SENDER_9"):
+        return {
+            "object": "instagram",
+            "entry": [{
+                "id": self.ACCOUNT_ID,
+                "messaging": [{
+                    "sender": {"id": sender},
+                    "recipient": {"id": self.ACCOUNT_ID},
+                    "timestamp": 1_700_000_000_000,
+                    "message": {"mid": mid, "text": text},
+                }],
+            }],
+        }
+
+    def _post(self, payload):
+        return self.client.post(
+            reverse("facebook_leadgen"),
+            data=json.dumps(payload), content_type="application/json",
+        )
+
+    def test_verify_handshake_echoes_challenge(self):
+        with override_settings(FACEBOOK_VERIFY_TOKEN="tok"):
+            resp = self.client.get(reverse("facebook_leadgen"), {
+                "hub.mode": "subscribe", "hub.verify_token": "tok", "hub.challenge": "42",
+            })
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.content.decode(), "42")
+
+    def test_verify_handshake_rejects_bad_token(self):
+        with override_settings(FACEBOOK_VERIFY_TOKEN="tok"):
+            resp = self.client.get(reverse("facebook_leadgen"), {
+                "hub.verify_token": "wrong", "hub.challenge": "42",
+            })
+        self.assertEqual(resp.status_code, 403)
+
+    @patch("core.views._fb_graph")
+    def test_incoming_dm_creates_conversation_and_message(self, fb):
+        fb.return_value = {"name": "Maria", "username": "maria", "profile_pic": "http://x/a.jpg"}
+        resp = self._post(self._incoming())
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(json.loads(resp.content).get("stored"), 1)
+        with tenant_context(self.ws):
+            conv = SocialConversation.all_objects.get(channel="instagram", sender_id="SENDER_9")
+            self.assertEqual(conv.account_id, self.ACCOUNT_ID)
+            self.assertEqual(conv.unread_count, 1)
+            self.assertEqual(conv.username, "maria")           # profile enrichment applied
+            self.assertEqual(conv.last_message, "Oi, tudo bem?")
+            self.assertEqual(conv.messages.count(), 1)
+            msg = conv.messages.first()
+            self.assertEqual(msg.direction, "incoming")
+            self.assertEqual(msg.text, "Oi, tudo bem?")
+
+    @patch("core.views._fb_graph")
+    def test_duplicate_mid_is_deduped(self, fb):
+        fb.return_value = {}
+        payload = self._incoming(mid="dup1")
+        self._post(payload)
+        self._post(payload)                                    # same mid again
+        with tenant_context(self.ws):
+            conv = SocialConversation.all_objects.get(channel="instagram", sender_id="SENDER_9")
+            self.assertEqual(conv.messages.count(), 1)         # not 2
+            self.assertEqual(conv.unread_count, 1)             # not incremented twice
+
+    @patch("core.views._fb_graph")
+    def test_echo_of_our_own_reply_is_outgoing_and_not_unread(self, fb):
+        fb.return_value = {}
+        # An echo mirrors a message WE sent: sender is the account, recipient the user.
+        payload = {
+            "object": "instagram",
+            "entry": [{
+                "id": self.ACCOUNT_ID,
+                "messaging": [{
+                    "sender": {"id": self.ACCOUNT_ID},
+                    "recipient": {"id": "SENDER_9"},
+                    "timestamp": 1_700_000_000_000,
+                    "message": {"mid": "echo1", "text": "resposta", "is_echo": True},
+                }],
+            }],
+        }
+        self._post(payload)
+        with tenant_context(self.ws):
+            conv = SocialConversation.all_objects.get(channel="instagram", sender_id="SENDER_9")
+            self.assertEqual(conv.unread_count, 0)             # echoes never mark unread
+            self.assertEqual(conv.messages.first().direction, "outgoing")
+
+    def test_leadgen_object_still_routes_and_does_not_touch_instagram(self):
+        # object=="page" must take the Lead Ads branch, never the Instagram one.
+        payload = {"object": "page", "entry": [{"id": "PAGE_X", "changes": [
+            {"field": "leadgen", "value": {"leadgen_id": "L1", "page_id": "PAGE_X", "form_id": "F1"}},
+        ]}]}
+        resp = self._post(payload)
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.content)
+        self.assertIn("processed", body)                       # leadgen response shape
+        self.assertNotIn("stored", body)                       # not the instagram shape
+        with tenant_context(self.ws):
+            self.assertEqual(SocialMessage.all_objects.count(), 0)
+
+    @patch("core.views._fb_graph")
+    def test_unknown_account_is_ignored(self, fb):
+        fb.return_value = {}
+        payload = self._incoming()
+        payload["entry"][0]["id"] = "NOT_MINE"                 # no connection matches
+        resp = self._post(payload)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(json.loads(resp.content).get("stored"), 0)
+        with tenant_context(self.ws):
+            self.assertEqual(SocialConversation.all_objects.count(), 0)
+
+
+class InstagramInboxTests(TransactionTestCase):
+    """The DM inbox lists conversations, zeroes unread on open, sends replies via
+    the Graph API, and stays isolated to the viewer's own workspace."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_ig_inbox", name="IGInbox")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="iginbox.test")
+        self.ws2 = Workspace(schema_name="test_ig_inbox2", name="Other")
+        self.ws2.save()
+        Domain.objects.create(tenant=self.ws2, domain="iginbox2.test")
+        User = get_user_model()
+        self.member = User.objects.create_user("m", password="x")
+        Membership.objects.create(user=self.member, workspace=self.ws, role=Membership.ROLE_MEMBER)
+        self.outsider = User.objects.create_user("out", password="x")
+        Membership.objects.create(user=self.outsider, workspace=self.ws2, role=Membership.ROLE_MEMBER)
+        self.conn = IntegrationConnection.objects.create(
+            workspace=self.ws, provider="instagram", name="Instagram", status="connected",
+            config={"ig_account_id": "IG1", "page_id": "P1",
+                    "page_access_token": "TOKEN", "ig_username": "loja"},
+        )
+        with tenant_context(self.ws):
+            self.conv = SocialConversation.all_objects.create(
+                workspace=self.ws, channel="instagram", account_id="IG1", sender_id="S1",
+                username="cliente", unread_count=3, last_message="oi",
+                last_message_at=timezone.now(),
+            )
+            SocialMessage.all_objects.create(
+                workspace=self.ws, conversation=self.conv, channel="instagram",
+                provider_message_id="i1", direction="incoming", text="oi",
+                sent_at=timezone.now(),
+            )
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        clear_current_workspace()
+        for ws in (self.ws, self.ws2):
+            try:
+                ws.delete()
+            except Exception:
+                pass
+
+    def test_member_sees_conversation(self):
+        self.client.force_login(self.member)
+        resp = self.client.get(reverse("instagram_inbox"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("cliente", resp.content.decode("utf-8"))
+
+    def test_opening_conversation_zeroes_unread(self):
+        self.client.force_login(self.member)
+        resp = self.client.get(reverse("instagram_inbox") + f"?conversation={self.conv.pk}")
+        self.assertEqual(resp.status_code, 200)
+        with tenant_context(self.ws):
+            self.assertEqual(SocialConversation.all_objects.get(pk=self.conv.pk).unread_count, 0)
+
+    def test_social_unread_count_helper(self):
+        from core.social_inbox import social_unread_count
+        with tenant_context(self.ws):
+            self.assertEqual(social_unread_count(self.ws), 3)
+
+    def test_unread_count_endpoint(self):
+        self.client.force_login(self.member)
+        resp = self.client.get(reverse("instagram_unread_count"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(json.loads(resp.content).get("count"), 3)
+
+    @patch("core.views._fb_graph")
+    def test_send_records_outgoing_reply(self, fb):
+        fb.return_value = {"message_id": "mid_out_1"}
+        self.client.force_login(self.member)
+        resp = self.client.post(reverse("instagram_send"), {
+            "conversation": self.conv.pk, "text": "Olá! Como posso ajudar?",
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(fb.called)
+        with tenant_context(self.ws):
+            msg = SocialMessage.all_objects.get(provider_message_id="mid_out_1")
+            self.assertEqual(msg.direction, "outgoing")
+            self.assertEqual(msg.text, "Olá! Como posso ajudar?")
+            conv = SocialConversation.all_objects.get(pk=self.conv.pk)
+            self.assertEqual(conv.last_message, "Olá! Como posso ajudar?")
+
+    @patch("core.views._fb_graph")
+    def test_send_shows_error_when_graph_rejects(self, fb):
+        fb.side_effect = Exception("(#10) 24h window")
+        self.client.force_login(self.member)
+        resp = self.client.post(reverse("instagram_send"), {
+            "conversation": self.conv.pk, "text": "fora da janela",
+        })
+        self.assertEqual(resp.status_code, 302)                # redirects back, no crash
+        with tenant_context(self.ws):
+            self.assertFalse(
+                SocialMessage.all_objects.filter(direction="outgoing").exists()
+            )
+
+    def test_outsider_does_not_see_the_conversation(self):
+        self.client.force_login(self.outsider)                 # routed to ws2, not ws
+        resp = self.client.get(reverse("instagram_inbox"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("cliente", resp.content.decode("utf-8"))
+
+
+class InstagramConnectTests(TransactionTestCase):
+    """Connecting: instagram_select_account persists the page + IG account onto an
+    IntegrationConnection so the webhook can later find it and the card flips on."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_ig_conn", name="ConnCo")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="igconn.test")
+        self.admin = get_user_model().objects.create_user("adm", password="x", is_superuser=True)
+        Membership.objects.create(user=self.admin, workspace=self.ws, role=Membership.ROLE_OWNER)
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        clear_current_workspace()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    @patch("core.views._fb_graph")
+    def test_select_account_stores_connection(self, fb):
+        fb.return_value = {"success": True}                    # subscribed_apps POST
+        self.client.force_login(self.admin)
+        session = self.client.session
+        session["ig_accounts"] = [{
+            "page_id": "PAGE_9", "page_name": "Minha Loja", "page_access_token": "PTOKEN",
+            "ig_account_id": "IG_9", "ig_username": "minhaloja", "ig_avatar": "http://x/a.jpg",
+        }]
+        session.save()
+        resp = self.client.post(reverse("instagram_select_account"), {"ig_account_id": "IG_9"})
+        self.assertEqual(resp.status_code, 302)
+        conn = IntegrationConnection.objects.get(workspace=self.ws, provider="instagram")
+        self.assertEqual(conn.status, "connected")
+        self.assertEqual(conn.config["ig_account_id"], "IG_9")
+        self.assertEqual(conn.config["page_access_token"], "PTOKEN")
+        self.assertTrue(conn.config["messages_subscribed"])
+
+    def test_connect_requires_admin(self):
+        member = self._member()
+        self.client.force_login(member)
+        resp = self.client.get(reverse("instagram_connect"))
+        self.assertEqual(resp.status_code, 403)
+
+    def _member(self):
+        from django.contrib.auth import get_user_model
+        u = get_user_model().objects.create_user("plainmember", password="x")
+        Membership.objects.create(user=u, workspace=self.ws, role=Membership.ROLE_MEMBER)
+        return u

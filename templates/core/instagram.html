@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Instagram Direct</h1>
+    <p>{% if connected %}Conectado como <b>@{{ ig_username }}</b>.{% else %}Receba e responda DMs do Instagram aqui.{% endif %}</p>
+  </div>
+  {% if not connected and can_admin %}
+  <a href="{% url 'instagram_connect' %}" class="btn btn--primary">{% include "core/_icon.html" with icon="instagram" %} Conectar Instagram</a>
+  {% endif %}
+</div>
+
+{% if not connected %}
+<div class="card">
+  <div class="cf-empty" style="padding:60px 16px;">
+    {% include "core/_icon.html" with icon="instagram" %}
+    <div>Conecte uma conta profissional do Instagram para receber as DMs.</div>
+    {% if can_admin %}<a href="{% url 'instagram_connect' %}" class="btn btn--primary btn--sm" style="margin-top:12px;">Conectar Instagram</a>{% endif %}
+  </div>
+</div>
+{% else %}
+<div class="dm">
+  <aside class="dm__list">
+    {% for c in conversations %}
+    <a href="?conversation={{ c.pk }}" class="dm-conv{% if active and c.pk == active.pk %} is-active{% endif %}">
+      <span class="dm-conv__avatar">{% if c.avatar_url %}<img src="{{ c.avatar_url }}" alt="">{% else %}{{ c.display_name|slice:':1'|upper }}{% endif %}</span>
+      <div class="dm-conv__body">
+        <div class="dm-conv__top"><b>{{ c.display_name }}</b>{% if c.last_message_at %}<span class="dm-conv__time">{{ c.last_message_at|date:'H:i' }}</span>{% endif %}</div>
+        <div class="dm-conv__last">{{ c.last_message|default:'—' }}</div>
+      </div>
+      {% if c.unread_count %}<span class="dm-conv__badge">{{ c.unread_count }}</span>{% endif %}
+    </a>
+    {% empty %}
+    <div class="cf-empty" style="padding:40px 12px;">{% include "core/_icon.html" with icon="instagram" %}<div>Nenhuma conversa ainda.</div></div>
+    {% endfor %}
+  </aside>
+
+  <section class="dm__thread">
+    {% if active %}
+    <div class="dm-thread__head">
+      <span class="dm-conv__avatar">{% if active.avatar_url %}<img src="{{ active.avatar_url }}" alt="">{% else %}{{ active.display_name|slice:':1'|upper }}{% endif %}</span>
+      <div><b>{{ active.display_name }}</b>{% if active.username %} <span class="dm-thread__handle">@{{ active.username }}</span>{% endif %}</div>
+    </div>
+    <div class="dm-thread__msgs">
+      {% for m in thread %}
+      <div class="dm-msg dm-msg--{{ m.direction }}">
+        {% if m.media_url %}<img src="{{ m.media_url }}" class="dm-msg__media" alt="">{% endif %}
+        {% if m.text %}<div class="dm-msg__bubble">{{ m.text }}</div>{% endif %}
+        <span class="dm-msg__time">{{ m.sent_at|date:'H:i' }}</span>
+      </div>
+      {% empty %}
+      <div class="cf-empty" style="padding:44px 16px;">Sem mensagens ainda.</div>
+      {% endfor %}
+    </div>
+    <form method="post" action="{% url 'instagram_send' %}" class="dm-composer">
+      {% csrf_token %}
+      <input type="hidden" name="conversation" value="{{ active.pk }}">
+      <input type="text" name="text" placeholder="Escreva uma resposta…" autocomplete="off" required>
+      <button type="submit" class="btn btn--primary">Enviar</button>
+    </form>
+    {% else %}
+    <div class="cf-empty" style="padding:80px 16px;">{% include "core/_icon.html" with icon="instagram" %}<div>Escolha uma conversa à esquerda.</div></div>
+    {% endif %}
+  </section>
+</div>
+{% endif %}
+{% endblock %}

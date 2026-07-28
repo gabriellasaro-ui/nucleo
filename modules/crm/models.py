@@ -248,6 +248,85 @@ class WhatsAppMessage(TimestampedModel):
         return self.text[:60] or self.message_type
 
 
+class SocialConversation(TimestampedModel):
+    """A direct-message thread from a social channel (Instagram now; the
+    `channel` field keeps room for Messenger later). Mirrors the WhatsApp inbox
+    but lives in its own model so the two never interfere."""
+    CHANNEL_CHOICES = [("instagram", "Instagram"), ("messenger", "Messenger")]
+    STATUS_CHOICES = [("open", "Aberta"), ("archived", "Arquivada")]
+
+    workspace = models.ForeignKey(
+        "core.Workspace", on_delete=models.CASCADE, related_name="social_conversations",
+    )
+    channel = models.CharField(max_length=16, choices=CHANNEL_CHOICES, default="instagram")
+    account_id = models.CharField(max_length=80)   # the connected IG/page account id
+    sender_id = models.CharField(max_length=120)   # the other person's scoped id (IGSID)
+    username = models.CharField(max_length=160, blank=True)
+    name = models.CharField(max_length=160, blank=True)
+    avatar_url = models.URLField(max_length=700, blank=True)
+    contact = models.ForeignKey(
+        Contact, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="social_conversations",
+    )
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="open")
+    unread_count = models.PositiveIntegerField(default=0)
+    last_message = models.CharField(max_length=300, blank=True)
+    last_message_at = models.DateTimeField(null=True, blank=True)
+
+    objects = TenantManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        ordering = ["-last_message_at", "-updated_at"]
+        unique_together = [("workspace", "channel", "account_id", "sender_id")]
+        indexes = [models.Index(fields=["workspace", "channel", "-last_message_at"])]
+        verbose_name = "Conversa social"
+        verbose_name_plural = "Conversas sociais"
+
+    def __str__(self):
+        return self.name or self.username or self.sender_id
+
+    @property
+    def display_name(self):
+        if self.contact_id:
+            return self.contact.full_name
+        return self.name or (f"@{self.username}" if self.username else self.sender_id)
+
+
+class SocialMessage(TimestampedModel):
+    DIRECTION_CHOICES = [("incoming", "Recebida"), ("outgoing", "Enviada")]
+
+    workspace = models.ForeignKey(
+        "core.Workspace", on_delete=models.CASCADE, related_name="social_messages",
+    )
+    conversation = models.ForeignKey(
+        SocialConversation, on_delete=models.CASCADE, related_name="messages",
+    )
+    channel = models.CharField(max_length=16, default="instagram")
+    provider_message_id = models.CharField(max_length=200)
+    direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
+    message_type = models.CharField(max_length=30, default="text")
+    text = models.TextField(blank=True)
+    media_url = models.URLField(max_length=900, blank=True)
+    sent_at = models.DateTimeField()
+    raw = models.JSONField(default=dict, blank=True)
+
+    objects = TenantManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        ordering = ["sent_at", "id"]
+        unique_together = [("workspace", "channel", "provider_message_id")]
+        indexes = [models.Index(fields=["conversation", "sent_at"])]
+        verbose_name = "Mensagem social"
+        verbose_name_plural = "Mensagens sociais"
+
+    def __str__(self):
+        return self.text[:60] or self.message_type
+
+
 DEFAULT_STAGES = [
     # key, name, color, kind
     ("novo", "Novo", "#94a3b8", "open"),

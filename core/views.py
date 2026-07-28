@@ -22,7 +22,8 @@ from django.views.decorators.http import require_POST
 from django_tenants.utils import get_public_schema_name, schema_context, tenant_context
 
 from modules.crm.models import (
-    Activity, AuditLog, Company, Contact, DashboardCard, Deal, Pipeline, WhatsAppConversation,
+    Activity, AuditLog, Company, Contact, DashboardCard, Deal, Pipeline,
+    SocialConversation, WhatsAppConversation,
 )
 
 from core.events import emit, run_automation_for_event, CONDITION_OPERATORS
@@ -76,10 +77,10 @@ _INTEGRATION_CATALOG = [
     },
     {
         "provider": "instagram",
-        "name": "Instagram",
-        "summary": "Base para mensagens, formularios e origem de leads.",
-        "icon": "command",
-        "available": False,
+        "name": "Instagram Direct",
+        "summary": "Receba e responda DMs do Instagram dentro do CRM.",
+        "icon": "instagram",
+        "available": True,
     },
     {
         "provider": "forms",
@@ -2131,6 +2132,12 @@ def whatsapp_unread_count_view(request):
 
 
 @login_required
+def instagram_unread_count_view(request):
+    from core.social_inbox import social_unread_count
+    return JsonResponse({"count": social_unread_count(request.workspace)})
+
+
+@login_required
 def whatsapp_avatar(request, conversation_id):
     connection = IntegrationConnection.objects.filter(
         workspace=request.workspace,
@@ -2665,7 +2672,12 @@ def integration_disconnect(request):
 # The Graph calls need a real Meta app (App ID/Secret) + public HTTPS callback,
 # so they can't be exercised locally — the flow degrades gracefully without them.
 # --------------------------------------------------------------------------- #
-FB_SCOPES = "pages_show_list,pages_read_engagement,pages_manage_metadata,leads_retrieval"
+# Lead Ads needs the page-management trio + leads_retrieval to read a lead's
+# answers, plus ads_management (Meta's Lead Access diagnostic requires it to pull
+# leads tied to ads). Changing this list only affects NEW connections — an
+# already-connected page keeps its old token until the gestor reconnects.
+FB_SCOPES = ("pages_show_list,pages_read_engagement,pages_manage_metadata,"
+             "pages_manage_ads,leads_retrieval,ads_management,business_management")
 
 
 def _facebook_redirect_uri(request):
@@ -2701,6 +2713,10 @@ def facebook_connect(request):
         "scope": FB_SCOPES,
         "response_type": "code",
         "state": state,
+        # Re-prompt for any permission the user previously skipped/declined, so a
+        # reconnect actually refreshes the granted scopes (Facebook otherwise
+        # silently reuses the old grant and the new scopes never attach).
+        "auth_type": "rerequest",
     })
     return redirect(f"https://www.facebook.com/{settings.FACEBOOK_GRAPH_VERSION}/dialog/oauth?{params}")
 
@@ -2778,6 +2794,9 @@ def facebook_select_page(request):
         subscribed = bool(result.get("success"))
     except Exception:
         subscribed = False
+    user_token = request.session.get("fb_user_token", "")
+    granted = _facebook_granted_permissions(user_token)
+    missing = [p for p in _FB_REQUIRED_PERMISSIONS if p not in granted] if granted is not None else []
     conn, _ = IntegrationConnection.objects.get_or_create(
         workspace=request.workspace, provider="facebook", defaults={"name": "Facebook Lead Ads"},
     )
@@ -2790,8 +2809,10 @@ def facebook_select_page(request):
         "page_access_token": page["access_token"],
         # Keep the (long-lived) user token so "Trocar página" can re-list the pages
         # without sending the user back through the Facebook dialog.
-        "user_access_token": request.session.get("fb_user_token") or (conn.config or {}).get("user_access_token", ""),
+        "user_access_token": user_token or (conn.config or {}).get("user_access_token", ""),
         "leadgen_subscribed": subscribed,
+        "granted_permissions": sorted(granted) if granted is not None else [],
+        "missing_permissions": missing,
         "connected_by": request.user.get_username(),
         "source": "oauth",
     }
@@ -2805,11 +2826,222 @@ def facebook_select_page(request):
     request.session.pop("fb_pages", None)
     request.session.pop("fb_oauth_state", None)
     request.session.pop("fb_user_token", None)
-    if subscribed:
-        messages.success(request, f"Página “{page['name']}” conectada. Novos leads viram contato e negócio automaticamente.")
+    if missing:
+        messages.warning(
+            request,
+            f"Página “{page['name']}” salva, mas faltam permissões: {', '.join(missing)}. "
+            "Reconecte e marque TODAS as permissões na tela do Facebook. Se “leads_retrieval” "
+            "insistir em faltar, o app ainda precisa passar pela Análise da Meta.",
+        )
+    elif not subscribed:
+        messages.warning(
+            request,
+            f"Página “{page['name']}” salva, mas não consegui assinar os leads. Confira em "
+            "Business Suite → Configurações → Acesso a leads se o app tem acesso aos leads da página.",
+        )
     else:
-        messages.warning(request, f"Página “{page['name']}” salva, mas não consegui assinar os leads — confira as permissões do App.")
+        messages.success(request, f"Página “{page['name']}” conectada. Novos leads viram contato e negócio automaticamente.")
     return redirect("integrations")
+
+
+# --------------------------------------------------------------------------- #
+# Instagram Direct — connect (Meta OAuth) + inbox
+# --------------------------------------------------------------------------- #
+IG_SCOPES = ("instagram_basic,instagram_manage_messages,pages_show_list,"
+             "pages_manage_metadata,pages_messaging,business_management")
+
+
+def _instagram_redirect_uri(request):
+    return request.build_absolute_uri(reverse("instagram_callback"))
+
+
+@login_required
+@require_role("admin")
+def instagram_connect(request):
+    if not settings.FACEBOOK_APP_ID or not settings.FACEBOOK_APP_SECRET:
+        messages.error(request, "Configure FACEBOOK_APP_ID e FACEBOOK_APP_SECRET no ambiente para conectar o Instagram.")
+        return redirect("integrations")
+    import urllib.parse
+
+    state = get_random_string(24)
+    request.session["ig_oauth_state"] = state
+    params = urllib.parse.urlencode({
+        "client_id": settings.FACEBOOK_APP_ID,
+        "redirect_uri": _instagram_redirect_uri(request),
+        "scope": IG_SCOPES,
+        "response_type": "code",
+        "state": state,
+    })
+    return redirect(f"https://www.facebook.com/{settings.FACEBOOK_GRAPH_VERSION}/dialog/oauth?{params}")
+
+
+@login_required
+@require_role("admin")
+def instagram_callback(request):
+    if request.GET.get("error"):
+        messages.info(request, "Conexão com o Instagram cancelada.")
+        return redirect("integrations")
+    if not request.GET.get("state") or request.GET.get("state") != request.session.get("ig_oauth_state"):
+        messages.error(request, "A sessão do Instagram expirou. Conecte de novo.")
+        return redirect("integrations")
+    code = request.GET.get("code")
+    if not code:
+        messages.error(request, "O Instagram não retornou o código de autorização.")
+        return redirect("integrations")
+    try:
+        token_data = _fb_graph("oauth/access_token", {
+            "client_id": settings.FACEBOOK_APP_ID,
+            "client_secret": settings.FACEBOOK_APP_SECRET,
+            "redirect_uri": _instagram_redirect_uri(request),
+            "code": code,
+        })
+        user_token = token_data.get("access_token", "")
+        try:
+            longlived = _fb_graph("oauth/access_token", {
+                "grant_type": "fb_exchange_token",
+                "client_id": settings.FACEBOOK_APP_ID,
+                "client_secret": settings.FACEBOOK_APP_SECRET,
+                "fb_exchange_token": user_token,
+            })
+            user_token = longlived.get("access_token") or user_token
+        except Exception:
+            pass
+        pages_data = _fb_graph("me/accounts", {
+            "access_token": user_token, "limit": 100,
+            "fields": "id,name,access_token,instagram_business_account{id,username,profile_picture_url}",
+        })
+    except Exception:
+        messages.error(request, "Falha ao falar com o Instagram. Verifique o App e tente de novo.")
+        return redirect("integrations")
+
+    accounts = []
+    for p in pages_data.get("data", []):
+        iga = p.get("instagram_business_account") or {}
+        if p.get("id") and iga.get("id"):
+            accounts.append({
+                "page_id": p["id"], "page_name": p.get("name", "Página"),
+                "page_access_token": p.get("access_token", ""),
+                "ig_account_id": iga["id"], "ig_username": iga.get("username", ""),
+                "ig_avatar": iga.get("profile_picture_url", ""),
+            })
+    if not accounts:
+        messages.error(request, "Nenhuma conta profissional do Instagram ligada às suas páginas. Ligue o Instagram à Página no Meta Business e tente de novo.")
+        return redirect("integrations")
+    request.session["ig_accounts"] = accounts
+    return render(request, "core/instagram_accounts.html", {
+        "page_title": "Conectar Instagram",
+        "breadcrumb": ["Configurações", "Integrações", "Instagram"],
+        "accounts": accounts,
+    })
+
+
+@login_required
+@require_role("admin")
+@require_POST
+def instagram_select_account(request):
+    ig_account_id = request.POST.get("ig_account_id", "")
+    accounts = request.session.get("ig_accounts", [])
+    acc = next((a for a in accounts if str(a.get("ig_account_id")) == str(ig_account_id)), None)
+    if not acc:
+        messages.error(request, "Conta inválida. Conecte de novo.")
+        return redirect("integrations")
+    subscribed = False
+    try:
+        result = _fb_graph(
+            f"{acc['page_id']}/subscribed_apps",
+            {"subscribed_fields": "messages", "access_token": acc["page_access_token"]},
+            method="POST",
+        )
+        subscribed = bool(result.get("success"))
+    except Exception:
+        subscribed = False
+    conn, _ = IntegrationConnection.objects.get_or_create(
+        workspace=request.workspace, provider="instagram", defaults={"name": "Instagram"},
+    )
+    conn.name = "Instagram"
+    conn.status = "connected"
+    conn.config = {
+        **(conn.config or {}),
+        "page_id": acc["page_id"], "page_name": acc["page_name"],
+        "page_access_token": acc["page_access_token"],
+        "ig_account_id": acc["ig_account_id"], "ig_username": acc["ig_username"],
+        "ig_avatar": acc["ig_avatar"],
+        "messages_subscribed": subscribed,
+        "connected_by": request.user.get_username(),
+        "source": "oauth",
+    }
+    conn.save(update_fields=["name", "status", "config", "updated_at"])
+    request.session.pop("ig_accounts", None)
+    request.session.pop("ig_oauth_state", None)
+    if subscribed:
+        messages.success(request, f"Instagram @{acc['ig_username']} conectado. As DMs chegam na caixa de entrada.")
+    else:
+        messages.warning(request, f"@{acc['ig_username']} salvo, mas não consegui assinar as mensagens — confira as permissões do App.")
+    return redirect("integrations")
+
+
+@login_required
+def instagram_inbox(request):
+    """Instagram DM inbox: conversation list + the selected thread."""
+    ws = request.workspace
+    connection = IntegrationConnection.objects.filter(workspace=ws, provider="instagram").first()
+    config = connection.config if connection else {}
+    conversations = list(
+        SocialConversation.objects.filter(workspace=ws, channel="instagram").select_related("contact")
+    )
+    active = None
+    conv_id = request.GET.get("conversation")
+    if conv_id:
+        active = next((c for c in conversations if str(c.pk) == str(conv_id)), None)
+    elif conversations:
+        active = conversations[0]
+    thread = []
+    if active is not None:
+        thread = list(active.messages.order_by("sent_at", "id")[:300])
+        if active.unread_count:
+            active.unread_count = 0
+            active.save(update_fields=["unread_count", "updated_at"])
+    return render(request, "core/instagram.html", {
+        "page_title": "Instagram",
+        "connection": connection,
+        "ig_username": config.get("ig_username", ""),
+        "connected": bool(connection and connection.status == "connected"),
+        "conversations": conversations,
+        "active": active,
+        "thread": thread,
+    })
+
+
+@login_required
+@require_POST
+def instagram_send(request):
+    ws = request.workspace
+    conversation = get_object_or_404(
+        SocialConversation, pk=request.POST.get("conversation"), workspace=ws, channel="instagram",
+    )
+    text = request.POST.get("text", "").strip()
+    back = f"{reverse('instagram_inbox')}?conversation={conversation.pk}"
+    if not text:
+        return redirect(back)
+    connection = IntegrationConnection.objects.filter(workspace=ws, provider="instagram").first()
+    config = connection.config if connection else {}
+    token = config.get("page_access_token", "")
+    if not token:
+        messages.error(request, "Instagram não está conectado.")
+        return redirect(back)
+    try:
+        result = _fb_graph(f"{config.get('page_id')}/messages", {
+            "recipient": json.dumps({"id": conversation.sender_id}),
+            "message": json.dumps({"text": text}),
+            "access_token": token,
+        }, method="POST")
+        provider_id = str(result.get("message_id") or f"local-{get_random_string(24)}")
+    except Exception:
+        messages.error(request, "Não foi possível enviar. Pode ser a janela de 24h da Meta ou permissão do app.")
+        return redirect(back)
+    from core.social_inbox import record_outgoing_social
+    record_outgoing_social(ws, conversation, provider_id, text, raw={"event": "send"})
+    return redirect(back)
 
 
 @login_required
@@ -2921,6 +3153,27 @@ _FB_SUGGEST = {
     "company": "company:name", "company_name": "company:name", "empresa": "company:name",
     "city": "company:city", "cidade": "company:city",
 }
+
+
+# Permissions a token must actually carry to receive + read Lead Ads leads.
+# (Meta lists these in the Lead Access diagnostic; missing any → leads never
+# arrive.) leads_retrieval is the one that most often ends up ungranted.
+_FB_REQUIRED_PERMISSIONS = ["pages_show_list", "pages_read_engagement",
+                            "pages_manage_metadata", "leads_retrieval"]
+
+
+def _facebook_granted_permissions(user_token):
+    """Set of permissions the connected user actually GRANTED (status=='granted').
+    Best-effort — returns None if the check itself fails (so we don't nag on a
+    transient Graph hiccup)."""
+    if not user_token:
+        return None
+    try:
+        data = _fb_graph("me/permissions", {"access_token": user_token})
+        return {row.get("permission") for row in data.get("data", [])
+                if row.get("status") == "granted"}
+    except Exception:
+        return None
 
 
 def _facebook_active_connection(ws):
@@ -3750,16 +4003,47 @@ def _facebook_fetch_lead(leadgen_id, workspace):
 
 
 @csrf_exempt
+def _instagram_webhook_dispatch(body):
+    """Route Instagram messaging events (object == "instagram") to the DM inbox.
+    Meta delivers everything to a single webhook URL, so this shares the endpoint
+    with leadgen and never touches it."""
+    from django_tenants.utils import tenant_context
+
+    from core.social_inbox import ingest_instagram_messaging
+    stored = 0
+    for entry in body.get("entry", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        account_id = str(entry.get("id", ""))
+        if not account_id:
+            continue
+        conn = (IntegrationConnection.objects
+                .filter(provider="instagram", config__ig_account_id=account_id)
+                .select_related("workspace").first())
+        if not conn:
+            continue
+        ws = conn.workspace
+        with tenant_context(ws):
+            set_current_workspace(ws)
+            try:
+                stored += ingest_instagram_messaging(ws, conn, entry)
+            finally:
+                clear_current_workspace()
+    return JsonResponse({"received": True, "stored": stored})
+
+
 def facebook_leadgen(request):
-    """Meta app webhook for Facebook Lead Ads. Handles the verify handshake, then for
-    each incoming lead finds the workspace that connected that page, fetches the
-    lead's fields via the Graph API and creates the contact/company/deal."""
+    """Meta app webhook. Handles the verify handshake, then dispatches by object:
+    Instagram DMs (object=="instagram") to the social inbox, and Facebook Lead Ads
+    (object=="page", field "leadgen") to the lead pipeline."""
     if request.method == "GET":
         if settings.FACEBOOK_VERIFY_TOKEN and request.GET.get("hub.verify_token") == settings.FACEBOOK_VERIFY_TOKEN:
             return HttpResponse(request.GET.get("hub.challenge", ""))
         return HttpResponse("verify token invalido", status=403)
 
     body = _request_body_payload(request)
+    if isinstance(body, dict) and body.get("object") == "instagram":
+        return _instagram_webhook_dispatch(body)
     entries = body.get("entry", []) if isinstance(body, dict) else []
     processed = 0
     for entry in entries:

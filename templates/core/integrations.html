@@ -17,12 +17,15 @@
         <h2>{{ item.name }}</h2>
         <p>{{ item.summary }}</p>
         {% if item.provider == "facebook" and item.connected and item.connection.config.page_name %}<span class="integration-card__page">{% include "core/_icon.html" with icon="check" %} {{ item.connection.config.page_name }}</span>{% endif %}
+        {% if item.provider == "facebook" and item.connected and item.connection.config.missing_permissions %}<span class="integration-card__warn">{% include "core/_icon.html" with icon="alert" %} Faltam permissões: {{ item.connection.config.missing_permissions|join:", " }}. Reconecte marcando todas.</span>{% endif %}
+        {% if item.provider == "instagram" and item.connected and item.connection.config.ig_username %}<span class="integration-card__page">{% include "core/_icon.html" with icon="check" %} @{{ item.connection.config.ig_username }}</span>{% endif %}
       </div>
     </div>
     <div class="integration-card__foot">
       {% if item.connected %}
       <span class="role-badge integration-status integration-status--on">Conectada</span>
-      {% if item.provider == "facebook" %}<a href="{% url 'facebook_forms' %}" class="btn btn--ghost btn--sm">Formulários</a><a href="{% url 'facebook_switch_page' %}" class="btn btn--ghost btn--sm">Trocar página</a>{% endif %}
+      {% if item.provider == "facebook" %}<a href="{% url 'facebook_forms' %}" class="btn btn--ghost btn--sm">Formulários</a><a href="{% url 'facebook_switch_page' %}" class="btn btn--ghost btn--sm">Trocar página</a><a href="{% url 'facebook_connect' %}" class="btn btn--ghost btn--sm">Reconectar</a>{% endif %}
+      {% if item.provider == "instagram" %}<a href="{% url 'instagram_inbox' %}" class="btn btn--ghost btn--sm">Conversas</a>{% endif %}
       {% if item.provider == "whatsapp" %}<a href="{% url 'whatsapp' %}" class="btn btn--ghost btn--sm">Conversas</a>{% endif %}
       {% if item.provider == "whatsapp" %}
       <form method="post" action="{% url 'whatsapp_disconnect' %}" data-confirm="Desconectar este número? As conversas continuarão salvas no CRM.">
@@ -39,6 +42,9 @@
       {% elif item.provider == "facebook" %}
       <span class="role-badge integration-status">Disponível</span>
       <a href="{% url 'facebook_connect' %}" class="btn btn--primary btn--sm">Conectar página</a>
+      {% elif item.provider == "instagram" %}
+      <span class="role-badge integration-status">Disponível</span>
+      <a href="{% url 'instagram_connect' %}" class="btn btn--primary btn--sm">Conectar Instagram</a>
       {% elif item.provider == "whatsapp" %}
       <span class="role-badge integration-status">Disponível</span>
       <a href="{% url 'whatsapp' %}" class="btn btn--primary btn--sm">Conectar</a>

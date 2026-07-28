@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<a href="{% url 'integrations' %}" class="back-link">{% include "core/_icon.html" with icon="back" %} Integrações</a>
+
+<div class="page-head">
+  <div>
+    <h1>Escolha a conta do Instagram</h1>
+    <p>Contas profissionais ligadas às suas páginas. As DMs da conta escolhida chegam na caixa de entrada.</p>
+  </div>
+</div>
+
+<div class="fb-pages">
+  {% for a in accounts %}
+  <form method="post" action="{% url 'instagram_select_account' %}" class="fb-page card">
+    {% csrf_token %}
+    <input type="hidden" name="ig_account_id" value="{{ a.ig_account_id }}">
+    {% if a.ig_avatar %}<img src="{{ a.ig_avatar }}" class="ig-account__avatar" alt="">{% else %}<span class="ig-account__mark">{% include "core/_icon.html" with icon="instagram" %}</span>{% endif %}
+    <div class="fb-page__info">
+      <b>@{{ a.ig_username|default:a.ig_account_id }}</b>
+      <span>Página: {{ a.page_name }}</span>
+    </div>
+    <button class="btn btn--primary btn--sm" type="submit">Conectar</button>
+  </form>
+  {% empty %}
+  <div class="cf-empty" style="padding:34px 16px;">{% include "core/_icon.html" with icon="instagram" %}<div>Nenhuma conta profissional do Instagram encontrada.</div></div>
+  {% endfor %}
+</div>
+{% endblock %}
