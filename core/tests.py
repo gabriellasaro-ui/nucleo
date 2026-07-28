@@ -1828,6 +1828,40 @@ class InstagramInboxTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertNotIn("cliente", resp.content.decode("utf-8"))
 
+    def test_promote_creates_contact_and_deal(self):
+        from modules.crm.models import Contact, Deal
+        self.client.force_login(self.member)
+        resp = self.client.post(reverse("instagram_promote"), {
+            "conversation": self.conv.pk, "action": "contact_deal",
+        })
+        self.assertEqual(resp.status_code, 302)
+        with tenant_context(self.ws):
+            contact = Contact.objects.get(first_name="cliente")
+            self.assertEqual(contact.stage, "lead")
+            self.assertTrue(Deal.objects.filter(contact=contact).exists())
+            self.assertEqual(
+                SocialConversation.all_objects.get(pk=self.conv.pk).contact_id, contact.pk
+            )
+
+    def test_promote_contact_only_makes_no_deal(self):
+        from modules.crm.models import Contact, Deal
+        self.client.force_login(self.member)
+        resp = self.client.post(reverse("instagram_promote"), {
+            "conversation": self.conv.pk, "action": "contact",
+        })
+        self.assertEqual(resp.status_code, 302)
+        with tenant_context(self.ws):
+            contact = Contact.objects.get(first_name="cliente")
+            self.assertFalse(Deal.objects.filter(contact=contact).exists())
+
+    def test_promote_is_idempotent(self):
+        from modules.crm.models import Contact
+        self.client.force_login(self.member)
+        self.client.post(reverse("instagram_promote"), {"conversation": self.conv.pk, "action": "contact"})
+        self.client.post(reverse("instagram_promote"), {"conversation": self.conv.pk, "action": "contact"})
+        with tenant_context(self.ws):
+            self.assertEqual(Contact.objects.filter(first_name="cliente").count(), 1)
+
 
 class InstagramConnectTests(TransactionTestCase):
     """Connecting: instagram_select_account persists the page + IG account onto an

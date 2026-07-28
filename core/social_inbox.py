@@ -5,6 +5,7 @@ the SocialConversation/SocialMessage models so the two never interfere.
 import logging
 from datetime import datetime, timezone as _tz
 
+from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -127,3 +128,31 @@ def record_outgoing_social(ws, conversation, provider_message_id, text, channel=
     conversation.last_message_at = now
     conversation.save(update_fields=["last_message", "last_message_at", "updated_at"])
     return msg
+
+
+def _split_name(full):
+    parts = str(full or "").strip().split(maxsplit=1)
+    if not parts:
+        return "", ""
+    return parts[0][:120], (parts[1][:120] if len(parts) > 1 else "")
+
+
+@transaction.atomic
+def promote_social_conversation(workspace, conversation):
+    """Turn a social DM thread into a CRM Contact (or link the existing one),
+    mirroring the WhatsApp promote flow. Returns (contact, created)."""
+    from modules.crm.models import Contact, SocialConversation
+    conversation = (SocialConversation.all_objects
+                    .select_for_update()
+                    .get(workspace=workspace, pk=conversation.pk))
+    if conversation.contact_id:
+        return conversation.contact, False
+    first, last = _split_name(conversation.name or conversation.username)
+    if not first:
+        first = f"@{conversation.username}" if conversation.username else conversation.sender_id
+    contact = Contact.objects.create(
+        workspace=workspace, first_name=first[:120], last_name=last, stage="lead",
+    )
+    conversation.contact = contact
+    conversation.save(update_fields=["contact", "updated_at"])
+    return contact, True

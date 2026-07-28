@@ -3702,6 +3702,13 @@ kbd {
 .dm-thread__head .dm-conv__avatar { width: 40px; height: 40px; font-size: 15px; }
 .dm-thread__head b { color: var(--ink); font-size: 14.5px; }
 .dm-thread__handle { color: var(--ink-3); font-size: 12.5px; }
+.dm-thread__identity { min-width: 0; display: grid; gap: 2px; }
+.dm-thread__crm { margin-left: auto; flex: none; display: flex; align-items: center; gap: 8px; }
+.dm-thread__crm form { margin: 0; }
+.dm-thread__crm .btn { white-space: nowrap; }
+.dm-thread__crm .btn svg { width: 14px; height: 14px; }
+.dm-crm-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--green-600); }
+.dm-crm-badge svg { width: 13px; height: 13px; }
 .dm-thread__msgs {
   min-height: 0;
   overflow-y: auto;

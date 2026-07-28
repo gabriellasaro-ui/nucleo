@@ -40,7 +40,26 @@
     {% if active %}
     <div class="dm-thread__head">
       <span class="dm-conv__avatar">{% if active.avatar_url %}<img src="{{ active.avatar_url }}" alt="">{% else %}{{ active.display_name|slice:':1'|upper }}{% endif %}</span>
-      <div><b>{{ active.display_name }}</b>{% if active.username %} <span class="dm-thread__handle">@{{ active.username }}</span>{% endif %}</div>
+      <div class="dm-thread__identity"><b>{{ active.display_name }}</b>{% if active.username %} <span class="dm-thread__handle">@{{ active.username }}</span>{% endif %}</div>
+      <div class="dm-thread__crm">
+        {% if active.contact_id %}
+        <a href="{% url 'crm:contact_detail' active.contact_id %}" class="btn btn--ghost btn--sm">{% include "core/_icon.html" with icon="users" %} {{ active.contact.full_name }}</a>
+        <span class="dm-crm-badge">{% include "core/_icon.html" with icon="check" %} No CRM</span>
+        {% elif can_edit %}
+        <form method="post" action="{% url 'instagram_promote' %}">
+          {% csrf_token %}
+          <input type="hidden" name="conversation" value="{{ active.pk }}">
+          <input type="hidden" name="action" value="contact">
+          <button type="submit" class="btn btn--ghost btn--sm">{% include "core/_icon.html" with icon="users" %} Criar contato</button>
+        </form>
+        <form method="post" action="{% url 'instagram_promote' %}">
+          {% csrf_token %}
+          <input type="hidden" name="conversation" value="{{ active.pk }}">
+          <input type="hidden" name="action" value="contact_deal">
+          <button type="submit" class="btn btn--primary btn--sm">{% include "core/_icon.html" with icon="briefcase" %} Criar negócio</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
     <div class="dm-thread__msgs">
       {% for m in thread %}

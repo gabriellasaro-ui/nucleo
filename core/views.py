@@ -3045,6 +3045,52 @@ def instagram_send(request):
 
 
 @login_required
+@require_role("member")
+@require_POST
+def instagram_promote(request):
+    """Turn a DM thread into a CRM contact (and optionally a deal), mirroring the
+    WhatsApp promote action so social leads land in the pipeline the same way."""
+    ws = request.workspace
+    conversation = get_object_or_404(
+        SocialConversation, pk=request.POST.get("conversation"), workspace=ws, channel="instagram",
+    )
+    action = request.POST.get("action", "contact")
+    if action not in {"contact", "contact_deal"}:
+        action = "contact"
+    back = f"{reverse('instagram_inbox')}?conversation={conversation.pk}"
+    from core.social_inbox import promote_social_conversation
+    deal_created = False
+    with transaction.atomic():
+        contact, contact_created = promote_social_conversation(ws, conversation)
+        if action == "contact_deal":
+            deal = (Deal.objects.filter(workspace=ws, contact=contact, stage_kind="open")
+                    .order_by("-updated_at").first())
+            if deal is None:
+                pipeline = _whatsapp_default_pipeline(ws)
+                stage = pipeline.stages.filter(kind="open").order_by("order", "id").first()
+                deal = Deal(
+                    workspace=ws, pipeline=pipeline, contact=contact, owner=request.user,
+                    title=f"{contact.full_name} - Instagram", stage=stage.key if stage else "novo",
+                )
+                deal.sync_stage_kind()
+                deal.save()
+                deal_created = True
+    # Fire automations outside the transaction (contact/deal are committed).
+    if contact_created:
+        emit(ws, "contact_created", contact, {"stage": contact.stage})
+    if deal_created:
+        emit(ws, "deal_created", deal, {"stage": deal.stage})
+    if action == "contact_deal":
+        messages.success(request, "Contato e negócio criados no CRM." if deal_created
+                         else "Contato vinculado ao negócio que já estava aberto.")
+    elif contact_created:
+        messages.success(request, "Contato criado no CRM.")
+    else:
+        messages.info(request, "Esta conversa já está vinculada a um contato.")
+    return redirect(back)
+
+
+@login_required
 @require_role("admin")
 def facebook_switch_page(request):
     """Switch the connected page WITHOUT another Facebook dialog: reuse the stored

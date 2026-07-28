@@ -7,6 +7,7 @@ urlpatterns = [
     path("whatsapp/", views.whatsapp, name="whatsapp"),
     path("instagram/", views.instagram_inbox, name="instagram_inbox"),
     path("instagram/send/", views.instagram_send, name="instagram_send"),
+    path("instagram/promote/", views.instagram_promote, name="instagram_promote"),
     path("instagram/unread-count/", views.instagram_unread_count_view, name="instagram_unread_count"),
     path("whatsapp/connect/", views.whatsapp_connect, name="whatsapp_connect"),
     path("whatsapp/status/", views.whatsapp_status, name="whatsapp_status"),
