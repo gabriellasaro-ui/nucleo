@@ -1978,3 +1978,51 @@ class WorkspaceGeneralTests(TransactionTestCase):
     def test_member_cannot_access(self):
         self.client.force_login(self.member)
         self.assertEqual(self.client.get(reverse("workspace_general")).status_code, 403)
+
+
+class WorkspaceSwitcherGroupingTests(TransactionTestCase):
+    """The switcher groups workspaces: the user's own first, then one group per
+    managing agency (for admins), then leftovers — with NO repeated headers (the
+    old {% regroup %}-on-an-unsorted-list bug). Tests the pure grouping function
+    with in-memory workspaces (no schemas) so it stays fast."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        User = get_user_model()
+        self.admin = User.objects.create_user("adm", password="x", is_superuser=True)
+        self.agency1 = User.objects.create_user("ag1", password="x")
+        UserProfile.objects.create(user=self.agency1, account_type=UserProfile.TYPE_AGENCY, brand_name="Agência Alfa")
+        self.agency2 = User.objects.create_user("ag2", password="x")
+        UserProfile.objects.create(user=self.agency2, account_type=UserProfile.TYPE_AGENCY, brand_name="Agência Beta")
+
+    def _ws(self, pk, name, agency=None):
+        ws = Workspace(name=name)
+        ws.pk = pk
+        ws.agency_id = agency.pk if agency else None
+        return ws
+
+    def _row(self, ws, relation):
+        return {"workspace": ws, "relation": relation, "role": "x"}
+
+    def test_admin_groups_by_agency_without_repeated_headers(self):
+        from core.access import group_workspaces
+        rows = [
+            self._row(self._ws(1, "Meu", None), "own"),
+            self._row(self._ws(2, "Cliente A1", self.agency1), "admin"),
+            self._row(self._ws(3, "Cliente A2", self.agency1), "admin"),
+            self._row(self._ws(4, "Cliente B1", self.agency2), "admin"),
+            self._row(self._ws(5, "Solto", None), "admin"),
+        ]
+        groups = group_workspaces(rows, self.admin)
+        labels = [g["label"] for g in groups]
+        self.assertEqual(labels, ["Seu workspace", "Agência Alfa", "Agência Beta", "Outros workspaces"])
+        self.assertEqual(len(labels), len(set(labels)))   # every header is unique
+        alfa = next(g for g in groups if g["label"] == "Agência Alfa")
+        self.assertEqual({r["workspace"].pk for r in alfa["items"]}, {2, 3})
+
+    def test_agency_sees_a_single_clients_group(self):
+        from core.access import group_workspaces
+        rows = [self._row(self._ws(2, "Cliente A1", self.agency1), "agency")]
+        groups = group_workspaces(rows, self.agency1)
+        self.assertEqual([g["label"] for g in groups], ["Seus clientes"])

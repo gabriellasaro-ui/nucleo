@@ -122,3 +122,56 @@ def accessible_workspaces(user):
 
     rows.sort(key=lambda r: (r["relation"] != "own", (r["workspace"].name or "").lower()))
     return rows
+
+
+def _agency_labels(agency_ids):
+    """{agency user id -> display label} in one pass (brand name, else name)."""
+    ids = {a for a in agency_ids if a}
+    if not ids:
+        return {}
+    from django.contrib.auth import get_user_model
+    users = {u.pk: u for u in get_user_model().objects.filter(pk__in=ids)}
+    profs = {p.user_id: p for p in UserProfile.objects.filter(user_id__in=ids)}
+    out = {}
+    for aid in ids:
+        prof, u = profs.get(aid), users.get(aid)
+        out[aid] = ((prof.brand_name if prof and prof.brand_name else "")
+                    or (u.get_full_name() if u else "")
+                    or (u.get_username() if u else "") or "Agência")
+    return out
+
+
+def group_workspaces(rows, user):
+    """Structure accessible_workspaces() into switcher groups: the user's own
+    workspace(s) first, then (for admins) one group per managing agency with its
+    clients, then anything left over. Built explicitly — not via {% regroup %},
+    which only groups CONSECUTIVE items and so produced repeated headers on the
+    admin's name-sorted list."""
+    own = [r for r in rows if r["relation"] == "own"]
+    rest = [r for r in rows if r["relation"] != "own"]
+    groups = []
+    if own:
+        groups.append({
+            "label": "Seu workspace" if len(own) == 1 else "Seus workspaces",
+            "kind": "own", "items": own,
+        })
+    if not rest:
+        return groups
+    if is_agency(user) and not is_platform_admin(user):
+        groups.append({"label": "Seus clientes", "kind": "agency", "items": rest})
+        return groups
+    # Platform admin: group the remaining workspaces under their managing agency.
+    labels = _agency_labels([r["workspace"].agency_id for r in rest])
+    by_agency, loose = {}, []
+    for r in rest:
+        aid = r["workspace"].agency_id
+        if aid is None:
+            loose.append(r)
+        else:
+            by_agency.setdefault(aid, []).append(r)
+    for aid in sorted(by_agency, key=lambda a: labels.get(a, "").lower()):
+        groups.append({"label": labels.get(aid) or "Agência", "kind": "agency",
+                       "items": by_agency[aid]})
+    if loose:
+        groups.append({"label": "Outros workspaces", "kind": "other", "items": loose})
+    return groups

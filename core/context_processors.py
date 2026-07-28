@@ -6,6 +6,7 @@ import re
 from django.conf import settings
 from django.urls import reverse
 
+from . import access
 from .rbac import can_edit as _can_edit
 from .social_inbox import social_unread_count
 from .whatsapp_inbox import whatsapp_unread_count
@@ -97,6 +98,10 @@ def branding(request):
         "google_enabled": bool(settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET),
         "platform_brand_name": settings.PLATFORM_BRAND_NAME,
         "platform_logo_uri": settings.PLATFORM_LOGO_URI,
+        "workspace_groups": access.group_workspaces(
+            getattr(request, "accessible_workspaces", None) or [],
+            getattr(request, "user", None),
+        ),
     }
 
 

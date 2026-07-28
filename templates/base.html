@@ -39,14 +39,9 @@
         </button>
         <div class="ws-menu" x-show="open" x-cloak x-transition @click.outside="open = false">
           <div class="ws-menu__scroll">
-            {% regroup request.accessible_workspaces by relation as ws_groups %}
-            {% for group in ws_groups %}
-            {% if is_agency or is_platform_admin %}
-            <div class="ws-menu__label">{% if group.grouper == 'agency' %}Seus clientes{% elif group.grouper == 'admin' %}Todos os workspaces{% else %}Seu workspace{% endif %}</div>
-            {% elif forloop.first %}
-            <div class="ws-menu__label">Trocar workspace</div>
-            {% endif %}
-            {% for r in group.list %}
+            {% for group in workspace_groups %}
+            <div class="ws-menu__label ws-menu__label--{{ group.kind }}">{% if group.kind == 'agency' and is_platform_admin %}{% include "core/_icon.html" with icon="building" %} {% endif %}{{ group.label }}</div>
+            {% for r in group.items %}
             <form method="post" action="{% url 'workspace_switch' r.workspace.pk %}">
               {% csrf_token %}
               <button type="submit" class="ws-menu__item {% if r.workspace.pk == request.workspace.id %}is-active{% endif %}">
