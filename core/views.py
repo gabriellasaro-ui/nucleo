@@ -10,7 +10,7 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.core.validators import validate_email
 from django.http import HttpResponse, JsonResponse
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -272,7 +272,8 @@ def dashboard(request):
 def workspace_new(request):
     form = WorkspaceForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        with schema_context(get_public_schema_name()):
+        with schema_context(get_public_schema_name()), transaction.atomic():
+            _acquire_provision_lock()
             workspace = form.save()  # creates the tenant's Postgres schema
             Domain.objects.get_or_create(
                 domain=f"{workspace.schema_name}.localhost", tenant=workspace,
@@ -468,6 +469,21 @@ def agency_console(request):
 _ONBOARDING_PRESETS = ["#2563eb", "#7c3aed", "#059669", "#dc2626", "#d97706", "#0891b2", "#db2777", "#0f172a"]
 
 
+# Shared by every tenant-provisioning path. Creating a workspace schema runs
+# migrations (DDL on shared tables) in the same transaction that inserts the
+# owner user; two concurrent provisions (e.g. a double-clicked submit) otherwise
+# deadlock on auth_user + the shared tables. A single advisory xact-lock makes
+# them run one at a time — provisioning is rare, so the wait is harmless.
+_PROVISION_LOCK_KEY = 48205731
+
+
+def _acquire_provision_lock():
+    """Serialize tenant provisioning. MUST be called inside transaction.atomic();
+    the lock releases automatically when the transaction ends."""
+    with connection.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [_PROVISION_LOCK_KEY])
+
+
 def _ob_create_user(User, email, name=""):
     """Reuse an existing user (by e-mail/username) or create one. Returns
     (user, temporary_password) — the password is '' when the user already existed."""
@@ -531,6 +547,7 @@ def client_onboarding(request):
         agency = request.user if platform_access.is_agency(request.user) else None
         credentials = []
         with schema_context(get_public_schema_name()), transaction.atomic():
+            _acquire_provision_lock()
             User = get_user_model()
             owner, temp = _ob_create_user(User, email, owner_name)
             if temp:
@@ -613,6 +630,7 @@ def agency_onboarding(request):
 
         credentials = []
         with schema_context(get_public_schema_name()), transaction.atomic():
+            _acquire_provision_lock()
             User = get_user_model()
             user, temp = _ob_create_user(User, email, name)
             if temp:

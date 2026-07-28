@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="onb" x-data="{
-      step: 1, total: 5,
+      step: 1, total: 5, submitting: false,
       wsName: '', email: '', color: '#2563eb',
       emailOk() { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(this.email.trim()); },
       canNext() { return this.step !== 1 || (this.wsName.trim().length > 0 && this.emailOk()); },
@@ -23,7 +23,7 @@
     <li class="onb-step" :class="{ 'is-active': step===5 }"><span class="onb-step__n">5</span> Canais</li>
   </ol>
 
-  <form method="post" class="card onb-card" @submit="if (step < total) $event.preventDefault()">
+  <form method="post" class="card onb-card" @submit="if (step < total || submitting) { $event.preventDefault() } else { submitting = true }">
     {% csrf_token %}
     <input type="hidden" name="logo_data" value="">
 
@@ -98,7 +98,7 @@
       <button type="button" class="btn btn--ghost" @click="back()" x-show="step>1">{% include "core/_icon.html" with icon="back" %} Voltar</button>
       <span class="onb-nav__spacer"></span>
       <button type="button" class="btn btn--primary" @click="next()" x-show="step<total" :class="{ 'is-disabled': !canNext() }">Próximo</button>
-      <button type="submit" class="btn btn--primary" x-show="step===total">Criar cliente</button>
+      <button type="submit" class="btn btn--primary" x-show="step===total" :class="{ 'is-disabled': submitting }" x-text="submitting ? 'Criando…' : 'Criar cliente'">Criar cliente</button>
     </div>
   </form>
 </div>

@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="onb" x-data="{
-      step: 1, total: 2,
+      step: 1, total: 2, submitting: false,
       email: '', color: '#2563eb',
       emailOk() { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(this.email.trim()); },
       canNext() { return this.step !== 1 || this.emailOk(); },
@@ -20,7 +20,7 @@
     <li class="onb-step" :class="{ 'is-active': step===2 }"><span class="onb-step__n">2</span> Marca</li>
   </ol>
 
-  <form method="post" class="card onb-card" @submit="if (step < total) $event.preventDefault()">
+  <form method="post" class="card onb-card" @submit="if (step < total || submitting) { $event.preventDefault() } else { submitting = true }">
     {% csrf_token %}
     <input type="hidden" name="logo_data" value="">
 
@@ -67,7 +67,7 @@
       <button type="button" class="btn btn--ghost" @click="back()" x-show="step>1">{% include "core/_icon.html" with icon="back" %} Voltar</button>
       <span class="onb-nav__spacer"></span>
       <button type="button" class="btn btn--primary" @click="next()" x-show="step<total" :class="{ 'is-disabled': !canNext() }">Próximo</button>
-      <button type="submit" class="btn btn--primary" x-show="step===total">Criar agência</button>
+      <button type="submit" class="btn btn--primary" x-show="step===total" :class="{ 'is-disabled': submitting }" x-text="submitting ? 'Criando…' : 'Criar agência'">Criar agência</button>
     </div>
   </form>
 </div>
