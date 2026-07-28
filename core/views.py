@@ -4088,6 +4088,21 @@ def facebook_leadgen(request):
         return HttpResponse("verify token invalido", status=403)
 
     body = _request_body_payload(request)
+    # DEBUG (temporary): stamp every POST so we can confirm whether Meta is
+    # actually delivering to this endpoint. Best-effort, never breaks the webhook.
+    try:
+        _dbg = IntegrationConnection.objects.filter(provider="facebook", status="connected").first()
+        if _dbg is not None:
+            _cfg = _dbg.config or {}
+            _cfg["_debug_last_webhook"] = {
+                "at": timezone.now().isoformat(),
+                "object": body.get("object") if isinstance(body, dict) else None,
+                "snippet": json.dumps(body)[:700] if body is not None else None,
+            }
+            _dbg.config = _cfg
+            _dbg.save(update_fields=["config", "updated_at"])
+    except Exception:
+        pass
     if isinstance(body, dict) and body.get("object") == "instagram":
         return _instagram_webhook_dispatch(body)
     entries = body.get("entry", []) if isinstance(body, dict) else []
