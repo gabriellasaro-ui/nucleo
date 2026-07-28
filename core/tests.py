@@ -1928,3 +1928,53 @@ class InstagramConnectTests(TransactionTestCase):
         u = get_user_model().objects.create_user("plainmember", password="x")
         Membership.objects.create(user=u, workspace=self.ws, role=Membership.ROLE_MEMBER)
         return u
+
+
+class WorkspaceGeneralTests(TransactionTestCase):
+    """The 'Geral' settings tab lets an admin edit the workspace name + regional
+    basics, in one obvious place (split out of the visual Aparência page)."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        connection.set_schema_to_public()
+        self.ws = Workspace(schema_name="test_ws_general", name="Antigo Nome")
+        self.ws.save()
+        Domain.objects.create(tenant=self.ws, domain="wsgeneral.test")
+        User = get_user_model()
+        self.admin = User.objects.create_user("adm", password="x", is_superuser=True)
+        Membership.objects.create(user=self.admin, workspace=self.ws, role=Membership.ROLE_OWNER)
+        self.member = User.objects.create_user("mem", password="x")
+        Membership.objects.create(user=self.member, workspace=self.ws, role=Membership.ROLE_MEMBER)
+
+    def tearDown(self):
+        connection.set_schema_to_public()
+        try:
+            self.ws.delete()
+        except Exception:
+            pass
+
+    def test_page_renders_with_current_name(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("workspace_general"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Antigo Nome", resp.content.decode("utf-8"))
+
+    def test_admin_can_rename_workspace(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post(reverse("workspace_general"), {
+            "workspace_name": "Novo Nome", "currency": "USD", "date_format": "mdy",
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.ws.refresh_from_db()
+        self.assertEqual(self.ws.name, "Novo Nome")
+        self.assertEqual(self.ws.currency, "USD")
+
+    def test_blank_name_is_rejected(self):
+        self.client.force_login(self.admin)
+        self.client.post(reverse("workspace_general"), {"workspace_name": "  "})
+        self.ws.refresh_from_db()
+        self.assertEqual(self.ws.name, "Antigo Nome")   # unchanged
+
+    def test_member_cannot_access(self):
+        self.client.force_login(self.member)
+        self.assertEqual(self.client.get(reverse("workspace_general")).status_code, 403)

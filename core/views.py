@@ -4268,6 +4268,36 @@ def settings_hub(request):
 
 @login_required
 @require_role("admin")
+def workspace_general(request):
+    """The workspace's identity & regional basics — name, currency, date format.
+    Kept apart from the visual Aparência page so 'edit my workspace' is obvious."""
+    ws = request.workspace
+    if request.method == "POST":
+        ok = True
+        name = request.POST.get("workspace_name", "").strip()
+        if name:
+            ws.name = name[:120]
+        else:
+            ok = False
+            messages.error(request, "O nome do workspace não pode ficar vazio.")
+        if request.POST.get("currency") in dict(ws.CURRENCY_CHOICES):
+            ws.currency = request.POST["currency"]
+        if request.POST.get("date_format") in dict(ws.DATE_FORMAT_CHOICES):
+            ws.date_format = request.POST["date_format"]
+        ws.save()
+        if ok:
+            messages.success(request, "Configurações gerais salvas.")
+        return redirect("workspace_general")
+    return render(request, "core/settings_general.html", {
+        "page_title": "Geral",
+        "breadcrumb": ["Configurações", "Geral"],
+        "currency_choices": ws.CURRENCY_CHOICES,
+        "date_format_choices": ws.DATE_FORMAT_CHOICES,
+    })
+
+
+@login_required
+@require_role("admin")
 def privacy_settings(request):
     """LGPD: retention window + a consent overview for the workspace."""
     from core.privacy import anonymize_contact, expired_contacts

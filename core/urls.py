@@ -40,6 +40,7 @@ urlpatterns = [
     path("accounts/google/login/", views.google_login, name="google_login"),
     path("accounts/google/callback/", views.google_callback, name="google_callback"),
     path("settings/", views.settings_hub, name="settings"),
+    path("settings/general/", views.workspace_general, name="workspace_general"),
     path("settings/members/", views.members, name="members"),
     path("settings/members/add/", views.member_add, name="member_add"),
     path("settings/members/<int:pk>/role/", views.member_update, name="member_update"),

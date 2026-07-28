@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Geral</h1>
+    <p>Nome e preferências regionais de <b>{{ request.workspace.name }}</b>.</p>
+  </div>
+</div>
+
+<div class="appearance-grid" style="grid-template-columns: minmax(0, 560px);">
+  <form method="post" class="card panel appearance-form">
+    {% csrf_token %}
+    <div class="panel__head"><b>Identidade</b></div>
+
+    <label class="appearance-label" style="margin-top:2px;">Nome do workspace</label>
+    <input type="text" name="workspace_name" value="{{ request.workspace.name }}" maxlength="120" required class="appearance-text-input" placeholder="Nome do workspace">
+    <span class="appearance-hint" style="display:block; margin-top:6px;">Aparece no topo, no seletor de workspace e nas telas do sistema.</span>
+
+    <label class="appearance-label">Região</label>
+    <div class="region-row">
+      <div class="region-field">
+        <span class="region-field__cap">Moeda</span>
+        <select name="currency" class="region-select">
+          {% for value, label in currency_choices %}
+          <option value="{{ value }}" {% if value == request.workspace.currency %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="region-field">
+        <span class="region-field__cap">Formato de data</span>
+        <select name="date_format" class="region-select">
+          {% for value, label in date_format_choices %}
+          <option value="{{ value }}" {% if value == request.workspace.date_format %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="appearance-actions">
+      <button class="btn btn--primary" type="submit">Salvar</button>
+      <a href="{% url 'appearance' %}" class="appearance-hint">Tema, cores e logo ficam em Aparência →</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
