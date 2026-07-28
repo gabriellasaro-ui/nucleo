@@ -1650,6 +1650,21 @@ class InstagramWebhookTests(TransactionTestCase):
             })
         self.assertEqual(resp.status_code, 403)
 
+    def test_webhook_post_is_csrf_exempt(self):
+        # Meta posts with NO CSRF token; the endpoint must not 403. Regression
+        # guard: @csrf_exempt must stay on facebook_leadgen and not drift onto a
+        # neighbouring helper (which silently 403s every real lead in prod, while
+        # the default test client — CSRF off — would still pass).
+        from django.test import Client
+        csrf_client = Client(enforce_csrf_checks=True)
+        resp = csrf_client.post(
+            reverse("facebook_leadgen"),
+            data=json.dumps({"object": "page", "entry": []}),
+            content_type="application/json",
+        )
+        self.assertNotEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 200)
+
     @patch("core.views._fb_graph")
     def test_incoming_dm_creates_conversation_and_message(self, fb):
         fb.return_value = {"name": "Maria", "username": "maria", "profile_pic": "http://x/a.jpg"}

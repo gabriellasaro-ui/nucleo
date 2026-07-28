@@ -4048,7 +4048,6 @@ def _facebook_fetch_lead(leadgen_id, workspace):
         return None
 
 
-@csrf_exempt
 def _instagram_webhook_dispatch(body):
     """Route Instagram messaging events (object == "instagram") to the DM inbox.
     Meta delivers everything to a single webhook URL, so this shares the endpoint
@@ -4078,6 +4077,7 @@ def _instagram_webhook_dispatch(body):
     return JsonResponse({"received": True, "stored": stored})
 
 
+@csrf_exempt
 def facebook_leadgen(request):
     """Meta app webhook. Handles the verify handshake, then dispatches by object:
     Instagram DMs (object=="instagram") to the social inbox, and Facebook Lead Ads
